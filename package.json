@@ -28,6 +28,7 @@
     "test:lf-estrela-print": "tsx scripts/mandatory-lf-estrela-print-css-tests.ts",
     "test:lf-estrela-split": "tsx scripts/mandatory-lf-estrela-split-down-payment-tests.ts",
     "test:lf-estrela-signed-pdf": "tsx scripts/mandatory-lf-estrela-signed-pdf-tests.ts",
+    "test:lf-estrela-production-sql": "tsx scripts/mandatory-lf-estrela-production-publish-sql-tests.ts",
     "test:sale-charges-quantity": "tsx scripts/mandatory-sale-charges-generate-quantity-tests.ts",
     "test:contract-identity": "tsx scripts/mandatory-contract-identity-tests.ts",
     "test:contract-receipts-display": "tsx scripts/mandatory-contract-receipts-display-tests.ts",
