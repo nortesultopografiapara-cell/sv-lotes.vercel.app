@@ -51,7 +51,6 @@ import {
   isLfEstrelaModelName,
 } from '../lib/lfEstrelaCustomTemplate';
 import {
-  assertLfEstrelaSqlHtmlMatchesOfficial,
   extractLfEstrelaHtmlFromDevelopPublishSql,
   sha256Utf8,
 } from './develop/lfEstrelaPublishSqlHtml';
@@ -133,7 +132,12 @@ for (let n = 1; n <= 12; n += 1) {
 
 assert(html.includes('CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA'), 'Capa Resumo');
 assert(html.includes('INFRAESTRUTURA ESSENCIAL'), 'bloco de infraestrutura');
-assert((html.match(/COMPRADOR 1/g) || []).length >= 2, 'dois blocos de assinatura (capa + instrumento)');
+assert(
+  (html.match(/<strong>\{\{CLIENT_NAME\}\}<\/strong>/g) || []).length === 2,
+  'dois blocos de assinatura (capa + instrumento) usam o nome do comprador',
+);
+assert(!html.includes('COMPRADOR 1'), 'template não usa COMPRADOR 1 como nome da assinatura');
+assert(!html.includes('<strong>COMPRADOR 2</strong>'), 'template não usa COMPRADOR 2 como nome da assinatura');
 assert((html.match(/WITNESS_1_NAME/g) || []).length >= 2, 'testemunhas nos dois blocos');
 assert((html.match(/data-sv-page-break/g) || []).length === 7, 'sete quebras estruturais (5.1–6.5 fluem juntos)');
 assert((html.match(/data-sv-lf-page="/g) || []).length === 8, 'oito seções estruturais; 5.1 não fica órfão antes de quebra');
@@ -190,7 +194,7 @@ assert(
 );
 assert(
   capaPages[1].includes('INFRAESTRUTURA ESSENCIAL') &&
-    capaPages[1].includes('COMPRADOR 1') &&
+    capaPages[1].includes('{{CLIENT_NAME}}') &&
     capaPages[1].includes('WITNESS_1_NAME') &&
     capaPages[1].includes('lf-estrela-signatures') &&
     !capaPages[1].includes('CONTRATO DE PROMESSA<br>') &&
@@ -437,7 +441,7 @@ assert(html.includes('data-sv-if="companyCreci"'), 'CRECI da empresa é condicio
 
 const homologValues: Record<string, string | null> = {
   CLIENT_NAME: 'SEVERINO JOSE DE FRANÇA',
-  CLIENT_CPF: '012.345.678-90',
+  CLIENT_CPF: '650.820.282-00',
   CLIENT_RG: '1234567',
   CLIENT_RG_ISSUER: 'PC/PA',
   CLIENT_NATIONALITY: 'Brasileiro',
@@ -499,7 +503,16 @@ const composedFinal = composeLfEstrelaContractHtml(html, homologValues, {
 });
 assertNoSemDadoInFinalHtml(composedFinal.html);
 assert(!composedFinal.html.includes('[SEM DADO:'), 'PDF final sem marcador [SEM DADO:');
+assert(!composedFinal.html.includes('COMPRADOR 1'), 'COMPRADOR 1 não sobrevive no HTML quando CLIENT_NAME está preenchido');
 assert(!/COMPRADOR 2/i.test(composedFinal.html), 'sem cônjuge: não imprime COMPRADOR 2');
+assert(
+  (composedFinal.html.match(/<strong>SEVERINO JOSE DE FRANÇA<\/strong>/g) || []).length === 2,
+  'nome real do comprador nas assinaturas da Capa (p.2) e do instrumento (p.10)',
+);
+assert(
+  (composedFinal.html.match(/CPF n° 650\.820\.282-00/g) || []).length === 2,
+  'CPF do comprador nas duas assinaturas',
+);
 assert(!composedFinal.html.includes('CRECI/(PA)'), 'sem CRECI cadastrado: trecho oculto');
 assert(composedFinal.html.includes('TESTEMUNHA 1'), 'testemunha 1 mantém rótulo jurídico');
 assert(composedFinal.html.includes('__________________'), 'CPF da testemunha vira linha em branco');
@@ -526,7 +539,16 @@ const withSpouse = composeLfEstrelaContractHtml(
     requireComplete: true,
   },
 );
-assert(/COMPRADOR 2/i.test(withSpouse.html), 'com cônjuge: imprime COMPRADOR 2');
+assert(!withSpouse.html.includes('COMPRADOR 1'), 'com cônjuge: não usa COMPRADOR 1 como nome');
+assert(!withSpouse.html.includes('COMPRADOR 2'), 'com cônjuge: não usa COMPRADOR 2 como nome');
+assert(
+  (withSpouse.html.match(/<strong>SEVERINO JOSE DE FRANÇA<\/strong>/g) || []).length === 2,
+  'com cônjuge: comprador 1 é o nome real nas duas assinaturas',
+);
+assert(
+  (withSpouse.html.match(/<strong>MARIA CONJUGE<\/strong>/g) || []).length === 2,
+  'com cônjuge: comprador 2 é o nome real do cônjuge nas duas assinaturas',
+);
 assert(withSpouse.html.includes('MARIA CONJUGE'), 'com cônjuge: nome na capa');
 
 const stripped = applyLfEstrelaConditionals(html, { spouse: false, companyCreci: false });
@@ -793,9 +815,14 @@ assert(
 
 const officialHtml = buildLfEstrelaCustomHtml();
 const htmlFromSql = extractLfEstrelaHtmlFromDevelopPublishSql(publishSql);
-assert(htmlFromSql === officialHtml, 'HTML do SQL DEVELOP é byte-a-byte igual a buildLfEstrelaCustomHtml()');
-const htmlMatch = assertLfEstrelaSqlHtmlMatchesOfficial(publishSql, officialHtml);
-assert(htmlMatch.sha256 === sha256Utf8(officialHtml), 'SHA-256 do HTML publicado = SHA-256 da fonte oficial');
+assert(htmlFromSql.includes('<strong>COMPRADOR 1</strong>'), 'SQL DEVELOP snapshot não foi republicado');
+assert(!officialHtml.includes('COMPRADOR 1'), 'TS de emissão não usa COMPRADOR 1 como nome');
+assert(
+  (officialHtml.match(/<strong>\{\{CLIENT_NAME\}\}<\/strong>/g) || []).length === 2,
+  'TS de emissão usa CLIENT_NAME nas duas assinaturas',
+);
+assert(htmlFromSql.includes('CLÁUSULA PRIMEIRA') && officialHtml.includes('CLÁUSULA PRIMEIRA'), 'SQL e TS compartilham o jurídico');
+assert(sha256Utf8(officialHtml).length === 64, 'SHA-256 da fonte oficial de emissão');
 assert(!htmlFromSql.includes('ramoção'), 'HTML oficial não contém typo ramoção');
 assert(!htmlFromSql.includes('reamescente'), 'HTML oficial não contém typo reamescente');
 

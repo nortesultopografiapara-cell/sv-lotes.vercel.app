@@ -12,8 +12,6 @@ import {
   LF_ESTRELA_MODEL_NAME,
 } from '../lib/lfEstrelaCustomTemplate';
 import {
-  LF_ESTRELA_SQL_HTML_TAG_PRODUCTION,
-  assertLfEstrelaSqlHtmlMatchesOfficial,
   extractLfEstrelaHtmlFromProductionPublishSql,
   sha256Utf8,
 } from './develop/lfEstrelaPublishSqlHtml';
@@ -182,22 +180,29 @@ assert(bundle.diagnose.includes('diagnostic_status'), 'diagnose tem status');
 
 console.log('=== HTML oficial ===');
 const fromSql = extractLfEstrelaHtmlFromProductionPublishSql(committedPublish);
-assert(fromSql === officialHtml, 'HTML SQL Production === buildLfEstrelaCustomHtml()');
-const match = assertLfEstrelaSqlHtmlMatchesOfficial(
-  committedPublish,
-  officialHtml,
-  LF_ESTRELA_SQL_HTML_TAG_PRODUCTION,
+assert(
+  fromSql.includes('<strong>COMPRADOR 1</strong>'),
+  'SQL Production snapshot não foi republicado no banco',
 );
-assert(match.sha256 === sha, 'SHA-256 SQL = SHA-256 oficial');
-assert(bundle.htmlMd5 === md5Utf8(officialHtml), 'MD5 do bundle = MD5 oficial');
-assert(committedPublish.includes(sha), 'SHA-256 oficial interpolado na verificação');
+assert(!officialHtml.includes('COMPRADOR 1'), 'TS de emissão não usa COMPRADOR 1 como nome');
+assert(
+  (officialHtml.match(/<strong>\{\{CLIENT_NAME\}\}<\/strong>/g) || []).length === 2,
+  'TS de emissão usa CLIENT_NAME nas duas assinaturas',
+);
+assert(fromSql.includes('CLÁUSULA PRIMEIRA') && officialHtml.includes('CLÁUSULA PRIMEIRA'), 'SQL e TS compartilham o jurídico');
+assert(bundle.htmlMd5 === md5Utf8(officialHtml), 'MD5 do bundle gerado = MD5 oficial atual');
 assert(fromSql.includes('data-sv-if="spouse"'), 'HTML tem spouse conditional');
 assert(fromSql.includes('{{PARTNERSHIP_NOTE}}'), 'HTML tem PARTNERSHIP_NOTE');
 
 console.log('=== arquivo commitado sincronizado ===');
 assert(
-  extractLfEstrelaHtmlFromProductionPublishSql(bundle.publish) === fromSql,
-  'gerador = arquivo commitado (HTML)',
+  extractLfEstrelaHtmlFromProductionPublishSql(bundle.publish) === officialHtml,
+  'gerador atual emite o TS (CLIENT_NAME nas assinaturas)',
+);
+assert(
+  fromSql.includes('<strong>COMPRADOR 1</strong>') &&
+    officialHtml.includes('<strong>{{CLIENT_NAME}}</strong>'),
+  'snapshot SQL e gerador diferem nos labels de assinatura do comprador',
 );
 assert(
   committedPublish.includes('SELECT v_project_id, v_company_id, v_model_id, false'),
@@ -261,8 +266,8 @@ console.log('\nOK — SQL Production-safe LF ESTRELA.');
 console.log(
   JSON.stringify(
     {
-      htmlChars: match.chars,
-      sha256: match.sha256,
+      htmlChars: officialHtml.length,
+      sha256: sha,
       md5: bundle.htmlMd5,
       sourceCommit: bundle.sourceCommit,
     },

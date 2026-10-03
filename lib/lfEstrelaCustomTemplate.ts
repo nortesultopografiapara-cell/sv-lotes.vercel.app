@@ -141,11 +141,11 @@ function signatureSlot(labelHtml: string, extraHtml: string): string {
 function signatureBlock(): string {
   return `<div class="sv-lf-sign lf-estrela-signatures" data-sv-keep-block="true">
 <div class="sv-lf-sign-row">
-${signatureSlot('COMPRADOR 1', `CPF n° ${t('CLIENT_CPF')}`)}
+${signatureSlot(t('CLIENT_NAME'), `CPF n° ${t('CLIENT_CPF')}`)}
 ${signatureSlot(t('COMPANY_LEGAL_NAME'), `CNPJ ${t('COMPANY_CNPJ')}`)}
 </div>
 <div class="sv-lf-sign-row">
-<div class="sv-lf-sign-slot" data-sv-if="spouse"><p class="sv-lf-sign-line">&nbsp;</p><p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p></div>
+<div class="sv-lf-sign-slot" data-sv-if="spouse"><p class="sv-lf-sign-line">&nbsp;</p><p><strong>${t('SPOUSE_NAME')}</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p></div>
 <div class="sv-lf-sign-slot sv-lf-sign-empty" data-sv-if="noSpouse" aria-hidden="true"></div>
 ${signatureSlot(t('SELLER_2_NAME'), `CPF n°: ${t('SELLER_2_CPF_CNPJ')}`)}
 </div>
