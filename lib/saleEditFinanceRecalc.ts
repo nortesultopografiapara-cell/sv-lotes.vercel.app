@@ -202,9 +202,8 @@ export function buildSaleEditFinancePayloads(
     if (data.first_installment_due_date) {
       const principal = resolveInstallmentPrincipal({
         totalValue: fValue,
-        downPayment: grossDownPayment,
+        downPayment: recantoSignalPlan?.contractValue ?? grossDownPayment,
         contractModel: options?.contractModel,
-        reduceByDownPayment: isRecanto ? false : undefined,
       });
 
       const installmentMode = isRecanto
@@ -226,7 +225,7 @@ export function buildSaleEditFinancePayloads(
 
       if (isRecanto && installmentMode === 'FIXED_AMOUNT') {
         const lotPlan = resolveRecantoLotInstallmentPlan({
-          lotValue: fValue,
+          lotValue: principal,
           regularCount: instCount,
           mode: 'FIXED_AMOUNT',
           regularAmount: fixedAmount,

@@ -10,7 +10,6 @@ import {
   type SaleContractModel,
 } from '@/lib/contractModel';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
-import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
 
 export function downPaymentReducesInstallmentBase(
   contractModel: SaleContractModel | unknown,
@@ -25,7 +24,7 @@ export function resolveInstallmentPrincipal(params: {
   totalValue: number;
   downPayment?: number;
   contractModel?: SaleContractModel | unknown;
-  /** Override explícito (GIS split-down-payment). Sem override, usa o motor do modelo. */
+  /** Override explícito. Sem override, usa o motor do modelo (independente do split de sinal). */
   reduceByDownPayment?: boolean;
 }): number {
   const total = Math.max(0, Number(params.totalValue) || 0);
@@ -93,9 +92,7 @@ export function expectedSaleFinanceTotal(params: {
 
   const reduce =
     params.reduceByDownPayment ??
-    (usesSplitDownPaymentFinance(params.contractModel)
-      ? false
-      : downPaymentReducesInstallmentBase(params.contractModel));
+    downPaymentReducesInstallmentBase(params.contractModel);
   if (!reduce) {
     return finalValue + Math.max(0, Number(params.grossDownPayment) || 0);
   }

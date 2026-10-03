@@ -166,10 +166,10 @@ function testSale000000012RealSnapshot() {
     '2,33 é só o acréscimo',
   );
   const base = resolveCommercialInstallmentBaseAmount(SALE_000000012_SNAPSHOT);
-  assert(base === 12.88, `base comercial 12,88, obtido ${base}`);
+  assert(base === 10.88, `base comercial 10,88 (54,38/5), obtido ${base}`);
   const text = resolveCommercialInstallmentScheduleFromSale(SALE_000000012_SNAPSHOT);
   assert(
-    text === '5 parcelas — 1ª à 3ª de R$ 15,21; 4ª à 5ª de R$ 12,88',
+    text === '5 parcelas — 1ª à 3ª de R$ 13,21; 4ª à 5ª de R$ 10,88',
     `snapshot real: ${text}`,
   );
   assert(!text.includes('2,33'), 'contrato não imprime o acréscimo isolado');
@@ -188,7 +188,7 @@ function testSale000000012() {
   assert(!String(values.DOWN_PAYMENT || '').includes('3,00'), 'sinal não é o pago no ato');
   assert(values.FIRST_DUE_DATE === '05/10/2026', 'primeiro vencimento 05/10/2026');
   assert(
-    values.INSTALLMENTS_SCHEDULE === '5 parcelas — 1ª à 3ª de R$ 15,21; 4ª à 5ª de R$ 12,88',
+    values.INSTALLMENTS_SCHEDULE === '5 parcelas — 1ª à 3ª de R$ 13,21; 4ª à 5ª de R$ 10,88',
     `resolver: ${values.INSTALLMENTS_SCHEDULE}`,
   );
   assert(!String(values.INSTALLMENTS_SCHEDULE || '').includes('2,33'), 'não imprime acréscimo 2,33');
@@ -196,8 +196,8 @@ function testSale000000012() {
   assert(!String(values.INSTALLMENTS_SCHEDULE || '').includes('15,22'), 'não imprime 15,22');
   assert(!String(values.INSTALLMENTS_SCHEDULE || '').includes('12,86'), 'não imprime 12,86');
   assert(
-    !String(values.INSTALLMENTS_SCHEDULE || '').includes('5 parcelas de R$ 15,21'),
-    'resolver não imprime 5 parcelas de 15,21',
+    !String(values.INSTALLMENTS_SCHEDULE || '').includes('5 parcelas de R$ 13,21'),
+    'resolver não imprime 5 parcelas de 13,21',
   );
 
   const html = buildLfEstrelaCustomHtml();

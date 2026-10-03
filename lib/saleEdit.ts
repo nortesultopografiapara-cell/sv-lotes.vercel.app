@@ -479,9 +479,8 @@ export async function updateSaleFromEdit(
     const entryAmount = parseCurrencyBRLNumber(data.down_payment);
     const principal = resolveInstallmentPrincipal({
       totalValue: data.final_value,
-      downPayment: entryAmount,
+      downPayment: isRecanto ? signalContractValue ?? entryAmount : entryAmount,
       contractModel,
-      reduceByDownPayment: isRecanto ? false : undefined,
     });
     const balloonValidation = validateSaleBalloonConfiguration({
       plan: balloonPlan,
@@ -508,7 +507,13 @@ export async function updateSaleFromEdit(
   const recantoInstallmentSnapshot = buildRecantoInstallmentSalesSnapshot({
     contractModel,
     mode: data.installment_definition_mode,
-    lotValue: data.final_value,
+    lotValue: resolveInstallmentPrincipal({
+      totalValue: data.final_value,
+      downPayment: isRecanto
+        ? signalContractValue ?? parseCurrencyBRLNumber(data.down_payment)
+        : parseCurrencyBRLNumber(data.down_payment),
+      contractModel,
+    }),
     regularCount: installmentsCount,
     regularAmount: parseCurrencyBRLNumber(
       String(data.regular_installment_amount || ''),

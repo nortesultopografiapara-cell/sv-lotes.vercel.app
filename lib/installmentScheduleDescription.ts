@@ -4,9 +4,10 @@
  * Não lista ajustes de centavos dos finance_receipts.
  *
  * Campos — não confundir:
- * - baseInstallmentValue = sales.regular_installment_amount OU lote/quantidade
- *   (o mesmo "Valor da Parcela" do formulário). NÃO é sales.installment_value
- *   (coluna órfã, não persiste) e NÃO é signal_remaining_installment_value.
+ * - baseInstallmentValue = sales.regular_installment_amount OU saldo financiado/quantidade
+ *   (lote − sinal contratado quando o modelo abate; Recanto usa o lote cheio).
+ *   NÃO é sales.installment_value (coluna órfã, não persiste) e NÃO é
+ *   signal_remaining_installment_value.
  * - splitDownPaymentInstallmentAmount = sales.signal_remaining_installment_value
  *   (acréscimo do restante do sinal, ex.: R$ 2,33).
  * - valor comercial das primeiras = base + acréscimo.
@@ -15,7 +16,10 @@ import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { resolveRecantoLotInstallmentPlan } from '@/lib/recantoFixedInstallmentPlan';
 import { normalizeSignalRemainingPaymentMode } from '@/lib/recantoSignalRemaining';
 import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
-import { computeInstallmentDisplayValue } from '@/lib/saleInstallmentCalc';
+import {
+  computeInstallmentDisplayValue,
+  resolveInstallmentPrincipal,
+} from '@/lib/saleInstallmentCalc';
 
 export type CommercialInstallmentScheduleInput = {
   totalCount?: unknown;
@@ -71,16 +75,24 @@ export function resolveCommercialInstallmentBaseAmount(
   );
   if (totalCount <= 0 || lotValue <= 0) return 0;
 
+  const contractModel = sale.contract_model ?? sale.sale_contract_model;
+  const contractedSignal =
+    Number(sale.signal_contract_value ?? sale.down_payment) || 0;
+  const financedLot = resolveInstallmentPrincipal({
+    totalValue: lotValue,
+    downPayment: contractedSignal,
+    contractModel,
+  });
   const split =
     usesSplitDownPaymentFinance({
-      contractModel: sale.contract_model ?? sale.sale_contract_model,
+      contractModel,
       saleSnapshot: sale,
       projectLfConfig: options?.projectLfConfig,
     }) || Boolean(sale.signal_remaining_payment_mode);
 
   if (split) {
     const plan = resolveRecantoLotInstallmentPlan({
-      lotValue,
+      lotValue: financedLot,
       regularCount: totalCount,
       mode: sale.installment_definition_mode,
       regularAmount: Number(sale.regular_installment_amount) || null,
@@ -92,10 +104,9 @@ export function resolveCommercialInstallmentBaseAmount(
   return money(
     computeInstallmentDisplayValue({
       finalValue: lotValue,
-      downPayment: Number(sale.signal_contract_value ?? sale.down_payment) || 0,
+      downPayment: contractedSignal,
       installmentsCount: totalCount,
-      contractModel: sale.contract_model ?? sale.sale_contract_model,
-      reduceByDownPayment: split ? false : undefined,
+      contractModel,
     }),
   );
 }

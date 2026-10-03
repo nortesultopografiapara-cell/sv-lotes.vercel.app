@@ -4,6 +4,8 @@
  *
  * allow_split_down_payment: sinal contratado + pago no ato + restante
  * diluído nas parcelas (motor homologado do Recanto Primavera).
+ * Independente de downPaymentReducesInstallmentBase: Recanto NÃO abate o lote;
+ * ESTRELA_DO_SUL abate o sinal contratado do saldo financiado.
  *
  * installment_correction_type: índice das parcelas (FIXED / IGPM / IPCA / INCC).
  * Independente do split de sinal/entrada. Recanto continua forçando FIXED.

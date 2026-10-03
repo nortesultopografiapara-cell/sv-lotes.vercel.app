@@ -544,9 +544,10 @@ export async function executeGisSaleCreate(
     const entryForPrincipal = parseCurrencyBRLNumber(customerData.down_payment);
     const principal = resolveInstallmentPrincipal({
       totalValue: customerData.final_value || finalPrice,
-      downPayment: entryForPrincipal,
+      downPayment: splitDownPayment
+        ? recantoSignalContract ?? entryForPrincipal
+        : entryForPrincipal,
       contractModel: saleContractModel,
-      reduceByDownPayment: splitDownPayment ? false : undefined,
     });
     const balloonValidation = validateSaleBalloonConfiguration({
       plan: balloonPlan,
@@ -573,7 +574,12 @@ export async function executeGisSaleCreate(
   const recantoInstallmentSnapshot = buildRecantoInstallmentSalesSnapshot({
     contractModel: saleContractModel,
     mode: customerData.installment_definition_mode,
-    lotValue: customerData.final_value || finalPrice,
+    lotValue: resolveInstallmentPrincipal({
+      totalValue: customerData.final_value || finalPrice,
+      downPayment:
+        recantoSignalContract ?? parseCurrencyBRLNumber(customerData.down_payment),
+      contractModel: saleContractModel,
+    }),
     regularCount: instCount,
     regularAmount: parseCurrencyBRLNumber(
       String(customerData.regular_installment_amount || ''),

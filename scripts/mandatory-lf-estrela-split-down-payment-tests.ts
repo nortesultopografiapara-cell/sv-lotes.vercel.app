@@ -9,11 +9,16 @@ import type { LotFormConfirmPayload } from '../components/map/CustomerLotFormMod
 import {
   formatInstallmentCorrectionLabel,
 } from '../lib/installmentCorrectionType';
-import { buildSaleEditFinancePayloads } from '../lib/saleEditFinanceRecalc';
+import {
+  buildSaleEditFinancePayloads,
+  planPartialFinanceRecalc,
+} from '../lib/saleEditFinanceRecalc';
 import { resolveCustomPreviewValues } from '../lib/customContractPreviewResolver';
+import { resolveCommercialInstallmentScheduleFromSale } from '../lib/installmentScheduleDescription';
 import {
   downPaymentReducesInstallmentBase,
   expectedSaleFinanceTotal,
+  resolveInstallmentPrincipal,
   splitInstallmentAmounts,
 } from '../lib/saleInstallmentCalc';
 import {
@@ -178,8 +183,17 @@ function runSplitCase(
   const monthly = monthlyRows(payloads);
   assert(monthly.length === INSTALLMENTS, `${model}: ${INSTALLMENTS} parcelas`);
 
-  const bases = splitInstallmentAmounts(LOT, INSTALLMENTS);
-  const addonCount = remainingCount === 'ALL' ? INSTALLMENTS : remainingCount;
+  const lotPrincipal = resolveInstallmentPrincipal({
+    totalValue: LOT,
+    downPayment: SIGNAL,
+    contractModel: model,
+  });
+  const reduces = downPaymentReducesInstallmentBase(model);
+  assert(
+    Math.abs(lotPrincipal - (reduces ? LOT - SIGNAL : LOT)) < 0.001,
+    `${model}: saldo financiado ${reduces ? 'abate' : 'não abate'} sinal contratado`,
+  );
+  const bases = splitInstallmentAmounts(lotPrincipal, INSTALLMENTS);
   const composed = applySignalAddonToInstallmentAmounts(
     bases,
     resolveRecantoSignalPlan({
@@ -204,17 +218,25 @@ function runSplitCase(
     );
     assert(
       Math.abs(Number(monthly[i].base_amount) - bases[i]) < 0.01,
-      `${model}: base parcela ${i + 1} não abate sinal`,
+      `${model}: base parcela ${i + 1} ${reduces ? 'abate sinal contratado' : 'não abate sinal'}`,
     );
   }
 
   const firstBase = bases[0];
   if (remainingCount === 5) {
-    assert(Math.abs(firstBase - 590.77) < 0.01, 'base ~590,77 em 120x');
-    assert(
-      Math.abs(Number(monthly[0].amount) - 1090.77) < 0.01,
-      '1–5: 590,77 + 500',
-    );
+    if (model === 'RECANTO_PRIMAVERA') {
+      assert(Math.abs(firstBase - 590.77) < 0.01, 'Recanto base ~590,77 em 120x');
+      assert(
+        Math.abs(Number(monthly[0].amount) - 1090.77) < 0.01,
+        'Recanto 1–5: 590,77 + 500',
+      );
+    } else {
+      assert(Math.abs(firstBase - 561.6) < 0.01, 'Estrela base ~561,60 em 120x (lote−sinal)');
+      assert(
+        Math.abs(Number(monthly[0].amount) - 1061.6) < 0.01,
+        'Estrela 1–5: 561,60 + 500',
+      );
+    }
     assert(Number(monthly[5].signal_addon_amount || 0) === 0, 'parcela 6 sem addon');
   }
   if (remainingCount === 4) {
@@ -280,6 +302,13 @@ function testFullyPaidHidesRemaining() {
     monthly.every((p) => Number(p.signal_addon_amount || 0) === 0),
     'LF pago integral: sem addon',
   );
+  const financed = splitInstallmentAmounts(LOT - SIGNAL, INSTALLMENTS);
+  assert(
+    Math.abs(Number(monthly[0].amount) - financed[0]) < 0.01,
+    'LF pago integral: parcela-base = (lote − sinal)/N',
+  );
+  const allSum = payloads.reduce((s, p) => s + Number(p.amount || 0), 0);
+  assert(Math.abs(allSum - LOT) < 0.05, 'LF pago integral: receipts = valor do lote');
   console.log('OK testFullyPaidHidesRemaining');
 }
 
@@ -306,11 +335,18 @@ function testZeroPaidAtSale() {
   );
   const signal = payloads.find((p) => Number(p.installment_number) === 0);
   assert(!signal || Number(signal.amount) === 0, 'sem linha de ato ou 0');
-  const addonSum = monthlyRows(payloads).reduce(
+  const monthly = monthlyRows(payloads);
+  const addonSum = monthly.reduce(
     (s, p) => s + Number(p.signal_addon_amount || 0),
     0,
   );
   assert(Math.abs(addonSum - SIGNAL) < 0.02, '3500 diluídos nas 5 primeiras');
+  assert(
+    Math.abs(Number(monthly[0].base_amount) - splitInstallmentAmounts(LOT - SIGNAL, INSTALLMENTS)[0]) <
+      0.01,
+    'zero no ato: base ainda abate o sinal contratado',
+  );
+  assert(Number(monthly[5].signal_addon_amount || 0) === 0, 'somente o restante nas 5 primeiras');
   console.log('OK testZeroPaidAtSale');
 }
 
@@ -413,11 +449,14 @@ function testPersistSnapshot() {
 }
 
 function testLfEstrelaDownPaymentToken() {
+  const estrelaBases = splitInstallmentAmounts(LOT - SIGNAL, INSTALLMENTS);
+  const firstAmount = Math.round((estrelaBases[0] + 500) * 100) / 100;
   const values = resolveCustomPreviewValues({
     tenantId: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
     company: { razao_social: 'L.F. IMÓVEIS LTDA' },
     sale: {
       company_id: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+      contract_model: 'ESTRELA_DO_SUL',
       total_value: LOT,
       down_payment: SIGNAL,
       signal_contract_value: SIGNAL,
@@ -425,13 +464,14 @@ function testLfEstrelaDownPaymentToken() {
       signal_remaining_value: REMAINING,
       signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
       signal_remaining_installments: 5,
+      signal_remaining_installment_value: 500,
       installments_count: INSTALLMENTS,
       first_installment_due_date: '2026-08-01',
     },
     receipts: [
       { installment_number: 0, amount: PAID, due_date: '2026-07-01' },
-      { installment_number: 1, amount: 1090.77, due_date: '2026-08-01' },
-      { installment_number: 6, amount: 590.77, due_date: '2027-01-01' },
+      { installment_number: 1, amount: firstAmount, due_date: '2026-08-01' },
+      { installment_number: 6, amount: estrelaBases[5], due_date: '2027-01-01' },
     ],
   });
   assert(
@@ -443,8 +483,8 @@ function testLfEstrelaDownPaymentToken() {
     'DOWN_PAYMENT não usa só o pago no ato',
   );
   assert(
-    String(values.INSTALLMENT_VALUE || '').includes('1.090,77'),
-    'INSTALLMENT_VALUE vem da 1ª parcela gerada',
+    String(values.INSTALLMENT_VALUE || '').includes('1.061,60'),
+    `INSTALLMENT_VALUE vem da 1ª parcela gerada, got ${values.INSTALLMENT_VALUE}`,
   );
   assert(values.FIRST_DUE_DATE === '01/08/2026', 'FIRST_DUE_DATE da 1ª parcela');
   console.log('OK testLfEstrelaDownPaymentToken');
@@ -511,6 +551,22 @@ function testSourceWiring() {
   assert(
     recalc.includes('usesSplitDownPaymentFinance(options?.contractModel)'),
     'parcelas usam o mesmo motor Recanto',
+  );
+  assert(
+    !recalc.includes('reduceByDownPayment: isRecanto ? false'),
+    'recalc não força lote cheio em todo split',
+  );
+  assert(
+    !modal.includes('reduceByDownPayment: isRecantoSinal ? false'),
+    'form não força lote cheio em todo split',
+  );
+  assert(
+    !create.includes('reduceByDownPayment: splitDownPayment ? false'),
+    'create não força lote cheio em todo split',
+  );
+  assert(
+    !edit.includes('reduceByDownPayment: isRecanto ? false'),
+    'edit não força lote cheio em todo split',
   );
   assert(
     !modal.includes("isRecantoSinal = !downPaymentReducesInstallmentBase"),
@@ -724,6 +780,208 @@ function testCorrectionIndexIndependentOfSplit() {
   console.log('OK testCorrectionIndexIndependentOfSplit');
 }
 
+function estrela38500Form(overrides?: Partial<LotFormConfirmPayload>): LotFormConfirmPayload {
+  return {
+    ...baseForm(),
+    lot_value: 38500,
+    final_value: 38500,
+    installments_count: '100',
+    signal_contract_value: '3500',
+    down_payment: '3500',
+    signal_paid_at_sale: '1000',
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
+    signal_remaining_installments: '5',
+    installment_correction_type: 'IGPM',
+    ...overrides,
+  } as LotFormConfirmPayload;
+}
+
+function testEstrelaProduction38500Case() {
+  const form = estrela38500Form();
+  const payloads = buildSaleEditFinancePayloads(
+    'tenant-estrela',
+    'sale-estrela-38500',
+    'cust-estrela',
+    null,
+    lot,
+    form,
+    { contractModel: 'ESTRELA_DO_SUL' },
+  );
+
+  const signal = payloads.find((p) => Number(p.installment_number) === 0);
+  assert(Number(signal?.amount) === 1000, 'pago no ato R$ 1.000');
+  assert(signal?.status === 'pago', 'pago no ato marcado pago');
+
+  const monthly = monthlyRows(payloads);
+  assert(monthly.length === 100, '100 parcelas');
+  for (let i = 0; i < 5; i++) {
+    assert(Number(monthly[i].base_amount) === 350, `base ${i + 1} = 350`);
+    assert(Number(monthly[i].signal_addon_amount) === 500, `addon ${i + 1} = 500`);
+    assert(Number(monthly[i].amount) === 850, `1ª–5ª = 850, got ${monthly[i].amount}`);
+  }
+  for (let i = 5; i < 100; i++) {
+    assert(Number(monthly[i].amount) === 350, `6ª–100ª = 350, parcela ${i + 1}`);
+    assert(Number(monthly[i].signal_addon_amount || 0) === 0, `parcela ${i + 1} sem addon`);
+  }
+
+  const firstFive = 5 * 850;
+  const rest = 95 * 350;
+  const paidAtSale = 1000;
+  assert(firstFive === 4250, '5 × 850 = 4.250');
+  assert(rest === 33250, '95 × 350 = 33.250');
+  const allSum = payloads.reduce((s, p) => s + Number(p.amount || 0), 0);
+  assert(allSum === 38500, `receipts + ato = 38.500, got ${allSum}`);
+  assert(firstFive + rest + paidAtSale === 38500, '5×850 + 95×350 + 1.000 = 38.500');
+
+  const expected = expectedSaleFinanceTotal({
+    finalValue: 38500,
+    grossDownPayment: 3500,
+    contractModel: 'ESTRELA_DO_SUL',
+    paymentType: 'Parcelado',
+  });
+  assert(expected === 38500, 'total econômico Estrela = valor do lote (sem dupla cobrança)');
+  assert(Math.abs(allSum - expected) < 0.001, 'finance_receipts fecha o valor da venda');
+
+  const recantoExpected = expectedSaleFinanceTotal({
+    finalValue: 38500,
+    grossDownPayment: 3500,
+    contractModel: 'RECANTO_PRIMAVERA',
+    paymentType: 'Parcelado',
+  });
+  assert(recantoExpected === 42000, 'Recanto continua lote + sinal contratado');
+
+  const saleSnapshot = {
+    company_id: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+    contract_model: 'ESTRELA_DO_SUL',
+    total_value: 38500,
+    agreed_price: 38500,
+    down_payment: 3500,
+    signal_contract_value: 3500,
+    signal_paid_at_sale: 1000,
+    signal_remaining_value: 2500,
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
+    signal_remaining_installments: 5,
+    signal_remaining_installment_value: 500,
+    installments_count: 100,
+    installment_definition_mode: 'BY_COUNT',
+    installment_correction_type: 'IGPM',
+  };
+  const schedule = resolveCommercialInstallmentScheduleFromSale(saleSnapshot);
+  assert(
+    schedule === '100 parcelas — 1ª à 5ª de R$ 850,00; 6ª à 100ª de R$ 350,00',
+    `PARCELAS E VALORES: ${schedule}`,
+  );
+
+  const preview = resolveCustomPreviewValues({
+    tenantId: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+    company: { razao_social: 'L.F. IMÓVEIS LTDA' },
+    sale: saleSnapshot,
+    receipts: payloads.map((p) => ({
+      installment_number: p.installment_number,
+      amount: p.amount,
+      due_date: p.due_date,
+    })),
+  });
+  assert(String(preview.DOWN_PAYMENT || '').includes('3.500'), 'contrato: Sinal/Entrada R$ 3.500');
+  assert(
+    preview.INSTALLMENTS_SCHEDULE ===
+      '100 parcelas — 1ª à 5ª de R$ 850,00; 6ª à 100ª de R$ 350,00',
+    `contrato cronograma: ${preview.INSTALLMENTS_SCHEDULE}`,
+  );
+  assert(preview.CORRECTION_INDEX === 'IGP-M' || String(preview.CORRECTION_INDEX || '').includes('IGP-M'),
+    `índice permanece IGP-M, got ${preview.CORRECTION_INDEX}`,
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'ESTRELA_DO_SUL',
+      selected: 'IGPM',
+    }) === 'IGPM',
+    'persistência da venda permanece IGP-M',
+  );
+
+  const recantoSameNumbers = buildSaleEditFinancePayloads(
+    'tenant-recanto',
+    'sale-recanto-38500',
+    'cust-recanto',
+    null,
+    lot,
+    form,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const recantoMonthly = monthlyRows(recantoSameNumbers);
+  assert(Number(recantoMonthly[0].amount) === 885, 'Recanto neste cenário continua 385+500=885');
+  assert(Number(recantoMonthly[5].amount) === 385, 'Recanto demais = 385');
+  const recantoSum = recantoSameNumbers.reduce((s, p) => s + Number(p.amount || 0), 0);
+  assert(recantoSum === 42000, 'Recanto: parcelas + ato = lote + sinal (sem regressão)');
+
+  console.log('OK testEstrelaProduction38500Case');
+}
+
+function testEstrelaEditRecalcAndPartialRemaining() {
+  const created = buildSaleEditFinancePayloads(
+    't',
+    'sale-edit',
+    'c',
+    null,
+    lot,
+    estrela38500Form(),
+    { contractModel: 'ESTRELA_DO_SUL' },
+  );
+  const editedSame = buildSaleEditFinancePayloads(
+    't',
+    'sale-edit',
+    'c',
+    null,
+    lot,
+    estrela38500Form(),
+    { contractModel: 'ESTRELA_DO_SUL' },
+  );
+  assert(
+    JSON.stringify(monthlyRows(created).map((p) => [p.amount, p.base_amount, p.signal_addon_amount])) ===
+      JSON.stringify(
+        monthlyRows(editedSame).map((p) => [p.amount, p.base_amount, p.signal_addon_amount]),
+      ),
+    'edit com os mesmos dados regenera 850/350',
+  );
+
+  const editedFour = buildSaleEditFinancePayloads(
+    't',
+    'sale-edit',
+    'c',
+    null,
+    lot,
+    estrela38500Form({ signal_remaining_installments: '4' }),
+    { contractModel: 'ESTRELA_DO_SUL' },
+  );
+  const fourMonthly = monthlyRows(editedFour);
+  assert(Number(fourMonthly[0].amount) === 975, 'edit 4 primeiras: 350 + 625');
+  assert(Number(fourMonthly[3].amount) === 975, '4ª = 975');
+  assert(Number(fourMonthly[4].amount) === 350, '5ª volta à parcela-base');
+  const fourSum = editedFour.reduce((s, p) => s + Number(p.amount || 0), 0);
+  assert(fourSum === 38500, 'edit com 4 primeiras ainda fecha 38.500');
+
+  const plan = planPartialFinanceRecalc(
+    created.map((p, idx) => ({
+      id: `r-${idx}`,
+      installment_number: p.installment_number,
+      amount: p.amount,
+      status: p.status,
+      paid_at: p.paid_at ? String(p.paid_at) : null,
+      due_date: p.due_date,
+    })),
+    editedSame,
+    38500,
+    {
+      contractModel: 'ESTRELA_DO_SUL',
+      grossDownPayment: 3500,
+      paymentType: 'Parcelado',
+    },
+  );
+  assert(plan.totalDiff < 0.05, `recálculo parcial fecha, diff=${plan.totalDiff}`);
+
+  console.log('OK testEstrelaEditRecalcAndPartialRemaining');
+}
+
 function main() {
   testCapabilityCatalogAndOverride();
   testPlan3500Minus1000();
@@ -737,6 +995,8 @@ function main() {
   testPadraoUnchanged();
   testSourceWiring();
   testCorrectionIndexIndependentOfSplit();
+  testEstrelaProduction38500Case();
+  testEstrelaEditRecalcAndPartialRemaining();
   console.log('OK — mandatory-lf-estrela-split-down-payment-tests passed');
 }
 

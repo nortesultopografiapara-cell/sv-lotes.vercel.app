@@ -635,14 +635,13 @@ export function CustomerLotFormModal({
           totalValue: finalValue,
           downPayment: isRecantoSinal ? signalContractValue : downPayment,
           contractModel,
-          reduceByDownPayment: isRecantoSinal ? false : undefined,
         })
       : 0;
 
   const recantoLotPlan =
     isRecantoSinal && installmentsCount > 0
       ? resolveRecantoLotInstallmentPlan({
-          lotValue: finalValue,
+          lotValue: installmentPrincipal,
           regularCount: installmentsCount,
           mode: installmentDefinitionMode,
           regularAmount:
@@ -674,7 +673,6 @@ export function CustomerLotFormModal({
               downPayment: isRecantoSinal ? signalContractValue : downPayment,
               installmentsCount,
               contractModel,
-              reduceByDownPayment: isRecantoSinal ? false : undefined,
             })
       : 0;
   const lotBaseAmountsForPreview =
@@ -764,12 +762,15 @@ export function CustomerLotFormModal({
                 downPayment: effectiveDownPayment,
                 installmentsCount: installmentsResult.value,
                 contractModel,
-                reduceByDownPayment: isRecantoSinal ? false : undefined,
               });
 
         if (isRecantoSinal) {
           const lotValidation = validateRecantoLotInstallmentPlan({
-            lotValue: finalValue,
+            lotValue: resolveInstallmentPrincipal({
+              totalValue: finalValue,
+              downPayment: effectiveDownPayment,
+              contractModel,
+            }),
             regularCount: installmentsResult.value,
             mode: formData.installment_definition_mode,
             regularAmount: parseCurrencyBRLNumber(
@@ -825,7 +826,6 @@ export function CustomerLotFormModal({
               totalValue: finalValue,
               downPayment: effectiveDownPayment,
               contractModel,
-              reduceByDownPayment: isRecantoSinal ? false : undefined,
             }),
             finalValue,
             entryAmount: isRecantoSinal ? 0 : downPayment,
