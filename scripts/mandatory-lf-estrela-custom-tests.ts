@@ -616,7 +616,7 @@ const regen = read('lib/contractRegeneration.ts');
 assert(regen.includes('tryBuildLfEstrelaCustomSaleHtml'), 'regeneração GIS tenta LF ESTRELA CUSTOM antes do motor');
 assert(read('lib/lfEstrelaSaleContract.ts').includes('gisChrome: true'), 'emissão GIS aplica print GIS');
 assert(read('lib/lfEstrelaSaleContract.ts').includes('buildLfEstrelaCustomHtml()'), 'GIS usa HTML oficial TypeScript (diagramação 10 páginas)');
-assert(read('app/contracts/page.tsx').includes('htmlLooksLfEstrela'), 'PDF Contratos detecta LF ESTRELA');
+assert(read('app/contracts/page.tsx').includes('isLfEstrelaCustomHtml'), 'PDF Contratos detecta LF ESTRELA');
 assert(read('lib/contractPdfPostProcess.ts').includes('getLfEstrelaCustomHtml2pdfOptions'), 'html2pdf LF usa 15mm e quebra CSS');
 assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-keep-with-next'), 'html2pdf evita cortar título+primeiro parágrafo');
 assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-keep-para'), 'html2pdf evita cortar o parágrafo 2.9.1');

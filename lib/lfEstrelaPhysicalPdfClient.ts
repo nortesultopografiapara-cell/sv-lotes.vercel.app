@@ -17,6 +17,7 @@ import {
 } from '@/lib/contractPaginationEngine';
 import { resolveContractHtml2pdfOptions } from '@/lib/contractPdfPostProcess';
 import { isLfEstrelaCustomHtml } from '@/lib/lfEstrelaPrintCss';
+import { applyLfEstrelaPhysicalChrome } from '@/lib/lfEstrelaPhysicalChrome';
 
 const LF_ESTRELA_PHYSICAL_PAGES = 10;
 
@@ -57,6 +58,7 @@ async function sha256HexFromBlob(blob: Blob): Promise<string> {
 export async function generateLfEstrelaPhysicalPdfBlob(input: {
   html: string;
   filename: string;
+  contractNumber?: string | null;
   tenant?: Record<string, unknown> | null;
 }): Promise<LfEstrelaPhysicalPdfBlob> {
   const html = String(input.html || '');
@@ -72,6 +74,7 @@ export async function generateLfEstrelaPhysicalPdfBlob(input: {
   const opt = resolveContractHtml2pdfOptions(input.tenant || {}, filename, html);
   try {
     const pdf = await html2pdf().from(element).set(opt).toPdf().get('pdf');
+    applyLfEstrelaPhysicalChrome(pdf, { contractNumber: input.contractNumber });
     const blob = pdf.output('blob') as Blob;
     const pageCount = jsPdfPageCount(pdf);
     return { blob, pageCount, filename };
@@ -247,12 +250,14 @@ export async function ensureLfEstrelaPhysicalFrozenForSignature(input: {
   contractId: string;
   html: string;
   filename: string;
+  contractNumber?: string | null;
   tenant?: Record<string, unknown> | null;
 }): Promise<LfEstrelaPhysicalFreezeTrace> {
   try {
     const generated = await generateLfEstrelaPhysicalPdfBlob({
       html: input.html,
       filename: input.filename,
+      contractNumber: input.contractNumber,
       tenant: input.tenant,
     });
     return await freezeLfEstrelaPhysicalPdfBlob(

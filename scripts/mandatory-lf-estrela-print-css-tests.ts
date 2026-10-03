@@ -149,6 +149,7 @@ function testWiring() {
   const pagination = read('lib/contractPaginationEngine.ts');
   const pdf = read('lib/contractPdfPostProcess.ts');
   const wrap = read('lib/saleContractPdf.ts');
+  const client = read('lib/lfEstrelaPhysicalPdfClient.ts');
   assert(sale.includes('gisChrome: true'), 'venda GIS passa gisChrome');
   assert(emission.includes('prepareLfEstrelaGisFinalHtml'), 'compose GIS prepara print');
   assert(page.includes('prepareLfEstrelaGisFinalHtml'), 'imprimir/PDF Contratos prepara LF');
@@ -165,7 +166,9 @@ function testWiring() {
   assert(wrapped.includes('color: #000'), 'documento Chromium preto');
   const wrappedBody = wrapped.replace(/<style[\s\S]*?<\/style>/gi, '');
   assert(wrappedBody.includes('sv-company-logo'), 'wrap GIS mantém logo central');
-  assert(page.includes('if (htmlLooksLfEstrela)'), 'PDF Contratos não aplica chrome GIS no LF');
+  assert(page.includes('generateLfEstrelaPhysicalPdfBlob') || page.includes('isLfEstrelaCustomHtml'), 'PDF Contratos detecta LF ESTRELA');
+  assert(client.includes('applyLfEstrelaPhysicalChrome'), 'PDF físico LF aplica chrome mínimo');
+  assert(!client.includes('applyContractPdfChrome'), 'PDF Contratos não aplica chrome GIS no LF');
   assert(pdf.includes('getLfEstrelaCustomHtml2pdfOptions'), 'opções html2pdf LF 15mm');
   assert(
     wrap.includes('displayHeaderFooter: showChrome') && wrap.includes('skipMeasure'),

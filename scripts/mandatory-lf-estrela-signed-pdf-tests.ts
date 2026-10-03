@@ -34,6 +34,13 @@ import {
   resolveLfEstrelaOverlayStamps,
   sha256Hex,
 } from '../lib/lfEstrelaSignedPdf';
+import {
+  applyLfEstrelaPhysicalChrome,
+  lfEstrelaPhysicalFooterLabel,
+  lfEstrelaPhysicalHeaderLabel,
+  LF_ESTRELA_PHYSICAL_CHROME_LAYOUT,
+  LF_ESTRELA_PHYSICAL_INSTRUMENT_PAGES,
+} from '../lib/lfEstrelaPhysicalChrome';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -165,6 +172,35 @@ function testSourceGuards() {
     !client.includes('buildSaleContractPdfFromHtml'),
     'gerador único NÃO usa Chromium',
   );
+  assert(
+    client.includes('applyLfEstrelaPhysicalChrome'),
+    'PDF físico aplica chrome mínimo (número + página)',
+  );
+  assert(
+    client.includes('contractNumber: input.contractNumber'),
+    'chrome usa o número real do contrato',
+  );
+  assert(
+    !client.includes('applyContractPdfChrome'),
+    'LF não usa o chrome GIS completo (logo/CNPJ/endereço)',
+  );
+  assert(!client.includes('addImage'), 'chrome LF não duplica logo');
+  assert(
+    !signed.includes('applyLfEstrelaPhysicalChrome'),
+    'PDF assinado não reaplica cabeçalho/rodapé',
+  );
+  const chromeSrc = read('lib/lfEstrelaPhysicalChrome.ts');
+  assert(chromeSrc.includes('Contrato nº'), 'cabeçalho Contrato nº');
+  assert(chromeSrc.includes('Página ${page} de ${LF_ESTRELA_PHYSICAL_INSTRUMENT_PAGES}'), 'rodapé Página X de 10');
+  assert(!chromeSrc.includes('Documento emitido digitalmente'), 'sem frase GIS no rodapé LF');
+  assert(!chromeSrc.includes('tenantCnpj'), 'chrome LF sem CNPJ');
+  assert(!chromeSrc.includes('addImage'), 'chrome LF sem logo');
+  assert(chromeSrc.includes('headerYMm: 8'), 'cabeçalho na margem superior');
+  assert(chromeSrc.includes('footerFromBottomMm: 8'), 'rodapé na margem inferior');
+  assert(
+    chromeSrc.includes('Math.min(totalPages, LF_ESTRELA_PHYSICAL_INSTRUMENT_PAGES)'),
+    'não numera certificado como página 11 de 10',
+  );
   assert(page.includes('generateLfEstrelaPhysicalPdfBlob'), 'Baixar PDF usa o gerador único');
   assert(
     page.includes('ensureLfEstrelaPhysicalFrozenForSignature'),
@@ -193,6 +229,10 @@ function testSourceGuards() {
     'Baixar PDF LF usa generateLfEstrelaPhysicalPdfBlob',
   );
   assert(
+    physicalSlice.includes('contractNumber: selectedContract.contract_number'),
+    'Baixar PDF passa o número real ao chrome',
+  );
+  assert(
     physicalSlice.includes('downloadPdfBlob'),
     'Baixar PDF continua baixando o arquivo local',
   );
@@ -203,6 +243,10 @@ function testSourceGuards() {
   assert(
     sendFreezeSlice.includes('ensureLfEstrelaPhysicalFrozenForSignature'),
     'Enviar para assinatura gera e congela o Blob',
+  );
+  assert(
+    sendFreezeSlice.includes('contractNumber: selectedContract.contract_number'),
+    'Enviar para assinatura passa o número real ao chrome',
   );
   assert(
     !sendFreezeSlice.includes('downloadPdfBlob'),
@@ -768,8 +812,70 @@ function testGenerationErrorIsNotSignature404() {
   );
 }
 
+function testPhysicalChromeOverlay() {
+  assert(
+    lfEstrelaPhysicalHeaderLabel('000000014/2026') === 'Contrato nº 000000014/2026',
+    'cabeçalho usa o número real',
+  );
+  assert(
+    lfEstrelaPhysicalFooterLabel(1) === 'Página 1 de 10',
+    'rodapé P1 de 10',
+  );
+  assert(
+    lfEstrelaPhysicalFooterLabel(10) === 'Página 10 de 10',
+    'rodapé P10 de 10',
+  );
+  assert(
+    LF_ESTRELA_PHYSICAL_INSTRUMENT_PAGES === 10 &&
+      LF_ESTRELA_PHYSICAL_CHROME_LAYOUT.headerXMm === 195 &&
+      LF_ESTRELA_PHYSICAL_CHROME_LAYOUT.headerYMm === 8 &&
+      LF_ESTRELA_PHYSICAL_CHROME_LAYOUT.footerXMm === 105 &&
+      LF_ESTRELA_PHYSICAL_CHROME_LAYOUT.footerYMm === 289,
+    'coordenadas A4 do chrome (mm)',
+  );
+
+  const texts: Array<{ page: number; text: string; x: number; y: number }> = [];
+  let current = 1;
+  const pdf = {
+    internal: {
+      getNumberOfPages: () => 11,
+      pageSize: { width: 210, height: 297 },
+    },
+    setPage(n: number) {
+      current = n;
+    },
+    setFontSize() {},
+    setTextColor() {},
+    setFont() {},
+    text(text: string | string[], x: number, y: number) {
+      texts.push({ page: current, text: String(text), x, y });
+    },
+  };
+  applyLfEstrelaPhysicalChrome(pdf, { contractNumber: '000000014/2026' });
+  const pages = new Set(texts.map((t) => t.page));
+  assert(pages.size === 10, 'chrome só nas 10 páginas do instrumento');
+  assert(!pages.has(11), 'certificado (p11) sem numeração do instrumento');
+  assert(
+    texts.filter((t) => t.text === 'Contrato nº 000000014/2026').length === 10,
+    'cabeçalho em P1–P10',
+  );
+  assert(
+    texts.some((t) => t.page === 1 && t.text === 'Página 1 de 10' && t.y === 289),
+    'P1 rodapé Y=289mm',
+  );
+  assert(
+    texts.some((t) => t.page === 10 && t.text === 'Página 10 de 10'),
+    'P10 rodapé Página 10 de 10',
+  );
+  assert(
+    texts.every((t) => t.text !== 'Página 11 de 10' && t.text !== 'Página 11 de 11'),
+    'nunca Página 11 de 10/11',
+  );
+}
+
 async function main() {
   testSourceGuards();
+  testPhysicalChromeOverlay();
   testPartialStamps();
   testSignedPdfFindsPartiesWithoutLegacyField();
   testNeverUseSignatureProcessIdAsContractId();

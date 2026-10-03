@@ -1087,6 +1087,7 @@ export default function ContractsPage() {
         const generated = await generateLfEstrelaPhysicalPdfBlob({
           html: ver.generated_html,
           filename: pdfFilename,
+          contractNumber: ver.contract_number,
           tenant: tenantData || {},
         });
         downloadPdfBlob(generated.blob, generated.filename);
@@ -1249,6 +1250,7 @@ export default function ContractsPage() {
         const generated = await generateLfEstrelaPhysicalPdfBlob({
           html: htmlBody,
           filename: pdfFilename,
+          contractNumber: selectedContract.contract_number,
           tenant: tenantData || {},
         });
         downloadPdfBlob(generated.blob, generated.filename);
@@ -1376,6 +1378,7 @@ export default function ContractsPage() {
       contractId: selectedContract.id,
       html: htmlBody,
       filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
+      contractNumber: selectedContract.contract_number,
       tenant: tenantData || {},
     });
   };
