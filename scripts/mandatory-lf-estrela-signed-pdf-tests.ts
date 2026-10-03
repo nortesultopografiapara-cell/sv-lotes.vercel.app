@@ -6,7 +6,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import type { ContractSignaturePartyRow } from '../lib/saleContractSignaturePartyTypes';
 import {
   hydrateSignatureRowForSignedPdf,
@@ -18,22 +18,25 @@ import {
   parseLfEstrelaPhysicalBaseDescription,
   assertLfEstrelaHomologatedPageCount,
   lfEstrelaInvalidPhysicalBaseMessage,
+  composeLfEstrelaSignedPdf,
+  decideLfEstrelaPhysicalFreezeReuse,
+  lfEstrelaPhysicalBaseIsObsoleteForHtml,
+  lfEstrelaSignatureBindsPhysicalBase,
+  LF_ESTRELA_SIGNED_INSTRUMENT_PAGES,
+  LF_ESTRELA_STAMP_LAYOUT,
+  LF_ESTRELA_STAMP_PAGE_NUMBERS,
+  pdfBytesContainText,
+  resolveLfEstrelaOverlayStamps,
+  sha256Hex,
 } from '../lib/lfEstrelaSignedPdf';
 import {
   classifySignedPdfGenerationError,
 } from '../lib/deployGitSha';
 import {
+  buildLegacyPhysicalSaleContractStoragePath,
   buildPhysicalSaleContractStoragePath,
   getSaleContractBucket,
 } from '../lib/saleContractStorage';
-import {
-  composeLfEstrelaSignedPdf,
-  LF_ESTRELA_SIGNED_INSTRUMENT_PAGES,
-  LF_ESTRELA_STAMP_LAYOUT,
-  LF_ESTRELA_STAMP_PAGE_NUMBERS,
-  resolveLfEstrelaOverlayStamps,
-  sha256Hex,
-} from '../lib/lfEstrelaSignedPdf';
 import {
   applyLfEstrelaPhysicalChrome,
   lfEstrelaPhysicalFooterLabel,
@@ -368,6 +371,36 @@ function testSourceGuards() {
   assert(
     signed.includes('não pode ser substituído'),
     'physical base não é sobrescrito após o processo iniciar',
+  );
+  assert(
+    signed.includes('decideLfEstrelaPhysicalFreezeReuse'),
+    'freeze decide se a base anterior é reusável',
+  );
+  assert(
+    signed.includes('obsolete_unbound_legacy'),
+    'legacy sale-physical sem processo vinculante é obsoleto',
+  );
+  assert(
+    signed.includes('clientSha256'),
+    'prepare compara SHA-256 do blob atual com a base congelada',
+  );
+  assert(
+    /buildPhysicalSaleContractStoragePath\(\s*input\.tenantId,\s*input\.contractNumber,\s*input\.contractId/.test(
+      signed,
+    ),
+    'novo freeze grava path versionado por contract_id',
+  );
+  assert(
+    route.includes('clientSha256: body.sha256'),
+    'API envia SHA-256 do blob ao prepare',
+  );
+  assert(
+    route.includes('generated_html'),
+    'prepare/confirm recebem o HTML atual do contrato',
+  );
+  assert(
+    signed.includes('sha256: physical.sha256'),
+    'overlay registra SHA-256 da base física',
   );
   assert(
     loadSlice.includes('buildLfEstrelaSignedSaleContractPdf'),
@@ -747,13 +780,23 @@ function testNeverUseSignatureProcessIdAsContractId() {
 function testPhysicalBaseUsesCompanyAssetsSalePhysical() {
   const tenantId = '3052a000-e8b9-43a4-b8ab-91a4392ffcbc';
   const contractNumber = '000000012/2026';
-  const storagePath = buildPhysicalSaleContractStoragePath(tenantId, contractNumber);
+  const contractId = '9345eea4-2512-49f0-bbd8-944230161154';
+  const legacyPath = buildLegacyPhysicalSaleContractStoragePath(tenantId, contractNumber);
+  const versionedPath = buildPhysicalSaleContractStoragePath(
+    tenantId,
+    contractNumber,
+    contractId,
+  );
   assert(getSaleContractBucket() === 'company-assets', 'bucket padrão company-assets');
   assert(
-    storagePath === `contracts/sale-physical/${tenantId}/000000012_2026.pdf`,
-    'path físico sale-physical por tenant/numero',
+    legacyPath === `contracts/sale-physical/${tenantId}/000000012_2026.pdf`,
+    'path legado sale-physical por tenant/numero',
   );
-  const contractId = '9345eea4-2512-49f0-bbd8-944230161154';
+  assert(
+    versionedPath ===
+      `contracts/sale-physical/${tenantId}/000000012_2026/${contractId}.pdf`,
+    'path físico versionado por tenant/numero/contract_id',
+  );
   const sha = 'a'.repeat(64);
   const desc = buildLfEstrelaPhysicalBaseDescription({
     contractId,
@@ -873,6 +916,132 @@ function testPhysicalChromeOverlay() {
   );
 }
 
+async function labeledInstrumentPdf(pageLabels: Record<number, string>): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const labels = [pageLabels[2], pageLabels[10]].filter(Boolean).join('\n');
+  if (labels) {
+    doc.setTitle(labels);
+    doc.setSubject(labels);
+  }
+  for (let n = 1; n <= 10; n += 1) {
+    const page = doc.addPage([595.28, 841.89]);
+    const label = pageLabels[n];
+    if (label) {
+      page.drawText(label, { x: 72, y: 400, size: 11, font });
+    }
+  }
+  const saved = await doc.save({ useObjectStreams: false });
+  const marker = new TextEncoder().encode(`\n${labels}\n`);
+  const bytes = new Uint8Array(saved.length + marker.length);
+  bytes.set(saved);
+  bytes.set(marker, saved.length);
+  return bytes;
+}
+
+function signatureHtmlWithBuyerName(buyerName: string): string {
+  return `<div class="sv-lf-sign lf-estrela-signatures">
+<div class="sv-lf-sign-slot"><p class="sv-lf-sign-line">&nbsp;</p><p><strong>${buyerName}</strong></p><p>CPF n° 650.820.282-00</p></div>
+</div>`;
+}
+
+async function testObsoletePhysicalBaseIsReplacedThenSignedPdfUsesCurrentBuyer() {
+  const clientName = 'SEVERINO JOSE DE FRANÇA';
+  const currentHtml = signatureHtmlWithBuyerName(clientName);
+  const oldHtml = '<p><strong>COMPRADOR 1</strong></p><p>CPF n° {{CLIENT_CPF}}</p>';
+
+  assert(
+    !lfEstrelaSignatureBindsPhysicalBase('CANCELLED'),
+    'processo cancelado não vincula a base',
+  );
+  assert(
+    lfEstrelaSignatureBindsPhysicalBase('SIGNED'),
+    'processo concluído vincula a base e não pode ser trocado em silêncio',
+  );
+  assert(
+    lfEstrelaSignatureBindsPhysicalBase('PENDING'),
+    'processo em andamento vincula a base',
+  );
+
+  const oldBytes = await labeledInstrumentPdf({ 2: 'COMPRADOR 1', 10: 'COMPRADOR 1' });
+  const newBytes = await labeledInstrumentPdf({ 2: clientName, 10: clientName });
+  assert(pdfBytesContainText(oldBytes, 'COMPRADOR 1'), 'base antiga contém COMPRADOR 1');
+  assert(
+    lfEstrelaPhysicalBaseIsObsoleteForHtml(oldBytes, currentHtml),
+    'COMPRADOR 1 fica obsoleto quando o HTML já resolve CLIENT_NAME',
+  );
+  assert(
+    !lfEstrelaPhysicalBaseIsObsoleteForHtml(oldBytes, oldHtml),
+    'placeholder no HTML antigo não invalida a base daquela versão',
+  );
+  assert(
+    !lfEstrelaPhysicalBaseIsObsoleteForHtml(newBytes, currentHtml),
+    'base nova com o nome do comprador da venda não é obsoleta',
+  );
+
+  const oldSha = sha256Hex(oldBytes);
+  const newSha = sha256Hex(newBytes);
+  assert(oldSha !== newSha, 'HTML regenerado produz SHA-256 diferente');
+
+  assert(
+    decideLfEstrelaPhysicalFreezeReuse({
+      existing: { sha256: oldSha },
+      clientSha256: newSha,
+      signatureBound: false,
+      html: currentHtml,
+      pdfBytes: oldBytes,
+    }) === 'replace',
+    'sem processo vinculante: freeze antigo COMPRADOR 1 é substituído',
+  );
+  assert(
+    decideLfEstrelaPhysicalFreezeReuse({
+      existing: { sha256: oldSha },
+      clientSha256: newSha,
+      signatureBound: true,
+      html: currentHtml,
+      pdfBytes: oldBytes,
+    }) === 'reuse',
+    'processo concluído: não altera silenciosamente o documento já assinado',
+  );
+  assert(
+    decideLfEstrelaPhysicalFreezeReuse({
+      existing: { sha256: newSha },
+      clientSha256: newSha,
+      signatureBound: false,
+      html: currentHtml,
+      pdfBytes: newBytes,
+    }) === 'reuse',
+    'mesmo SHA-256 reusa a base atual',
+  );
+  assert(
+    decideLfEstrelaPhysicalFreezeReuse({
+      existing: null,
+      clientSha256: newSha,
+      signatureBound: true,
+    }) === 'reject',
+    'sem base e com processo vinculante: recusa substituir',
+  );
+
+  const stamps = resolveLfEstrelaOverlayStamps({
+    parties: [party('BUYER', clientName, 'SIGNED')],
+    company: { razao_social: 'LF IMOVEIS LTDA' },
+  });
+  assert(
+    stamps.some((s) => s.slot === 'BUYER_1' && s.lines.includes(clientName)),
+    'carimbo usa o nome resolvido de CLIENT_NAME, não um literal fixo',
+  );
+  const signed = await composeLfEstrelaSignedPdf({
+    physicalBytes: newBytes,
+    stamps,
+  });
+  assert(pdfBytesContainText(newBytes, clientName), 'base congelada nova já traz o comprador da venda');
+  assert(!pdfBytesContainText(newBytes, 'COMPRADOR 1'), 'base nova não imprime COMPRADOR 1');
+  assert(
+    !pdfBytesContainText(signed, 'COMPRADOR 1'),
+    'PDF assinado não contém COMPRADOR 1 nas páginas 2 e 10',
+  );
+}
+
 async function main() {
   testSourceGuards();
   testPhysicalChromeOverlay();
@@ -882,6 +1051,7 @@ async function main() {
   testPhysicalBaseUsesCompanyAssetsSalePhysical();
   testGenerationErrorIsNotSignature404();
   await testComposePreservesInstrumentPages();
+  await testObsoletePhysicalBaseIsReplacedThenSignedPdfUsesCurrentBuyer();
   console.log('OK — mandatory-lf-estrela-signed-pdf-tests passed');
 }
 

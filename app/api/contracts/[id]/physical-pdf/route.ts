@@ -120,6 +120,9 @@ export async function POST(
         saleId,
         pageCount: typeof body.pageCount === 'number' ? body.pageCount : null,
         blobSize: typeof body.blobSize === 'number' ? body.blobSize : null,
+        clientSha256: body.sha256 || null,
+        html: String(contract.generated_html || contract.html_content || '') || null,
+        version: Number(contract.version) || 1,
       });
       console.info('[LF PHYSICAL STORAGE TRACE]', {
         contractId,
@@ -149,6 +152,7 @@ export async function POST(
         sha256: body.sha256 || null,
         pageCount: typeof body.pageCount === 'number' ? body.pageCount : null,
         blobSize: typeof body.blobSize === 'number' ? body.blobSize : null,
+        html: String(contract.generated_html || contract.html_content || '') || null,
       });
       console.info('[LF PHYSICAL STORAGE TRACE]', {
         contractId,
