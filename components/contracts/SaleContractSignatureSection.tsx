@@ -116,6 +116,7 @@ type Props = {
   } | null;
   compact?: boolean;
   onSigned?: () => void;
+  onBeforeSendForSignature?: () => Promise<void>;
   onCapabilitiesChange?: (capabilities: SaleContractSignatureCapabilities) => void;
 };
 
@@ -130,6 +131,7 @@ export const SaleContractSignatureSection = forwardRef<
     authUser,
     compact = false,
     onSigned,
+    onBeforeSendForSignature,
     onCapabilitiesChange,
   },
   ref,
@@ -496,6 +498,9 @@ export const SaleContractSignatureSection = forwardRef<
     setSending(true);
     setError(null);
     try {
+      if (onBeforeSendForSignature) {
+        await onBeforeSendForSignature();
+      }
       const apiUrl = await buildSignatureApiUrl(contract.id);
       const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
         success?: boolean;
@@ -549,7 +554,7 @@ export const SaleContractSignatureSection = forwardRef<
     } finally {
       setSending(false);
     }
-  }, [contract?.id, onSigned, userRole, buildSignatureApiUrl]);
+  }, [contract?.id, onSigned, onBeforeSendForSignature, userRole, buildSignatureApiUrl]);
 
   useImperativeHandle(
     ref,

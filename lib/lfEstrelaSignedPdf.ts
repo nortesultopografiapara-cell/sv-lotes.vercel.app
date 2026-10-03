@@ -633,6 +633,21 @@ export async function prepareLfEstrelaPhysicalDirectUpload(input: {
     };
   }
 
+  const { data: signatureRows } = await input.supabaseAdmin
+    .from('contract_signatures')
+    .select('id, signature_status')
+    .eq('contract_id', input.contractId)
+    .limit(30);
+  const hasOpenSignature = (signatureRows || []).some((row) => {
+    const status = String(row.signature_status || '').toUpperCase();
+    return Boolean(status) && !['CANCELLED', 'EXPIRED', 'NONE'].includes(status);
+  });
+  if (hasOpenSignature) {
+    throw new Error(
+      'O PDF físico deste contrato já foi vinculado ao processo de assinatura e não pode ser substituído.',
+    );
+  }
+
   const bucket = await assertSaleContractBucketReady(input.supabaseAdmin);
   const storagePath = buildPhysicalSaleContractStoragePath(
     input.tenantId,

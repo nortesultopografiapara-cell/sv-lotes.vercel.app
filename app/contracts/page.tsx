@@ -107,6 +107,12 @@ import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
 import { isLfEstrelaCustomHtml, prepareLfEstrelaGisFinalHtml } from "@/lib/lfEstrelaPrintCss";
 import { isDevelopHomologRuntime } from "@/lib/homolog/env";
 import {
+  ensureLfEstrelaPhysicalFrozenForSignature,
+  freezeLfEstrelaPhysicalPdfBlob,
+  generateLfEstrelaPhysicalPdfBlob,
+  LF_ESTRELA_SIGNATURE_PREPARE_FAILED_MESSAGE,
+} from "@/lib/lfEstrelaPhysicalPdfClient";
+import {
   CONTRACT_FINANCE_RECEIPTS_SELECT,
   contractReceiptStatusClassName,
   formatContractReceiptInstallmentLabel,
@@ -288,189 +294,6 @@ function downloadPdfBlob(blob: Blob, filename: string): void {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
-}
-
-async function sha256HexFromBlob(blob: Blob): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function jsPdfPageCount(pdf: { internal?: { getNumberOfPages?: () => number }; getNumberOfPages?: () => number }): number {
-  return Number(pdf?.internal?.getNumberOfPages?.() || pdf?.getNumberOfPages?.() || 0);
-}
-
-async function freezeLfEstrelaPhysicalPdfBlob(
-  contractId: string,
-  blob: Blob,
-  pageCount: number,
-): Promise<{
-  contractId: string;
-  blobSize: number;
-  pageCount: number | null;
-  sha256: string | null;
-  bucket: string | null;
-  storagePath: string | null;
-  uploadStatus: string;
-  storedSize: number | null;
-}> {
-  const trace = {
-    contractId,
-    blobSize: blob?.size || 0,
-    pageCount: pageCount || null,
-    sha256: null as string | null,
-    bucket: null as string | null,
-    storagePath: null as string | null,
-    uploadStatus: "pending",
-    storedSize: null as number | null,
-  };
-
-  const fail = (error: string, extra?: Record<string, unknown>): never => {
-    console.error("[LF PHYSICAL STORAGE TRACE]", { ...trace, ...extra, error });
-    throw new Error(error);
-  };
-
-  if (!blob || blob.size < 8) {
-    fail("PDF físico vazio — freeze não enviado.");
-  }
-  if (pageCount !== 10) {
-    fail(
-      `Base física LF ESTRELA inválida: esperado 10 páginas, encontrado ${pageCount}. Gere/congele novamente o PDF físico homologado.`,
-    );
-  }
-
-  const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
-  const isPdf =
-    header.length >= 5 &&
-    header[0] === 0x25 &&
-    header[1] === 0x50 &&
-    header[2] === 0x44 &&
-    header[3] === 0x46;
-  if (!isPdf) {
-    fail("Arquivo gerado não é PDF.");
-  }
-
-  trace.sha256 = await sha256HexFromBlob(blob);
-
-  const prepareRes = await fetch(`/api/contracts/${contractId}/physical-pdf`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      intent: "prepare",
-      pageCount,
-      sha256: trace.sha256,
-      blobSize: blob.size,
-    }),
-  });
-  const prepare = (await prepareRes.json().catch(() => null)) as {
-    error?: string;
-    reused?: boolean;
-    bucket?: string;
-    storagePath?: string;
-    signedUrl?: string;
-    token?: string;
-    path?: string;
-    pageCount?: number;
-    sha256?: string;
-    storedSize?: number;
-  } | null;
-  if (!prepareRes.ok) {
-    fail(prepare?.error || `Prepare ${prepareRes.status}`, {
-      uploadStatus: "prepare_failed",
-    });
-  }
-
-  trace.bucket = typeof prepare?.bucket === "string" ? prepare.bucket : null;
-  trace.storagePath =
-    typeof prepare?.storagePath === "string" ? prepare.storagePath : null;
-
-  if (prepare?.reused) {
-    trace.uploadStatus = "reused";
-    trace.pageCount =
-      typeof prepare.pageCount === "number" ? prepare.pageCount : pageCount;
-    trace.sha256 = typeof prepare.sha256 === "string" ? prepare.sha256 : trace.sha256;
-    trace.storedSize =
-      typeof prepare.storedSize === "number" ? prepare.storedSize : blob.size;
-    console.info("[LF PHYSICAL STORAGE TRACE]", trace);
-    return trace;
-  }
-
-  const signedUrl = String(prepare?.signedUrl || "").trim();
-  const token = String(prepare?.token || "").trim();
-  const path = String(prepare?.path || prepare?.storagePath || "").trim();
-  const bucket = String(prepare?.bucket || "").trim();
-  if (!signedUrl || !token || !path || !bucket) {
-    fail("Autorização de upload incompleta (signed URL ausente).");
-  }
-
-  const { error: signedUploadError } = await supabase.storage
-    .from(bucket)
-    .uploadToSignedUrl(path, token, blob, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-
-  let storageHttp = 0;
-  if (signedUploadError) {
-    const putRes = await fetch(signedUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/pdf",
-        Authorization: `Bearer ${token}`,
-        "x-upsert": "true",
-      },
-      body: blob,
-    });
-    storageHttp = putRes.status;
-    if (!putRes.ok) {
-      const detail = await putRes.text().catch(() => "");
-      fail(
-        `Falha no upload direto ao Storage (${storageHttp}): ${detail || signedUploadError.message}`,
-        { uploadStatus: "failed" },
-      );
-    }
-  } else {
-    storageHttp = 200;
-  }
-
-  const confirmRes = await fetch(`/api/contracts/${contractId}/physical-pdf`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      intent: "confirm",
-      pageCount,
-      sha256: trace.sha256,
-      blobSize: blob.size,
-    }),
-  });
-  const confirm = (await confirmRes.json().catch(() => null)) as {
-    error?: string;
-    pageCount?: number;
-    sha256?: string;
-    storagePath?: string;
-    bucket?: string;
-    storedSize?: number;
-  } | null;
-  if (!confirmRes.ok) {
-    fail(confirm?.error || `Confirm ${confirmRes.status}`, {
-      uploadStatus: "confirm_failed",
-    });
-  }
-
-  trace.uploadStatus = "success";
-  trace.pageCount =
-    typeof confirm?.pageCount === "number" ? confirm.pageCount : pageCount;
-  trace.sha256 = typeof confirm?.sha256 === "string" ? confirm.sha256 : trace.sha256;
-  trace.bucket = typeof confirm?.bucket === "string" ? confirm.bucket : bucket;
-  trace.storagePath =
-    typeof confirm?.storagePath === "string" ? confirm.storagePath : path;
-  trace.storedSize =
-    typeof confirm?.storedSize === "number" ? confirm.storedSize : blob.size;
-  console.info("[LF PHYSICAL STORAGE TRACE]", { ...trace, storageHttp });
-  return trace;
 }
 
 /** @deprecated use loadContractsListForTenant — mantido para reload inline. */
@@ -1259,12 +1082,21 @@ export default function ContractsPage() {
       return;
     }
     try {
+      const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
+      if (isLfEstrelaCustomHtml(ver.generated_html)) {
+        const generated = await generateLfEstrelaPhysicalPdfBlob({
+          html: ver.generated_html,
+          filename: pdfFilename,
+          tenant: tenantData || {},
+        });
+        downloadPdfBlob(generated.blob, generated.filename);
+        return;
+      }
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
       element.innerHTML = ver.generated_html;
       prepareContractHtmlElementForPagination(element);
       assertContractElementReadyForHtml2PdfCapture(element);
-      const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
       const htmlLooksRecanto = String(ver.generated_html || '').includes(
         'sv-contract-recanto-primavera',
       );
@@ -1277,7 +1109,6 @@ export default function ContractsPage() {
       const htmlLooksEstrela = String(ver.generated_html || '').includes(
         'sv-contract-estrela-do-sul',
       );
-      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(ver.generated_html);
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
@@ -1285,7 +1116,7 @@ export default function ContractsPage() {
           : htmlLooksEstrela
             ? { ...(tenantData || {}), contract_model: 'ESTRELA_DO_SUL' }
           : tenantData || {};
-      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo || htmlLooksEstrela || htmlLooksLfEstrela
+      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo || htmlLooksEstrela
         ? resolveContractHtml2pdfOptions(
             pdfChromeTenant,
             pdfFilename,
@@ -1306,7 +1137,6 @@ export default function ContractsPage() {
           .toPdf()
           .get("pdf")
           .then((pdf: any) => {
-            if (htmlLooksLfEstrela) return;
             if (tenantData) {
               applyContractPdfChrome(
                 pdf,
@@ -1414,7 +1244,32 @@ export default function ContractsPage() {
         return;
       }
 
-      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(htmlBody);
+      const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
+      if (isLfEstrelaCustomHtml(htmlBody)) {
+        const generated = await generateLfEstrelaPhysicalPdfBlob({
+          html: htmlBody,
+          filename: pdfFilename,
+          tenant: tenantData || {},
+        });
+        downloadPdfBlob(generated.blob, generated.filename);
+        try {
+          await freezeLfEstrelaPhysicalPdfBlob(
+            selectedContract.id,
+            generated.blob,
+            generated.pageCount,
+          );
+          if (isDevelopHomologRuntime()) {
+            alert("PDF físico congelado para assinatura.");
+          }
+        } catch (freezeErr) {
+          const message =
+            freezeErr instanceof Error ? freezeErr.message : String(freezeErr);
+          console.error("[contracts] freeze physical LF ESTRELA failed", freezeErr);
+          alert(message);
+        }
+        return;
+      }
+
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
 
@@ -1453,7 +1308,6 @@ export default function ContractsPage() {
         logoBase64 = await loadCompanyPdfChromeLogo(tenantData?.logo_url);
       }
 
-      const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
       const opt = resolveContractHtml2pdfOptions(
         pdfChromeTenant,
         pdfFilename,
@@ -1466,36 +1320,16 @@ export default function ContractsPage() {
           .set(opt)
           .toPdf()
           .get("pdf");
-        if (!htmlLooksLfEstrela) {
-          applyContractPdfChrome(
-            pdf,
-            buildContractPdfChromeFromTenant(
-              pdfChromeTenant,
-              String(selectedContract.contract_number || ""),
-              logoBase64,
-            ),
-          );
-        }
+        applyContractPdfChrome(
+          pdf,
+          buildContractPdfChromeFromTenant(
+            pdfChromeTenant,
+            String(selectedContract.contract_number || ""),
+            logoBase64,
+          ),
+        );
         const pdfBlob = pdf.output("blob") as Blob;
-        const lfPageCount = htmlLooksLfEstrela ? jsPdfPageCount(pdf) : 0;
         downloadPdfBlob(pdfBlob, pdfFilename);
-        if (htmlLooksLfEstrela) {
-          try {
-            await freezeLfEstrelaPhysicalPdfBlob(
-              selectedContract.id,
-              pdfBlob,
-              lfPageCount,
-            );
-            if (isDevelopHomologRuntime()) {
-              alert("PDF físico congelado para assinatura.");
-            }
-          } catch (freezeErr) {
-            const message =
-              freezeErr instanceof Error ? freezeErr.message : String(freezeErr);
-            console.error("[contracts] freeze physical LF ESTRELA failed", freezeErr);
-            alert(message);
-          }
-        }
       } finally {
         element.remove();
       }
@@ -1505,6 +1339,45 @@ export default function ContractsPage() {
       );
       console.error(e);
     }
+  };
+
+  const handleEnsureLfEstrelaPhysicalBeforeSend = async () => {
+    if (!selectedContract) return;
+    const storedHtml = String(
+      (selectedContract as { generated_html?: string | null }).generated_html || "",
+    );
+    const viewHtml = String(resolvedContractHtml || "");
+    if (
+      (storedHtml || viewHtml) &&
+      !isLfEstrelaCustomHtml(storedHtml) &&
+      !isLfEstrelaCustomHtml(viewHtml)
+    ) {
+      return;
+    }
+    const mustRefresh = Boolean(
+      (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
+    );
+    let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
+      refresh: mustRefresh,
+    });
+    if (htmlBody) {
+      setContractViewHtml(htmlBody);
+      setContractViewError(null);
+    } else {
+      htmlBody = resolvedContractHtml;
+    }
+    if (!isLfEstrelaCustomHtml(htmlBody || "") && !isLfEstrelaCustomHtml(storedHtml)) {
+      return;
+    }
+    if (!htmlBody?.trim()) {
+      throw new Error(LF_ESTRELA_SIGNATURE_PREPARE_FAILED_MESSAGE);
+    }
+    await ensureLfEstrelaPhysicalFrozenForSignature({
+      contractId: selectedContract.id,
+      html: htmlBody,
+      filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
+      tenant: tenantData || {},
+    });
   };
 
   const handleBaixarPDFAssinado = async () => {
@@ -2807,6 +2680,7 @@ export default function ContractsPage() {
                   loggedInUserEmail={user?.email}
                   authUser={user}
                   compact
+                  onBeforeSendForSignature={handleEnsureLfEstrelaPhysicalBeforeSend}
                   onCapabilitiesChange={setSignatureCaps}
                   onSigned={async () => {
                     const rows = await reloadContractsList();

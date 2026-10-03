@@ -95,6 +95,8 @@ function testSourceGuards() {
   const signed = read('lib/lfEstrelaSignedPdf.ts');
   const pdf = read('lib/saleContractPdf.ts');
   const page = read('app/contracts/page.tsx');
+  const client = read('lib/lfEstrelaPhysicalPdfClient.ts');
+  const section = read('components/contracts/SaleContractSignatureSection.tsx');
   const route = read('app/api/contracts/[id]/physical-pdf/route.ts');
 
   assert(!template.includes('sv-esign-stamp'), 'template LF não recebe carimbo HTML');
@@ -154,26 +156,100 @@ function testSourceGuards() {
     'P10 não usa pageIndex relativo em PDF de tamanho qualquer',
   );
   assert(pdf.includes('skipMeasure'), 'Chromium LF não executa measure/repaginação');
+  assert(
+    client.includes('export async function generateLfEstrelaPhysicalPdfBlob'),
+    'função única gera o Blob html2pdf homologado',
+  );
+  assert(client.includes("import('html2pdf.js')"), 'gerador único usa html2pdf no browser');
+  assert(
+    !client.includes('buildSaleContractPdfFromHtml'),
+    'gerador único NÃO usa Chromium',
+  );
+  assert(page.includes('generateLfEstrelaPhysicalPdfBlob'), 'Baixar PDF usa o gerador único');
+  assert(
+    page.includes('ensureLfEstrelaPhysicalFrozenForSignature'),
+    'Enviar para assinatura congela via o mesmo gerador',
+  );
+  assert(
+    page.includes('onBeforeSendForSignature={handleEnsureLfEstrelaPhysicalBeforeSend}'),
+    'Enviar chama freeze silencioso antes do POST',
+  );
   assert(page.includes('freezeLfEstrelaPhysicalPdfBlob'), 'Contratos congela PDF físico html2pdf');
   assert(page.includes('handleBaixarPDFAssinado'), 'Baixar PDF Assinado tem handler próprio');
-  assert(page.includes('[LF PHYSICAL STORAGE TRACE]'), 'TRACE do freeze no Storage');
+  assert(client.includes('[LF PHYSICAL STORAGE TRACE]'), 'TRACE do freeze no Storage');
   const physicalStart = page.indexOf('const handleBaixarPDF =');
+  const sendEnsureStart = page.indexOf('const handleEnsureLfEstrelaPhysicalBeforeSend');
   const signedStart = page.indexOf('const handleBaixarPDFAssinado =');
   assert(physicalStart > 0 && signedStart > physicalStart, 'handlers físicos e assinados separados');
-  const physicalSlice = page.slice(physicalStart, signedStart);
+  assert(sendEnsureStart > physicalStart && sendEnsureStart < signedStart, 'freeze de envio fica entre Baixar PDF e PDF Assinado');
+  const physicalSlice = page.slice(physicalStart, sendEnsureStart);
+  const sendFreezeSlice = page.slice(sendEnsureStart, signedStart);
   assert(
     !physicalSlice.includes('/pdf?download=1'),
     'Baixar PDF físico não chama a rota do PDF assinado',
   );
   assert(
+    physicalSlice.includes('generateLfEstrelaPhysicalPdfBlob'),
+    'Baixar PDF LF usa generateLfEstrelaPhysicalPdfBlob',
+  );
+  assert(
+    physicalSlice.includes('downloadPdfBlob'),
+    'Baixar PDF continua baixando o arquivo local',
+  );
+  assert(
     physicalSlice.includes('freezeLfEstrelaPhysicalPdfBlob'),
     'Baixar PDF físico envia o mesmo blob ao freeze',
   );
-  assert(page.includes('uploadToSignedUrl'), 'browser envia o Blob direto ao Storage');
-  assert(page.includes('intent: "prepare"'), 'API só autoriza, não recebe o PDF');
-  assert(page.includes('intent: "confirm"'), 'backend confirma o objeto no Storage');
-  assert(!page.includes('form.append("file"'), 'não envia o PDF pela Function (evita HTTP 413)');
+  assert(
+    sendFreezeSlice.includes('ensureLfEstrelaPhysicalFrozenForSignature'),
+    'Enviar para assinatura gera e congela o Blob',
+  );
+  assert(
+    !sendFreezeSlice.includes('downloadPdfBlob'),
+    'Enviar para assinatura NÃO dispara download local',
+  );
+  assert(
+    sendFreezeSlice.includes('LF_ESTRELA_SIGNATURE_PREPARE_FAILED_MESSAGE'),
+    'falha de freeze aborta o envio com mensagem obrigatória',
+  );
+  assert(
+    client.includes('uploadToSignedUrl'),
+    'browser envia o Blob direto ao Storage',
+  );
+  assert(client.includes("intent: 'prepare'"), 'API só autoriza, não recebe o PDF');
+  assert(client.includes("intent: 'confirm'"), 'backend confirma o objeto no Storage');
+  assert(!client.includes('form.append("file"'), 'não envia o PDF pela Function (evita HTTP 413)');
+  assert(!page.includes('form.append("file"'), 'página não envia o PDF pela Function');
   assert(page.includes('PDF físico congelado para assinatura.'), 'UX DEVELOP após freeze');
+  assert(
+    client.includes('LF_ESTRELA_SIGNATURE_PREPARE_FAILED_MESSAGE'),
+    'mensagem fail-closed do envio',
+  );
+  assert(
+    client.includes('Não foi possível preparar o documento para assinatura.'),
+    'texto fail-closed linha 1',
+  );
+  assert(
+    client.includes('O contrato não foi enviado.'),
+    'texto fail-closed linha 2',
+  );
+  const sendHandler = section.slice(
+    section.indexOf('const handleSend = useCallback'),
+    section.indexOf('useImperativeHandle('),
+  );
+  assert(
+    sendHandler.includes('onBeforeSendForSignature'),
+    'handleSend chama freeze antes do POST /signature',
+  );
+  const beforeIdx = sendHandler.indexOf('onBeforeSendForSignature');
+  const postIdx = sendHandler.indexOf("method: 'POST'");
+  assert(beforeIdx > 0 && postIdx > beforeIdx, 'freeze silencioso ocorre antes de criar o processo');
+  const recantoStart = physicalSlice.indexOf('isRecantoPrimaveraContractModel');
+  assert(recantoStart > 0, 'Baixar PDF Recanto permanece no handler original');
+  assert(
+    !physicalSlice.slice(recantoStart).includes('generateLfEstrelaPhysicalPdfBlob'),
+    'Recanto/Meneses não usam o gerador LF ESTRELA',
+  );
   assert(route.includes('prepareLfEstrelaPhysicalDirectUpload'), 'API emite signed upload URL');
   assert(route.includes('confirmLfEstrelaPhysicalDirectUpload'), 'API confirma objeto no Storage');
   assert(route.includes('[LF PHYSICAL STORAGE TRACE]'), 'POST /physical-pdf loga TRACE de Storage');
@@ -229,6 +305,25 @@ function testSourceGuards() {
   assert(
     loadSlice.includes('await buildSaleContractPdfFromHtml(html, chrome)'),
     'Recanto/Meneses/demais permanecem HTML → Chromium',
+  );
+  const sendStart = service.indexOf('export async function sendSaleContractForSignature');
+  const sendEnd = service.indexOf('export async function markSaleSignatureViewed');
+  assert(sendStart > 0 && sendEnd > sendStart, 'sendSaleContractForSignature existe');
+  const sendSlice = service.slice(sendStart, sendEnd);
+  const physicalIdx = sendSlice.indexOf('loadLfEstrelaPhysicalPdfBytes');
+  const insertIdx = sendSlice.indexOf('insertSaleSignatureRowWithFallback');
+  const partiesIdx = sendSlice.indexOf('createSignaturePartiesAfterSend');
+  assert(
+    physicalIdx > 0 && insertIdx > physicalIdx,
+    'processo de assinatura só é criado depois do freeze físico',
+  );
+  assert(
+    partiesIdx > insertIdx,
+    'parties só são criadas depois do processo',
+  );
+  assert(
+    signed.includes('não pode ser substituído'),
+    'physical base não é sobrescrito após o processo iniciar',
   );
   assert(
     loadSlice.includes('buildLfEstrelaSignedSaleContractPdf'),
