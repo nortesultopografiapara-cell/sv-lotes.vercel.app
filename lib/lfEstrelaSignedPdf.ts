@@ -45,26 +45,34 @@ export type LfEstrelaStampAnchor = {
  * `y` = baseline da ÚLTIMA linha do carimbo (logo acima da linha preta).
  * Cada slot tem X/Y próprio — P2 e P10 não compartilham row1/row2.
  *
- * Anteriores (row compartilhado):
+ * Anteriores no PDF 000000013/2026 (row compartilhado, carimbo na linha/nome):
  *   P2  row1=482 (buyer+company)  row2=417 (seller2)  row3=352
  *   P10 row1=248 (buyer+company)  row2=183 (seller2)  row3=118
+ *
+ * Tentativa 2da3dda (ainda alta demais / não alinhada à linha medida):
+ *   P2  buyer=502 company=500 seller2=453
+ *   P10 buyer=322 company=320 seller2=275
+ *
+ * Linhas pretas medidas no PDF assinado anexado (pt, origem inferior):
+ *   P2  COMPRADOR/LF=486.8  ANTONIO=439.9  TESTEMUNHA=393.0
+ *   P10 COMPRADOR/LF=312.4  ANTONIO=265.6  TESTEMUNHA=217.9
  */
 export const LF_ESTRELA_STAMP_LAYOUT = {
   page2: {
-    buyer: { x: COL_LEFT_CENTER, y: 502 },
-    companyRepresentative: { x: COL_RIGHT_CENTER, y: 500 },
-    seller2: { x: COL_RIGHT_CENTER, y: 453 },
-    buyer2: { x: COL_LEFT_CENTER, y: 453 },
-    witness1: { x: COL_LEFT_CENTER, y: 392 },
-    witness2: { x: COL_RIGHT_CENTER, y: 392 },
+    buyer: { x: COL_LEFT_CENTER, y: 487 },
+    companyRepresentative: { x: COL_RIGHT_CENTER, y: 488 },
+    seller2: { x: COL_RIGHT_CENTER, y: 440 },
+    buyer2: { x: COL_LEFT_CENTER, y: 440 },
+    witness1: { x: COL_LEFT_CENTER, y: 393 },
+    witness2: { x: COL_RIGHT_CENTER, y: 393 },
   },
   page10: {
-    buyer: { x: COL_LEFT_CENTER, y: 322 },
-    companyRepresentative: { x: COL_RIGHT_CENTER, y: 320 },
-    seller2: { x: COL_RIGHT_CENTER, y: 275 },
-    buyer2: { x: COL_LEFT_CENTER, y: 275 },
-    witness1: { x: COL_LEFT_CENTER, y: 224 },
-    witness2: { x: COL_RIGHT_CENTER, y: 224 },
+    buyer: { x: COL_LEFT_CENTER, y: 312 },
+    companyRepresentative: { x: COL_RIGHT_CENTER, y: 313 },
+    seller2: { x: COL_RIGHT_CENTER, y: 266 },
+    buyer2: { x: COL_LEFT_CENTER, y: 266 },
+    witness1: { x: COL_LEFT_CENTER, y: 218 },
+    witness2: { x: COL_RIGHT_CENTER, y: 218 },
   },
 } as const;
 

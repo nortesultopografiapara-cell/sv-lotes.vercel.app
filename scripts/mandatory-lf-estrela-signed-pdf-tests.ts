@@ -452,8 +452,45 @@ async function testComposePreservesInstrumentPages() {
     'P10 Luzia e Antonio não compartilham a mesma faixa',
   );
   assert(
-    LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y > 458,
-    'P2 buyer permanece na área livre acima da linha da Capa',
+    LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y >= 480 &&
+      LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y <= 495,
+    'P2 buyer imediatamente acima da linha COMPRADOR 1 (medida 486.8)',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.companyRepresentative.y >= 480 &&
+      LF_ESTRELA_STAMP_LAYOUT.page2.companyRepresentative.y <= 495,
+    'P2 Luzia imediatamente acima da linha LF IMOVEIS LTDA',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.seller2.y >= 432 &&
+      LF_ESTRELA_STAMP_LAYOUT.page2.seller2.y <= 448,
+    'P2 Antonio imediatamente acima da própria linha (medida 439.9)',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page10.buyer.y >= 305 &&
+      LF_ESTRELA_STAMP_LAYOUT.page10.buyer.y <= 320,
+    'P10 buyer imediatamente acima da linha COMPRADOR 1 (medida 312.4)',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page10.companyRepresentative.y >= 305 &&
+      LF_ESTRELA_STAMP_LAYOUT.page10.companyRepresentative.y <= 320,
+    'P10 Luzia imediatamente acima da linha LF IMOVEIS LTDA',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page10.seller2.y >= 258 &&
+      LF_ESTRELA_STAMP_LAYOUT.page10.seller2.y <= 274,
+    'P10 Antonio imediatamente acima da própria linha (medida 265.6)',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.seller2.y > LF_ESTRELA_STAMP_LAYOUT.page2.witness2.y + 30,
+    'P2 Antonio não invade TESTEMUNHA 2',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y !== LF_ESTRELA_STAMP_LAYOUT.page10.buyer.y &&
+      LF_ESTRELA_STAMP_LAYOUT.page2.seller2.y !== LF_ESTRELA_STAMP_LAYOUT.page10.seller2.y &&
+      LF_ESTRELA_STAMP_LAYOUT.page2.companyRepresentative.y !==
+        LF_ESTRELA_STAMP_LAYOUT.page10.companyRepresentative.y,
+    'P2 e P10 não compartilham Y de slot',
   );
 
   let threwInvalid = false;
