@@ -57,9 +57,14 @@ import {
 } from './develop/lfEstrelaPublishSqlHtml';
 import {
   buildProjectCustomContractOptions,
+  engineContractModelForCustomOverlay,
   formatProjectCustomContractValue,
   resolveProjectCompanyUuid,
 } from '../lib/projectCustomContractModels';
+import {
+  loadPublishedLfEstrelaForProject,
+  tryBuildLfEstrelaCustomSaleHtml,
+} from '../lib/lfEstrelaSaleContract';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -661,7 +666,20 @@ assert(!/avoid:\s*\[[^\]]*['\"]h1['\"]/.test(read('lib/contractPdfPostProcess.ts
 assert(read('lib/lfEstrelaPrintCss.ts').includes('margin-top: 20mm'), 'assinaturas 20mm abaixo da data');
 assert(/padding:\s*2px 5px 8px/.test(read('lib/lfEstrelaPrintCss.ts')), 'texto das células 2mm acima da borda inferior');
 assert(!read('lib/lfEstrelaSaleContract.ts').includes('generateEstrelaDoSulContract'), 'loader CUSTOM não usa o motor ESTRELA');
-assert(read('lib/lfEstrelaSaleContract.ts').includes('isDevelopHomologRuntime'), 'CUSTOM só emite no DEVELOP');
+assert(
+  !read('lib/lfEstrelaSaleContract.ts').includes('isDevelopHomologRuntime'),
+  'CUSTOM não é bloqueado por runtime DEVELOP/Production',
+);
+assert(
+  !/if\s*\(\s*!isDevelopHomologRuntime\(\)\s*\)\s*return\s*null/.test(
+    read('lib/lfEstrelaSaleContract.ts'),
+  ),
+  'tryBuildLfEstrelaCustomSaleHtml não retorna null só por estar em Production',
+);
+assert(
+  read('lib/lfEstrelaSaleContract.ts').includes("eq('status', 'active')"),
+  'loader exige modelo CUSTOM ativo',
+);
 assert(
   read('lib/lfEstrelaSaleContract.ts').includes('is_project_default'),
   'CUSTOM GIS só emite se LF ESTRELA for o padrão do empreendimento',
@@ -781,4 +799,251 @@ assert(htmlMatch.sha256 === sha256Utf8(officialHtml), 'SHA-256 do HTML publicado
 assert(!htmlFromSql.includes('ramoção'), 'HTML oficial não contém typo ramoção');
 assert(!htmlFromSql.includes('reamescente'), 'HTML oficial não contém typo reamescente');
 
+type MockRow = Record<string, unknown>;
+
+function createThenChain(rows: MockRow[]) {
+  let current = [...rows];
+  const chain: {
+    select: (...args: unknown[]) => typeof chain;
+    in: (col: string, ids: string[]) => typeof chain;
+    eq: (col: string, val: unknown) => typeof chain;
+    order: (col: string, opts?: { ascending?: boolean }) => typeof chain;
+    limit: (n: number) => typeof chain;
+    then: (
+      resolve: (value: { data: MockRow[]; error: null }) => unknown,
+      reject?: (reason: unknown) => unknown,
+    ) => Promise<unknown>;
+  } = {
+    select: () => chain,
+    in: (col, ids) => {
+      current = current.filter((row) => ids.includes(String(row[col] ?? '')));
+      return chain;
+    },
+    eq: (col, val) => {
+      current = current.filter((row) => String(row[col] ?? '') === String(val ?? ''));
+      return chain;
+    },
+    order: (col, opts) => {
+      const dir = opts?.ascending === false ? -1 : 1;
+      current = [...current].sort(
+        (a, b) => (Number(a[col]) - Number(b[col])) * dir,
+      );
+      return chain;
+    },
+    limit: (n) => {
+      current = current.slice(0, n);
+      return chain;
+    },
+    then: (resolve, reject) =>
+      Promise.resolve({ data: current, error: null }).then(resolve, reject),
+  };
+  return chain;
+}
+
+function mockLfEstrelaSupabase(db: {
+  links: MockRow[];
+  models: MockRow[];
+  versions: MockRow[];
+}) {
+  return {
+    from(table: string) {
+      if (table === 'project_contract_model_links') return createThenChain(db.links);
+      if (table === 'company_contract_models') return createThenChain(db.models);
+      if (table === 'company_contract_model_versions') return createThenChain(db.versions);
+      return createThenChain([]);
+    },
+  };
+}
+
+const LF_TEST_COMPANY = '65433340-1f23-4824-bb72-58f72dc77c15';
+const LF_TEST_PROJECT = '8f69070c-7ebe-4ff1-99bf-926cc5bbde28';
+const LF_TEST_MODEL = '11111111-1111-4111-8111-111111111111';
+
+function lfEstrelaPublishedDb(overrides?: {
+  isProjectDefault?: boolean;
+  catalogCode?: string;
+  status?: string;
+  versionStatus?: string;
+  companyId?: string;
+  html?: string;
+}) {
+  const companyId = overrides?.companyId ?? LF_TEST_COMPANY;
+  return mockLfEstrelaSupabase({
+    links: [
+      {
+        id: 'link-1',
+        company_contract_model_id: LF_TEST_MODEL,
+        is_project_default: overrides?.isProjectDefault ?? true,
+        company_id: companyId,
+        project_id: LF_TEST_PROJECT,
+      },
+    ],
+    models: [
+      {
+        id: LF_TEST_MODEL,
+        name: LF_ESTRELA_MODEL_NAME,
+        catalog_code: overrides?.catalogCode ?? 'CUSTOM',
+        status: overrides?.status ?? 'active',
+        company_id: companyId,
+      },
+    ],
+    versions: [
+      {
+        id: 'ver-1',
+        model_id: LF_TEST_MODEL,
+        version: 1,
+        status: overrides?.versionStatus ?? 'published',
+        content_html: overrides?.html ?? '<div class="sv-lf-estrela">publicado</div>',
+      },
+    ],
+  });
+}
+
+void (async () => {
+const publishedDefault = await loadPublishedLfEstrelaForProject(
+  lfEstrelaPublishedDb() as never,
+  LF_TEST_COMPANY,
+  LF_TEST_PROJECT,
+);
+assert(publishedDefault?.modelId === LF_TEST_MODEL, 'DEVELOP/Production: vínculo default + CUSTOM published resolve o modelo');
+assert(publishedDefault?.version === 1, 'loader usa a versão published');
+
+const productionLike = await tryBuildLfEstrelaCustomSaleHtml(
+  lfEstrelaPublishedDb() as never,
+  {
+    companyId: LF_TEST_COMPANY,
+    projectId: LF_TEST_PROJECT,
+    company: {
+      razao_social: 'L.F. IMÓVEIS LTDA',
+      cnpj: '47.052.349/0001-30',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    customer: {
+      name: 'MARIA HOMOLOG LF',
+      cpf_cnpj: '529.982.247-25',
+      rg: '1234567',
+      nationality: 'brasileira',
+      profession: 'Comerciante',
+      civil_state: 'Solteiro(a)',
+      address: 'Rua Homologacao, 100',
+    },
+    sale: {
+      company_id: LF_TEST_COMPANY,
+      total_value: 80000,
+      down_payment: 10000,
+      commission: 4000,
+      installments_count: 12,
+      installment_value: 5833.33,
+      sale_date: '2026-09-30',
+      payment_type: 'Parcelado',
+      has_spouse: false,
+      lf_contract_snapshot_json: {
+        version: 1,
+        hasSecondVendor: true,
+        secondVendor: {
+          name: 'ANTONIO FERREIRA SILVA',
+          cpf: '718.773.122-15',
+          nationality: 'brasileiro',
+          civilState: 'Casado(a)',
+          maritalStatus: 'Casado(a)',
+          profession: 'Empresário',
+          rg: '123456 SSP/PA',
+          address: 'Parauapebas - PA',
+        },
+        participation: { firstVendorPercent: 40, secondVendorPercent: 60 },
+      },
+    },
+    project: {
+      name: 'CHACREAMENTO ESTRELA DO SUL',
+      city: 'Parauapebas',
+      uf: 'PA',
+    },
+    lot: {
+      quadra: '01',
+      lote: '32',
+      area: 667.15,
+    },
+    contract: { contract_number: '000000001/2026' },
+    receipts: [
+      { installment_number: 0, amount: 10000, due_date: '2026-09-30' },
+      { installment_number: 1, amount: 5833.33, due_date: '2026-10-30' },
+    ],
+  },
+);
+assert(Boolean(productionLike?.html), 'Production + vínculo LF ESTRELA default emite CUSTOM');
+assert(
+  /sv-lf-estrela/i.test(String(productionLike?.html || '')),
+  'HTML CUSTOM contém sv-lf-estrela',
+);
+assert(
+  !/sv-contract-estrela-do-sul/i.test(String(productionLike?.html || '')),
+  'HTML CUSTOM não contém sv-contract-estrela-do-sul',
+);
+
+const noDefault = await loadPublishedLfEstrelaForProject(
+  lfEstrelaPublishedDb({ isProjectDefault: false }) as never,
+  LF_TEST_COMPANY,
+  LF_TEST_PROJECT,
+);
+assert(noDefault === null, 'Production sem is_project_default não usa LF ESTRELA');
+
+const noLink = await tryBuildLfEstrelaCustomSaleHtml(
+  mockLfEstrelaSupabase({ links: [], models: [], versions: [] }) as never,
+  {
+    companyId: LF_TEST_COMPANY,
+    projectId: LF_TEST_PROJECT,
+    company: {},
+    customer: {},
+    sale: {},
+    project: {},
+    lot: {},
+  },
+);
+assert(noLink === null, 'Production sem vínculo não usa LF ESTRELA (fail-safe)');
+
+const inactive = await loadPublishedLfEstrelaForProject(
+  lfEstrelaPublishedDb({ status: 'archived' }) as never,
+  LF_TEST_COMPANY,
+  LF_TEST_PROJECT,
+);
+assert(inactive === null, 'modelo inativo não emite CUSTOM');
+
+const otherCatalog = await loadPublishedLfEstrelaForProject(
+  lfEstrelaPublishedDb({ catalogCode: 'ESTRELA_DO_SUL' }) as never,
+  LF_TEST_COMPANY,
+  LF_TEST_PROJECT,
+);
+assert(otherCatalog === null, 'catalog_code diferente de CUSTOM não emite LF ESTRELA');
+
+const draftVersion = await loadPublishedLfEstrelaForProject(
+  lfEstrelaPublishedDb({ versionStatus: 'draft' }) as never,
+  LF_TEST_COMPANY,
+  LF_TEST_PROJECT,
+);
+assert(draftVersion === null, 'versão não published não emite CUSTOM');
+
+const otherCompany = await loadPublishedLfEstrelaForProject(
+  lfEstrelaPublishedDb() as never,
+  '00000000-0000-4000-8000-000000000000',
+  LF_TEST_PROJECT,
+);
+assert(otherCompany === null, 'tenant/company diferente do empreendimento não resolve o modelo');
+
+assert(
+  engineContractModelForCustomOverlay(null) === 'ESTRELA_DO_SUL',
+  'overlay CUSTOM continua gravando motor ESTRELA_DO_SUL, não ccm:',
+);
+assert(
+  engineContractModelForCustomOverlay('ESTRELA_DO_SUL') === 'ESTRELA_DO_SUL',
+  'projects.contract_model legado ESTRELA_DO_SUL permanece',
+);
+assert(read('lib/estrelaDoSulContractTemplate.ts').includes('generateEstrelaDoSulContract'), 'motor ESTRELA_DO_SUL intacto');
+assert(read('lib/recantoPrimaveraContractTemplate.ts').includes('generateRecantoPrimaveraContract') || read('lib/recantoPrimaveraContractTemplate.ts').length > 100, 'Recanto intacto');
+assert(read('lib/mundoNovoContractSellers.ts').length > 0, 'Mundo Novo sellers intacto');
+
 console.log('\nOK — testes obrigatórios LF ESTRELA.');
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

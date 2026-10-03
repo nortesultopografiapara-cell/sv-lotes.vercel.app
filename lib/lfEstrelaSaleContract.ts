@@ -1,6 +1,9 @@
 /**
- * Emissão GIS/regeneração do LF ESTRELA CUSTOM no DEVELOP.
- * Production continua no motor ESTRELA_DO_SUL.
+ * Emissão GIS/regeneração do LF ESTRELA CUSTOM.
+ * DEVELOP e Production usam o mesmo caminho quando o empreendimento tem
+ * vínculo default + modelo CUSTOM ativo + versão published.
+ * Sem vínculo/default: retorna null e o caller permanece no motor ESTRELA_DO_SUL.
+ * Não grava ccm: em projects.contract_model.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -9,7 +12,6 @@ import {
 } from '@/lib/lfEstrelaEmission';
 import { buildLfEstrelaCustomHtml, isLfEstrelaModelName } from '@/lib/lfEstrelaCustomTemplate';
 import { resolveCustomPreviewValues } from '@/lib/customContractPreviewResolver';
-import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { resolveBuyerNationality } from '@/lib/customerIdentity';
 
 export type LfEstrelaPublishedModel = {
@@ -37,7 +39,8 @@ export async function loadPublishedLfEstrelaForProject(
     .from('company_contract_models')
     .select('id, name, catalog_code, status')
     .in('id', modelIds)
-    .eq('company_id', companyId);
+    .eq('company_id', companyId)
+    .eq('status', 'active');
   if (modelError || !models?.length) return null;
 
   const preferred = [...models]
@@ -86,7 +89,6 @@ export async function tryBuildLfEstrelaCustomSaleHtml(
     formOverlay?: Record<string, unknown> | null;
   },
 ): Promise<{ html: string; modelId: string; version: number } | null> {
-  if (!isDevelopHomologRuntime()) return null;
   const published = await loadPublishedLfEstrelaForProject(
     supabase,
     input.companyId,
@@ -136,5 +138,10 @@ export async function tryBuildLfEstrelaCustomSaleHtml(
     gisChrome: true,
   });
   assertNoSemDadoInFinalHtml(composed.html);
+  console.info('[LF ESTRELA CUSTOM PATH]', {
+    step: 'tryBuildLfEstrelaCustomSaleHtml → loadPublishedLfEstrelaForProject → CUSTOM published → sv-lf-estrela',
+    modelId: published.modelId,
+    version: published.version,
+  });
   return { html: composed.html, modelId: published.modelId, version: published.version };
 }
