@@ -6,11 +6,17 @@ import {
   isContractSecondVendorFieldsEmpty,
   parseContractSecondVendorJson,
 } from '@/lib/contractSecondVendor';
+import { INSTALLMENT_CORRECTION_OPTIONS } from '@/lib/installmentCorrectionType';
 import {
   isLfParticipationValid,
   parseLfPercent,
   type LfContractConfigFormState,
 } from '@/lib/lfImoveisContractConfig';
+import {
+  isInstallmentCorrectionOptionEnabled,
+  LF_ESTRELA_CORRECTION_SELECTOR_HINT,
+  lfEstrelaRequiresHardcodedIgpm,
+} from '@/lib/saleFinanceConfig';
 
 const FIELD_CLASS =
   'w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]';
@@ -19,6 +25,7 @@ type Props = {
   value: LfContractConfigFormState;
   onChange: (next: LfContractConfigFormState) => void;
   companySecondVendorJson?: unknown;
+  contractModel?: string | null;
 };
 
 const VENDOR_FIELDS: Array<{
@@ -46,6 +53,7 @@ export function ProjectLfContractConfigFields({
   value,
   onChange,
   companySecondVendorJson,
+  contractModel,
 }: Props) {
   const companyVendor = parseContractSecondVendorJson(companySecondVendorJson);
   const companyComplete = isContractSecondVendorComplete(companyVendor);
@@ -148,6 +156,53 @@ export function ProjectLfContractConfigFields({
           Os percentuais devem ser maiores ou iguais a 0 e somar exatamente 100%.
         </p>
       ) : null}
+
+      <div>
+        <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1">
+          Correção das Parcelas / Índice de Correção Anual
+        </label>
+        <select
+          value={
+            lfEstrelaRequiresHardcodedIgpm(contractModel)
+              ? 'IGPM'
+              : value.installmentCorrectionType || ''
+          }
+          onChange={(e) => {
+            const next = e.target.value;
+            if (
+              next &&
+              !isInstallmentCorrectionOptionEnabled(
+                contractModel,
+                next as 'FIXED' | 'IPCA' | 'IGPM' | 'INCC',
+              )
+            ) {
+              return;
+            }
+            onChange({ ...value, installmentCorrectionType: next });
+          }}
+          className={FIELD_CLASS}
+        >
+          {lfEstrelaRequiresHardcodedIgpm(contractModel) ? null : (
+            <option value="">Padrão do modelo</option>
+          )}
+          {INSTALLMENT_CORRECTION_OPTIONS.map((option) => {
+            const enabled = isInstallmentCorrectionOptionEnabled(
+              contractModel,
+              option.value,
+            );
+            return (
+              <option key={option.value} value={option.value} disabled={!enabled}>
+                {enabled ? option.label : `${option.label} (indisponível neste modelo)`}
+              </option>
+            );
+          })}
+        </select>
+        <p className="text-xs text-[var(--color-text-muted)] mt-1">
+          {lfEstrelaRequiresHardcodedIgpm(contractModel)
+            ? LF_ESTRELA_CORRECTION_SELECTOR_HINT
+            : 'A venda abre com este índice e pode alterá-lo naquela operação. O motor financeiro é o mesmo do SV Lotes (FIXED, IGP-M, IPCA, INCC).'}
+        </p>
+      </div>
     </div>
   );
 }

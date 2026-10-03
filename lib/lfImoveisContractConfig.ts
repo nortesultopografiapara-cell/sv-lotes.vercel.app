@@ -21,6 +21,10 @@ import {
   ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT,
 } from '@/lib/estrelaDoSulContractConstants';
 import {
+  parseInstallmentCorrectionType,
+  type InstallmentCorrectionType,
+} from '@/lib/installmentCorrectionType';
+import {
   buildLfContractSnapshotPayload,
   parseLfContractSnapshotJson,
   readSaleLfSnapshotRaw,
@@ -48,6 +52,8 @@ export type LfContractParticipation = {
 export type LfContractConfigParsed = {
   secondVendor: ContractSecondVendorFields;
   participation: LfContractParticipation | null;
+  installmentCorrectionType: InstallmentCorrectionType | null;
+  allowSplitDownPayment: boolean | null;
 };
 
 export type LfSecondVendorSource = 'sale' | 'project' | 'company' | 'none';
@@ -68,6 +74,10 @@ export type LfContractConfigFormState = {
   secondVendor: ContractSecondVendorFields;
   firstVendorPercent: string;
   secondVendorPercent: string;
+  /** Vazio = padrão do modelo (Estrela do Sul = IGP-M). */
+  installmentCorrectionType: string;
+  /** Preserva override já gravado; null = não definido no JSON. */
+  allowSplitDownPayment: boolean | null;
 };
 
 const FORBIDDEN_CONFIG_KEYS = [
@@ -107,6 +117,8 @@ export function emptyLfContractConfigForm(): LfContractConfigFormState {
     secondVendor: emptyContractSecondVendorFields(),
     firstVendorPercent: '',
     secondVendorPercent: '',
+    installmentCorrectionType: '',
+    allowSplitDownPayment: null,
   };
 }
 
@@ -140,12 +152,15 @@ export function formatLfPercentLabel(value: number): string {
 }
 
 export function parseLfContractConfigJson(raw: unknown): LfContractConfigParsed {
+  const empty = {
+    secondVendor: emptyContractSecondVendorFields(),
+    participation: null,
+    installmentCorrectionType: null as InstallmentCorrectionType | null,
+    allowSplitDownPayment: null as boolean | null,
+  };
   const obj = asRecord(raw);
   if (!obj) {
-    return {
-      secondVendor: emptyContractSecondVendorFields(),
-      participation: null,
-    };
+    return empty;
   }
 
   const vendorRaw =
@@ -175,7 +190,32 @@ export function parseLfContractConfigJson(raw: unknown): LfContractConfigParsed 
       ? { firstVendorPercent: first, secondVendorPercent: second }
       : null;
 
-  return { secondVendor, participation };
+  const finance =
+    asRecord(obj.sale_finance_config) || asRecord(obj.saleFinanceConfig) || obj;
+  const installmentCorrectionType = parseInstallmentCorrectionType(
+    finance.installment_correction_type ?? finance.installmentCorrectionType,
+  );
+  const allowSplitRaw =
+    finance.allow_split_down_payment ?? finance.allowSplitDownPayment;
+  const allowSplitDownPayment =
+    allowSplitRaw === true ||
+    allowSplitRaw === 1 ||
+    allowSplitRaw === 'true' ||
+    allowSplitRaw === 'TRUE'
+      ? true
+      : allowSplitRaw === false ||
+          allowSplitRaw === 0 ||
+          allowSplitRaw === 'false' ||
+          allowSplitRaw === 'FALSE'
+        ? false
+        : null;
+
+  return {
+    secondVendor,
+    participation,
+    installmentCorrectionType,
+    allowSplitDownPayment,
+  };
 }
 
 /** Compara o JSON pedido no save com o valor lido de projects.lf_contract_config_json. */
@@ -216,6 +256,8 @@ export function lfContractConfigPersistedEquals(
   ) {
     return false;
   }
+  if (a.installmentCorrectionType !== b.installmentCorrectionType) return false;
+  if (a.allowSplitDownPayment !== b.allowSplitDownPayment) return false;
   return true;
 }
 
@@ -241,6 +283,8 @@ export function lfConfigToFormState(raw: unknown): LfContractConfigFormState {
         : parsed.participation
           ? String(parsed.participation.secondVendorPercent)
           : '',
+    installmentCorrectionType: parsed.installmentCorrectionType || '',
+    allowSplitDownPayment: parsed.allowSplitDownPayment,
   };
 }
 
@@ -312,10 +356,6 @@ export function normalizeLfContractConfigForSave(
     };
   }
 
-  if (!vendorNorm.value && !participation) {
-    return { ok: true, value: null };
-  }
-
   const value: Record<string, unknown> = {};
   if (vendorNorm.value) {
     value.secondVendor = vendorNorm.value;
@@ -323,6 +363,44 @@ export function normalizeLfContractConfigForSave(
   if (participation) {
     value.participation = participation;
   }
+
+  const correction = parseInstallmentCorrectionType(
+    formLike.installmentCorrectionType ??
+      formLike.installment_correction_type ??
+      asRecord(formLike.sale_finance_config)?.installment_correction_type,
+  );
+  const allowSplitRaw =
+    formLike.allowSplitDownPayment ??
+    formLike.allow_split_down_payment ??
+    asRecord(formLike.sale_finance_config)?.allow_split_down_payment;
+  const allowSplit =
+    allowSplitRaw === true ||
+    allowSplitRaw === 1 ||
+    allowSplitRaw === 'true' ||
+    allowSplitRaw === 'TRUE'
+      ? true
+      : allowSplitRaw === false ||
+          allowSplitRaw === 0 ||
+          allowSplitRaw === 'false' ||
+          allowSplitRaw === 'FALSE'
+        ? false
+        : null;
+
+  const saleFinanceConfig: Record<string, unknown> = {};
+  if (correction) {
+    saleFinanceConfig.installment_correction_type = correction;
+  }
+  if (allowSplit != null) {
+    saleFinanceConfig.allow_split_down_payment = allowSplit;
+  }
+  if (Object.keys(saleFinanceConfig).length > 0) {
+    value.sale_finance_config = saleFinanceConfig;
+  }
+
+  if (!vendorNorm.value && !participation && !value.sale_finance_config) {
+    return { ok: true, value: null };
+  }
+
   return { ok: true, value };
 }
 
@@ -481,7 +559,9 @@ export function isLfContractConfigFieldsEmpty(
   return (
     isContractSecondVendorFieldsEmpty(fields.secondVendor) &&
     !clean(fields.firstVendorPercent) &&
-    !clean(fields.secondVendorPercent)
+    !clean(fields.secondVendorPercent) &&
+    !clean(fields.installmentCorrectionType) &&
+    fields.allowSplitDownPayment == null
   );
 }
 

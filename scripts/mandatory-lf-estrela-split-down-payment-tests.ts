@@ -6,6 +6,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { LotFormConfirmPayload } from '../components/map/CustomerLotFormModal';
+import {
+  formatInstallmentCorrectionLabel,
+} from '../lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '../lib/saleEditFinanceRecalc';
 import { resolveCustomPreviewValues } from '../lib/customContractPreviewResolver';
 import {
@@ -20,7 +23,16 @@ import {
   validateRecantoSignalPlan,
 } from '../lib/recantoSignalRemaining';
 import {
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal,
+  catalogDefaultInstallmentCorrectionType,
+  isInstallmentCorrectionOptionEnabled,
+  LF_ESTRELA_CORRECTION_SELECTOR_HINT,
+  LF_ESTRELA_HARDCODED_IGPM_LEGAL_MESSAGE,
   readAllowSplitDownPaymentOverride,
+  readProjectInstallmentCorrectionType,
+  resolvePersistInstallmentCorrectionType,
+  resolveProjectInstallmentCorrectionType,
+  shouldForceFixedInstallmentCorrection,
   usesSplitDownPaymentFinance,
 } from '../lib/saleFinanceConfig';
 
@@ -477,8 +489,12 @@ function testSourceWiring() {
     'form GIS usa capability, não só Recanto',
   );
   assert(
-    create.includes('usesSplitDownPaymentFinance(saleContractModel)'),
+    create.includes('usesSplitDownPaymentFinance({'),
     'create persiste split via capability',
+  );
+  assert(
+    create.includes('contractModel: saleContractModel'),
+    'create passa o modelo do contrato ao split',
   );
   assert(
     create.includes('buildSplitDownPaymentPersistFields'),
@@ -500,7 +516,212 @@ function testSourceWiring() {
     !modal.includes("isRecantoSinal = !downPaymentReducesInstallmentBase"),
     'form não esconde LF por arras do motor Estrela',
   );
+  assert(
+    modal.includes("normalizeSaleContractModel(contractModel) === 'ESTRELA_DO_SUL'"),
+    'labels Arras só no formulário ESTRELA/LF',
+  );
+  assert(modal.includes('Valor do Sinal / Entrada (Arras)'), 'label valor do sinal/entrada');
+  assert(
+    modal.includes('Valor pago no ato do Sinal / Entrada'),
+    'label pago no ato do sinal/entrada',
+  );
+  assert(modal.includes('Restante do Sinal / Entrada'), 'label restante do sinal/entrada');
+  assert(
+    modal.includes('Vencimento do Sinal / Entrada'),
+    'label vencimento do sinal/entrada',
+  );
+  assert(
+    modal.includes('Forma de cobrança do restante do Sinal / Entrada'),
+    'label forma de cobrança do restante',
+  );
+  assert(
+    modal.includes('Valor do sinal contratado (R$)'),
+    'Recanto preserva nomenclatura original do sinal',
+  );
+  assert(
+    modal.includes('isInstallmentCorrectionOptionEnabled'),
+    'seletor desabilita índices incompatíveis com o jurídico LF ESTRELA',
+  );
+  assert(
+    modal.includes('indisponível neste modelo'),
+    'opções bloqueadas aparecem como indisponíveis',
+  );
+  assert(
+    modal.includes('LF_ESTRELA_CORRECTION_SELECTOR_HINT'),
+    'seletor explica que o modelo atual exige IGP-M',
+  );
+  assert(
+    modal.includes('Correção das Parcelas / Índice de Correção Anual'),
+    'label do seletor de correção no formulário de venda',
+  );
+  assert(
+    create.includes('resolvePersistInstallmentCorrectionType'),
+    'create persiste o índice escolhido, não FIXED do split',
+  );
+  assert(
+    !/splitDownPayment\s*\n\s*\?\s*DEFAULT_INSTALLMENT_CORRECTION_TYPE/.test(create),
+    'create não força FIXED quando há split',
+  );
+  assert(
+    edit.includes('resolvePersistInstallmentCorrectionType'),
+    'edit persiste o índice escolhido, não FIXED do split LF',
+  );
+  assert(
+    !edit.includes('isRecanto\n        ? DEFAULT_INSTALLMENT_CORRECTION_TYPE'),
+    'edit não força FIXED para todo split',
+  );
   console.log('OK testSourceWiring');
+}
+
+function testCorrectionIndexIndependentOfSplit() {
+  assert(
+    shouldForceFixedInstallmentCorrection('RECANTO_PRIMAVERA') === true,
+    'Recanto continua forçando FIXED',
+  );
+  assert(
+    shouldForceFixedInstallmentCorrection('ESTRELA_DO_SUL') === false,
+    'Estrela não força FIXED por causa do split',
+  );
+  assert(
+    catalogDefaultInstallmentCorrectionType('ESTRELA_DO_SUL') === 'IGPM',
+    'catálogo Estrela = IGP-M',
+  );
+  assert(
+    catalogDefaultInstallmentCorrectionType('PADRAO') === 'FIXED',
+    'catálogo padrão = FIXED',
+  );
+  assert(
+    resolveProjectInstallmentCorrectionType({
+      contractModel: 'ESTRELA_DO_SUL',
+    }) === 'IGPM',
+    'Estrela sem JSON herda IGP-M',
+  );
+  assert(
+    resolveProjectInstallmentCorrectionType({
+      contractModel: 'ESTRELA_DO_SUL',
+      projectLfConfig: {
+        sale_finance_config: { installment_correction_type: 'IPCA' },
+      },
+    }) === 'IGPM',
+    'LF ESTRELA ignora JSON IPCA enquanto o jurídico é IGP-M',
+  );
+  assert(
+    resolveProjectInstallmentCorrectionType({
+      contractModel: 'PADRAO',
+      projectLfConfig: {
+        sale_finance_config: { installment_correction_type: 'IPCA' },
+      },
+    }) === 'IPCA',
+    'outros modelos honram o índice do empreendimento',
+  );
+  assert(
+    readProjectInstallmentCorrectionType({
+      sale_finance_config: { installment_correction_type: 'INCC' },
+    }) === 'INCC',
+    'lê índice em sale_finance_config',
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'ESTRELA_DO_SUL',
+      selected: 'IGPM',
+    }) === 'IGPM',
+    'venda Estrela grava IGP-M',
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'ESTRELA_DO_SUL',
+      selected: 'IPCA',
+    }) === 'IGPM',
+    'split Estrela não grava IPCA nem FIXED; alinha ao jurídico IGP-M',
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'ESTRELA_DO_SUL',
+      selected: 'FIXED',
+    }) === 'IGPM',
+    'split não volta a forçar FIXED no LF ESTRELA',
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'PADRAO',
+      selected: 'INCC',
+    }) === 'INCC',
+    'PADRAO persiste INCC escolhido',
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'RECANTO_PRIMAVERA',
+      selected: 'IGPM',
+    }) === 'FIXED',
+    'Recanto ignora seleção e grava FIXED',
+  );
+  assert(
+    isInstallmentCorrectionOptionEnabled('ESTRELA_DO_SUL', 'IGPM') === true,
+    'IGP-M habilitado no LF ESTRELA',
+  );
+  assert(
+    isInstallmentCorrectionOptionEnabled('ESTRELA_DO_SUL', 'FIXED') === false,
+    'FIXED desabilitado no LF ESTRELA',
+  );
+  assert(
+    isInstallmentCorrectionOptionEnabled('ESTRELA_DO_SUL', 'IPCA') === false,
+    'IPCA desabilitado no LF ESTRELA',
+  );
+  assert(
+    isInstallmentCorrectionOptionEnabled('ESTRELA_DO_SUL', 'INCC') === false,
+    'INCC desabilitado no LF ESTRELA',
+  );
+  assert(
+    isInstallmentCorrectionOptionEnabled('PADRAO', 'IPCA') === true,
+    'PADRAO mantém IPCA habilitado',
+  );
+  assert(
+    formatInstallmentCorrectionLabel('IGPM') === 'IGP-M',
+    'capa imprime IGP-M quando a venda grava IGPM',
+  );
+
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal('ESTRELA_DO_SUL', 'IGPM');
+  let locked = false;
+  try {
+    assertLfEstrelaCorrectionCoherentWithHardcodedLegal('ESTRELA_DO_SUL', 'FIXED');
+  } catch (err) {
+    locked = err instanceof Error && err.message === LF_ESTRELA_HARDCODED_IGPM_LEGAL_MESSAGE;
+  }
+  assert(locked, 'bloqueia FIXED no LF ESTRELA enquanto o jurídico é IGP-M');
+  locked = false;
+  try {
+    assertLfEstrelaCorrectionCoherentWithHardcodedLegal('ESTRELA_DO_SUL', 'IPCA');
+  } catch (err) {
+    locked = err instanceof Error && err.message.includes('IGP-M');
+  }
+  assert(locked, 'bloqueia IPCA no LF ESTRELA');
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal('PADRAO', 'IPCA');
+
+  const legal = read('lib/lfEstrelaCustomTemplate.ts');
+  assert(
+    legal.includes(
+      'As parcelas vincendas sofrerão reajuste monetário anual, aplicando-se a variação positiva acumulada do Índice Geral de Preços - Mercado (IGP-M)',
+    ),
+    'cláusula 2.3 permanece IGP-M literal',
+  );
+  assert(
+    legal.includes(
+      'Na hipótese de extinção, vedação legal ou ausência de divulgação do IGP-M/FGV',
+    ),
+    'cláusula 2.4 permanece IGP-M literal',
+  );
+  assert(
+    legal.includes(
+      'Atualização monetária calculada pro rata die (proporcional aos dias de atraso), com base na variação do IGP-M/FGV',
+    ),
+    'cláusula 2.5(a) permanece IGP-M literal',
+  );
+  assert(
+    legal.includes('acrescido de correção monetária (IGP-M/FGV), juros de 1% ao mês e multa de 2%'),
+    'cláusula 7.3 permanece IGP-M literal',
+  );
+  assert(legal.includes("t('CORRECTION_INDEX')"), 'capa continua com token CORRECTION_INDEX');
+  console.log('OK testCorrectionIndexIndependentOfSplit');
 }
 
 function main() {
@@ -515,6 +736,7 @@ function main() {
   testLfEstrelaDownPaymentToken();
   testPadraoUnchanged();
   testSourceWiring();
+  testCorrectionIndexIndependentOfSplit();
   console.log('OK — mandatory-lf-estrela-split-down-payment-tests passed');
 }
 

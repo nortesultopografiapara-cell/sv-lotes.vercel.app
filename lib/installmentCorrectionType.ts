@@ -16,17 +16,34 @@ export const INSTALLMENT_CORRECTION_OPTIONS: ReadonlyArray<{
   { value: 'INCC', label: 'INCC' },
 ] as const;
 
-export function normalizeInstallmentCorrectionType(
+/** Interpreta o índice; vazio/desconhecido → null (não assume FIXED). */
+export function parseInstallmentCorrectionType(
   raw: unknown,
-): InstallmentCorrectionType {
+): InstallmentCorrectionType | null {
   const value = String(raw ?? '')
     .trim()
     .toUpperCase()
-    .replace(/-/g, '');
+    .replace(/[\s-]/g, '');
+  if (!value) return null;
   if (value === 'IPCA') return 'IPCA';
-  if (value === 'IGPM' || value === 'IGP-M') return 'IGPM';
+  if (value === 'IGPM' || value === 'IGPMFGV') return 'IGPM';
   if (value === 'INCC') return 'INCC';
-  return DEFAULT_INSTALLMENT_CORRECTION_TYPE;
+  if (
+    value === 'FIXED' ||
+    value === 'NONE' ||
+    value === 'FIXO' ||
+    value === 'FIXAS' ||
+    value === 'PARCELASFIXAS'
+  ) {
+    return 'FIXED';
+  }
+  return null;
+}
+
+export function normalizeInstallmentCorrectionType(
+  raw: unknown,
+): InstallmentCorrectionType {
+  return parseInstallmentCorrectionType(raw) ?? DEFAULT_INSTALLMENT_CORRECTION_TYPE;
 }
 
 export function formatInstallmentCorrectionLabel(raw: unknown): string {

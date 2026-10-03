@@ -33,7 +33,11 @@ import {
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import { resolveSaleContractModelFromContext } from '@/lib/contractModel';
-import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
+import {
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal,
+  resolvePersistInstallmentCorrectionType,
+  usesSplitDownPaymentFinance,
+} from '@/lib/saleFinanceConfig';
 import { buildSplitDownPaymentPersistFields } from '@/lib/recantoSignalRemaining';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
@@ -582,6 +586,15 @@ export async function updateSaleFromEdit(
     throw new Error(scheduleLock.message || BALLOON_EDIT_LOCKED_MESSAGE);
   }
 
+  const installmentCorrectionType = resolvePersistInstallmentCorrectionType({
+    contractModel,
+    selected: data.installment_correction_type,
+  });
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal(
+    contractModel,
+    installmentCorrectionType,
+  );
+
   const salePatch = buildOfficialSalesUpdatePatch({
     customerId,
     agreedPrice: data.final_value,
@@ -591,12 +604,7 @@ export async function updateSaleFromEdit(
     paymentType: data.payment_type,
     downPayment: signalContractValue ?? parseCurrencyBRLNumber(data.down_payment),
     installmentsCount,
-    installmentCorrectionType:
-      isRecanto
-        ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
-        : paymentMode.isInstallment
-          ? data.installment_correction_type
-          : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+    installmentCorrectionType,
     brokerId,
     financialAccountId,
     signalContractValue,

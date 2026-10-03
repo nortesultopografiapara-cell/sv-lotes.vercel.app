@@ -319,6 +319,20 @@ assert(!isLfParticipationValid(-1, 101), 'negativo inválido');
   );
   assert(!('wallet' in (own.value as object)), 'não persiste wallet');
 }
+{
+  const withIndex = normalizeLfContractConfigForSave({
+    secondVendor: VENDOR_B,
+    firstVendorPercent: '25',
+    secondVendorPercent: '75',
+    installmentCorrectionType: 'IGPM',
+  });
+  assert(withIndex.ok && withIndex.value, 'save com índice IGP-M');
+  const finance = (withIndex.value as { sale_finance_config?: { installment_correction_type?: string } })
+    .sale_finance_config;
+  assert(finance?.installment_correction_type === 'IGPM', 'JSON guarda installment_correction_type');
+  const hydrated = lfConfigToFormState(withIndex.value);
+  assert(hydrated.installmentCorrectionType === 'IGPM', 'form herda IGP-M do JSON');
+}
 
 void (async () => {
 console.log('\n=== round-trip form → payload → parse → update → read → hydrate ===');

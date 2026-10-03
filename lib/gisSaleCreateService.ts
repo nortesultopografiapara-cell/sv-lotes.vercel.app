@@ -31,17 +31,17 @@ import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contra
 import { resolveOrCreateCustomer, customerPatchFromForm } from '@/lib/customerIdentity';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
 import { buildSaleSpouseDbPatch } from '@/lib/saleSpouseFields';
-import {
-  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
-  normalizeInstallmentCorrectionType,
-} from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
 import {
   assertSaleContractModelConfigured,
   detectPreviewAraguaiaNameCoerce,
   normalizeSaleContractModel,
 } from '@/lib/contractModel';
-import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
+import {
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal,
+  resolvePersistInstallmentCorrectionType,
+  usesSplitDownPaymentFinance,
+} from '@/lib/saleFinanceConfig';
 import { buildSplitDownPaymentPersistFields } from '@/lib/recantoSignalRemaining';
 import {
   assertLfParticipationConfiguredForNewSale,
@@ -498,7 +498,10 @@ export async function executeGisSaleCreate(
     ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ''))
     : 1;
 
-  const splitDownPayment = usesSplitDownPaymentFinance(saleContractModel);
+  const splitDownPayment = usesSplitDownPaymentFinance({
+    contractModel: saleContractModel,
+    projectLfConfig: projDataSnapshot?.lf_contract_config_json,
+  });
   const recantoSignalContract = splitDownPayment
     ? parseCurrencyBRLNumber(
         customerData.signal_contract_value || customerData.down_payment || '',
@@ -582,6 +585,16 @@ export async function executeGisSaleCreate(
     throw new Error(recantoInstallmentSnapshot.error);
   }
 
+  const installmentCorrectionType = resolvePersistInstallmentCorrectionType({
+    contractModel: saleContractModel,
+    selected: customerData.installment_correction_type,
+    projectLfConfig: projDataSnapshot?.lf_contract_config_json,
+  });
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal(
+    saleContractModel,
+    installmentCorrectionType,
+  );
+
   const salePayload: Record<string, unknown> = {
     tenant_id: tenantId,
     company_id: tenantId,
@@ -602,12 +615,7 @@ export async function executeGisSaleCreate(
     down_payment:
       splitPersist.downPaymentOverride ?? parseCurrencyBRLNumber(customerData.down_payment),
     installments_count: instCount,
-    installment_correction_type:
-      splitDownPayment
-        ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
-        : normalizeInstallmentCorrectionType(
-            customerData.installment_correction_type,
-          ),
+    installment_correction_type: installmentCorrectionType,
     status: 'ACTIVE',
     signal_contract_value: splitPersist.signalContractValue,
     signal_paid_at_sale: splitPersist.signalPaidAtSale,

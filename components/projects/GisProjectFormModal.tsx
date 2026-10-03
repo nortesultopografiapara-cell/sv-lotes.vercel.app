@@ -288,6 +288,9 @@ export function GisProjectFormModal(props: Props) {
                     value={props.lfContractConfig}
                     onChange={props.onLfContractConfigChange}
                     companySecondVendorJson={props.companySecondVendorJson}
+                    contractModel={
+                      props.contractModel || props.companyDefaultContractModel
+                    }
                   />
                 ) : null}
               </section>

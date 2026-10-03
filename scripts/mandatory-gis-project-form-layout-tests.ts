@@ -82,6 +82,14 @@ assert(!col3.includes('Participação LF Imóveis'), 'percentuais LF não estão
 console.log('\n=== percentuais separados ===');
 assert(lfFields.includes('Participação LF Imóveis (%)'), 'percentual contratual LF no bloco LF');
 assert(lfFields.includes('Participação segundo vendedor (%)'), 'percentual segundo vendedor no bloco LF');
+assert(
+  lfFields.includes('Correção das Parcelas / Índice de Correção Anual'),
+  'índice padrão do empreendimento no bloco LF',
+);
+assert(
+  lfFields.includes('indisponível neste modelo'),
+  'LF ESTRELA desabilita índices incompatíveis no empreendimento',
+);
 assert(!lfFields.includes('sharePercent') && !lfFields.includes('shareInput'), 'bloco LF não sincroniza Split');
 assert(splitPanel.includes('Distribuição de Recebimentos') || splitPanel.includes('shareInput'), 'percentuais Split no painel');
 assert(!modal.includes('firstVendorPercent') || modal.includes('lfContractConfig'), 'form não duplica percentuais LF');
