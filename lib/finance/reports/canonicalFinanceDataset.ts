@@ -131,6 +131,8 @@ function isUnusableProjectName(name: string | null | undefined): boolean {
     v === '-' ||
     v === 'lançamento manual' ||
     v === 'lancamento manual' ||
+    v === 'não informado' ||
+    v === 'nao informado' ||
     v === 'geral/outros' ||
     v === 'projeto desconhecido'
   );

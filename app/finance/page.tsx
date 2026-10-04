@@ -1711,6 +1711,24 @@ export default function FinancePage() {
           .from('cash_movements')
           .update({ status: 'estornado' })
           .eq('id', item.cashMovementId);
+        const commissionId =
+          item.commissionId ||
+          item.metadata?.commission_id ||
+          null;
+        if (commissionId) {
+          const reverseTenantId =
+            user?.tenant_id || (user as { company_id?: string } | null)?.company_id || '';
+          let reverseQuery = supabase
+            .from('broker_commissions')
+            .update({ status: 'pendente', paid_at: null })
+            .eq('id', commissionId);
+          if (reverseTenantId) {
+            reverseQuery = reverseQuery.or(
+              `tenant_id.eq.${reverseTenantId},company_id.eq.${reverseTenantId}`,
+            );
+          }
+          await reverseQuery;
+        }
       } else if (item.commissionId) {
         await supabase
           .from('broker_commissions')

@@ -93,6 +93,7 @@ export type CashMovementMetadata = {
   installment_id?: string | null;
   receipt_id?: string | null;
   financial_account_id?: string | null;
+  commission_id?: string | null;
 };
 
 function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
@@ -125,6 +126,7 @@ function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
     installment_id: pick("installment_id"),
     receipt_id: pick("receipt_id"),
     financial_account_id: pick("financial_account_id"),
+    commission_id: pick("commission_id"),
   };
 }
 
@@ -358,15 +360,14 @@ function isPlaceholderLabel(value: string): boolean {
   );
 }
 
-/** Rótulo para UI/PDF — nunca "Não Informado" se for lançamento sem vínculo. */
+/** Rótulo para UI/PDF — "Lançamento manual" só quando o item é de fato manual. */
 export function flowDisplayLabel(
   value: string | null | undefined,
   manual = false,
 ): string {
-  if (manual) return MANUAL_LABEL;
   const v = String(value ?? "").trim();
-  if (isPlaceholderLabel(v)) return MANUAL_LABEL;
-  return v;
+  if (!isPlaceholderLabel(v)) return v;
+  return manual ? MANUAL_LABEL : "Não informado";
 }
 
 export function formatFlowDate(dateStr: string | null | undefined): string {
@@ -498,9 +499,13 @@ function resolveCashMovementMeta(c: any): {
 
   const typeStr = (c.type || "").toLowerCase();
   const isSaida = isCashMovementSaida(typeStr);
-  /** Despesa/saque manual: sem vínculo formal de contrato ou venda. */
+  /** Despesa/saque manual: sem vínculo de contrato, venda ou comissão. */
   const isManual =
-    isSaida && !c.finance_receipt_id && !c.contract_id && !c.sale_id;
+    isSaida &&
+    !c.finance_receipt_id &&
+    !c.contract_id &&
+    !c.sale_id &&
+    !md.commission_id;
 
   const showManualLabel = isManual && !customerName && !contractNumber && !locationLabel;
 
@@ -590,6 +595,7 @@ export function calculateFinancialTotals(
       );
       if (!isSaidaStr) return false;
       const cMd = getCashMovementMetadata(c);
+      if (cMd.commission_id && cMd.commission_id === cm.id) return true;
       const brokerMatch =
         cm.broker_id &&
         (cMd.broker_id === cm.broker_id || c.broker_id === cm.broker_id);
@@ -717,8 +723,8 @@ export function buildCashFlowItems(
         c.sales?.project_id ||
         null,
       saleId: c.sale_id || null,
-      brokerId: movementMd.broker_id || null,
-      commissionId: null,
+      brokerId: movementMd.broker_id || c.broker_id || null,
+      commissionId: movementMd.commission_id || null,
       movement_date: c.movement_date || c.created_at?.split("T")[0] || "",
       tipo: isSaida ? "saida" : "entrada",
       category: c.category || (isSaida ? "Despesa" : "Entrada manual"),
@@ -749,9 +755,13 @@ export function buildCashFlowItems(
     const duplicatedInCash = (cashMvs || []).some((c) => {
       const typeStr = (c.type || "").toLowerCase();
       if (!isCashMovementSaida(typeStr)) return false;
+      const st = (c.status || "ativo").toLowerCase();
+      if (st === "estornado" || st === "cancelado" || st === "deleted") return false;
+      const cMd = getCashMovementMetadata(c);
+      if (cMd.commission_id && cMd.commission_id === cm.id) return true;
       return (
         (c.sale_id === cm.sale_id ||
-          getCashMovementMetadata(c).broker_id === cm.broker_id ||
+          cMd.broker_id === cm.broker_id ||
           c.broker_id === cm.broker_id) &&
         Math.abs(Number(c.amount) - amount) < 1
       );

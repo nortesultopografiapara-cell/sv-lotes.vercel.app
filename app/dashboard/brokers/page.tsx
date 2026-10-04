@@ -1149,105 +1149,35 @@ export default function CorretoresPage() {
        return;
      }
 
+     const rawMethod = window.prompt(
+       "Forma de pagamento (PIX, Dinheiro, Boleto, Cartão, Transferência, Outros):",
+       "PIX",
+     );
+     if (rawMethod == null) return;
+     if (!String(rawMethod).trim()) {
+       alert("Forma de pagamento obrigatória.");
+       return;
+     }
+
      try {
-       console.log("BROKER_PAY_SOURCE_DATA", c);
-       console.log("BROKER_PENDING_VISUAL_AMOUNT", c.comissao_pendente);
-
        const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
-
-       let { data: pendentes, error: errC } = await supabase.from('broker_commissions')
-         .select('id, sale_id, amount')
-         .eq('broker_id', c.id)
-         .in('status', ['pendente', 'aprovado', 'PENDENTE', 'APROVADO', 'Pendente', 'Aprovado']);
-
-       if (errC) throw errC;
-       if (!pendentes) pendentes = [];
-       
-       console.log("Comissões encontradas antes da verificação adicional:", pendentes.length);
-
-       // Buscar vendas para gerar faltantes (como é feito no fluxo visual)
-       const { data: brokerSales, error: errSales } = await supabase.from('sales').select('*').eq('broker_id', c.id);
-       
-       console.log("BROKER_SALES_USED_FOR_COMMISSION", brokerSales);
-
-       if (!errSales && brokerSales && brokerSales.length > 0) {
-           const { data: allComms } = await supabase.from('broker_commissions').select('sale_id').eq('broker_id', c.id);
-           const exSalesIds = allComms ? allComms.map((cc) => cc.sale_id) : [];
-           
-           for (const sale of brokerSales) {
-               if (!exSalesIds.includes(sale.id)) {
-                   const defaults = resolveBrokerDefaultCommissionPlan(c);
-                   const saleValue = resolveSaleValueForCommission(sale);
-                   const plan = calculateBrokerCommissionPlan({
-                     mode: defaults.mode,
-                     percent: defaults.percent,
-                     fixedAmount: defaults.fixedAmount,
-                     saleValue,
-                   });
-                   if (!shouldCreatePendingCommissionFromPlan(plan)) continue;
-                   
-                   const newComm = {
-                       company_id: resolvedTenantId,
-                       tenant_id: resolvedTenantId,
-                       broker_id: c.id,
-                       sale_id: sale.id,
-                       ...buildCommissionSnapshotFields(plan),
-                       status: 'pendente'
-                   };
-                   
-                   console.log("BROKER_COMMISSION_INSERT_PAYLOAD", newComm);
-                   
-                   const { data: insComm, error: insErr } = await supabase.from('broker_commissions').insert([newComm]).select().single();
-                   if (insErr) {
-                       console.error("Erro ao gerar comissão faltante:", insErr);
-                       throw new Error("Erro DB ao criar comissão: " + insErr.message);
-                   }
-                   if (insComm) {
-                       pendentes.push({...insComm, amount: plan.amount});
-                   }
-               }
-           }
+       if (!resolvedTenantId) {
+         throw new Error("Empresa/tenant ausente.");
        }
-
-       if (!pendentes || pendentes.length === 0) {
-           throw new Error("Comissões não encontradas e não foi possível gerar registro a partir das vendas.");
-       }
-
-       let totalPago = 0;
-       for (const comm of pendentes) {
-          totalPago += Number(comm.amount || 0);
-          await supabase.from('broker_commissions').update({
-             status: 'pago',
-             paid_at: new Date().toISOString()
-          }).eq('id', comm.id);
-          
-          let projId = null;
-          if (comm.sale_id) {
-              const { data: saleData } = await supabase.from('sales').select('project_id').eq('id', comm.sale_id).single();
-              projId = saleData?.project_id || null;
-          }
-          
-          const cashPayload = {
-              tenant_id: resolvedTenantId,
-              company_id: resolvedTenantId,
-              type: 'saida',
-              category: 'Comissão',
-              description: `Pagamento de comissão ao corretor ${c.name}`,
-              amount: Number(comm.amount || 0),
-              broker_id: c.id,
-              sale_id: comm.sale_id || null,
-              project_id: projId,
-              broker_commission_id: comm.id,
-              movement_date: new Date().toISOString().split('T')[0],
-              status: 'ativo',
-              created_by: user.id
-          };
-          
-          await supabase.from('cash_movements').insert(cashPayload);
-          
-          console.log("COMMISSION_CASH_MOVEMENT_INSERT", cashPayload);
-          console.log("COMMISSION_PROJECT_ID", projId);
-       }
+       const { settlePendingBrokerCommissions } = await import(
+         "@/lib/brokerCommissionSettleService"
+       );
+       const { normalizeCommissionPaymentMethod } = await import(
+         "@/lib/brokerCommissionSettlement"
+       );
+       const result = await settlePendingBrokerCommissions({
+         supabase,
+         tenantId: String(resolvedTenantId),
+         userId: user.id,
+         brokerId: c.id,
+         brokerName: c.name,
+         paymentMethod: normalizeCommissionPaymentMethod(rawMethod),
+       });
 
        try {
            await supabase.from('audit_logs').insert([{
@@ -1256,7 +1186,12 @@ export default function CorretoresPage() {
                user_id: user.id,
                action: 'COMMISSION_PAID',
                module: 'FINANCE',
-               description: `Pagamento total de ${formatCurrency(totalPago)} para corretor ${c.name}`
+               description: `Pagamento de ${formatCurrency(c.comissao_pendente)} para corretor ${c.name}`,
+               metadata: {
+                 broker_id: c.id,
+                 cash_movement_ids: result.cashIds,
+                 paid_count: result.paidCount,
+               },
            }]);
        } catch(logE) {}
 
