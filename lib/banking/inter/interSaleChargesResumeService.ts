@@ -20,10 +20,15 @@ import {
   interBankChargeMissingArtifacts,
 } from '@/lib/banking/inter/interSaleChargeService';
 import {
+  INTER_RESUME_LIVE_EMIT_DISABLED_MESSAGE,
+  isInterResumeLiveEmitFlagEnabled,
+} from '@/lib/banking/inter/interResumeLiveEmitFlag';
+import {
   INTER_RESUME_JOBS_METADATA_KEY,
   buildInterSeuNumero,
   canPersistInterResumeChargeStatus,
   interResumePublicView,
+  resolveInterChargeEnvironment,
   resolveInterResumeEmitMode,
   type InterSaleChargesResumeJob,
 } from '@/lib/banking/inter/interSaleChargesResume';
@@ -56,19 +61,16 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-export function resolveInterResumeRuntimeMode(bankEnvironment?: string | null): 'simulate' | 'live' {
-  const mode = resolveInterResumeEmitMode({
+export function resolveInterResumeRuntimeMode(
+  bankEnvironment?: string | null,
+): 'simulate' | 'live' | 'deferred' {
+  return resolveInterResumeEmitMode({
     vercelEnv: process.env.VERCEL_ENV,
     isProductionSupabase: isProductionSupabaseRuntime(),
     isDevelopHomolog: isDevelopHomologRuntime(),
     bankEnvironment,
+    liveEmitFlag: isInterResumeLiveEmitFlagEnabled(),
   });
-  if (mode === 'blocked') {
-    throw new InterResumeBlockedError(
-      'Retomada Inter bloqueada neste ambiente (Production/Preview com banco de Production). Use Develop/sandbox e dados de teste.',
-    );
-  }
-  return mode;
 }
 
 function buildPagador(customer: Record<string, unknown>): InterCreateCobrancaInput['pagador'] {
@@ -136,11 +138,16 @@ export function createInterResumePorts(params: {
   integrationId: string;
   financialAccountId: string | null;
   userId?: string | null;
-  mode: 'simulate' | 'live';
+  mode: 'simulate' | 'live' | 'deferred';
+  bankEnvironment?: string | null;
   fetchFn?: InterOAuthFetchFn;
 }): InterResumePorts {
   const { admin, companyId, saleId, integrationId, financialAccountId, userId, mode, fetchFn } =
     params;
+  const chargeEnvironment = resolveInterChargeEnvironment({
+    mode,
+    bankEnvironment: params.bankEnvironment,
+  });
   let simulateSeq = 0;
   return {
     now: () => Date.now(),
@@ -206,7 +213,7 @@ export function createInterResumePorts(params: {
         customer_id: receipt?.customer_id || null,
         charge_type: 'BOLETO_PIX',
         provider: 'INTER',
-        environment: 'SANDBOX',
+        environment: chargeEnvironment,
         external_id: input.codigoSolicitacao,
         amount: input.amount,
         due_date: input.dueDate,
@@ -267,6 +274,9 @@ export function createInterResumePorts(params: {
       }
     },
     async emitCobranca(input) {
+      if (mode === 'deferred') {
+        return { ok: false, blocked: true, message: INTER_RESUME_LIVE_EMIT_DISABLED_MESSAGE };
+      }
       if (mode === 'simulate') {
         simulateSeq += 1;
         return { ok: true, codigoSolicitacao: `SIM-${input.seuNumero}-${simulateSeq}` };
@@ -441,6 +451,7 @@ export async function startAndTickInterResumeJob(params: {
     financialAccountId: resolved.financialAccountId,
     userId: params.userId,
     mode,
+    bankEnvironment: resolved.bankEnvironment,
     fetchFn: params.fetchFn,
   });
 
@@ -479,10 +490,9 @@ export async function startAndTickInterResumeJob(params: {
 export async function tickDueInterResumeJobs(
   admin: SupabaseClient,
   limit = 3,
-): Promise<{ processed: number }> {
-  if (isProductionSupabaseRuntime()) {
-    return { processed: 0 };
-  }
+): Promise<{ processed: number; liveEmitEnabled: boolean; emitMode: 'simulate' | 'live' | 'deferred' }> {
+  const emitMode = resolveInterResumeRuntimeMode();
+  const liveEmitEnabled = isInterResumeLiveEmitFlagEnabled();
   const { data, error } = await admin
     .from('bank_integrations')
     .select('id, company_id, metadata, environment')
@@ -495,6 +505,7 @@ export async function tickDueInterResumeJobs(
     const jobs = asRecord(asRecord(row.metadata)[INTER_RESUME_JOBS_METADATA_KEY]);
     for (const [saleId, rawJob] of Object.entries(jobs)) {
       if (processed >= limit) break;
+      if (saleId === '_rev' || saleId === '_rate') continue;
       const job = rawJob as InterSaleChargesResumeJob;
       if (!job || typeof job !== 'object') continue;
       if (job.status !== 'running' && job.status !== 'queued') continue;
@@ -511,5 +522,5 @@ export async function tickDueInterResumeJobs(
       }
     }
   }
-  return { processed };
+  return { processed, liveEmitEnabled, emitMode };
 }

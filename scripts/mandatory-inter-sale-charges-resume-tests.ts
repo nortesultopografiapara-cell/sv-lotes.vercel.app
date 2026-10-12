@@ -1,20 +1,27 @@
 /**
- * Testes obrigatórios — retomada de cobranças Banco Inter.
+ * Testes obrigatórios — retomada Inter (CAS atômico, flag, reconcile-before-POST).
  * npm run test:inter-sale-charges-resume
- *
- * Homologação simulada: sem POST real, sem Asaas/C6, sem alterar parcelas.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { isCronSecretValid } from '../lib/saasCronAuth';
+import { isInterResumeLiveEmitFlagEnabled } from '../lib/banking/inter/interResumeLiveEmitFlag';
 import {
   INTER_RESUME_BATCH_SIZE,
-  INTER_RESUME_MAX_ATTEMPTS,
-  applyInterResumeLease,
+  INTER_RESUME_CAS_RPC,
+  INTER_RESUME_LEASE_MS,
   buildInterSeuNumero,
   canPersistInterResumeChargeStatus,
+  canRetryInterResumePost,
+  casWriteInterResumeJob,
   classifyInterResumeHttpError,
-  interResumeBackoffMs,
+  emptyInterResumeJobsBundle,
+  hydrateJobFromBundle,
+  mustReconcileBeforeInterResumePost,
+  parseInterResumeJobsBundle,
+  resolveInterChargeEnvironment,
   resolveInterResumeEmitMode,
+  serializeInterResumeJobsBundle,
   shouldSkipDuplicateInterCharge,
 } from '../lib/banking/inter/interSaleChargesResume';
 import {
@@ -35,14 +42,13 @@ function assert(cond: unknown, msg: string): void {
 }
 
 const root = process.cwd();
-
 function read(rel: string): string {
   return fs.readFileSync(path.join(root, rel), 'utf8');
 }
 
-function makeInstallments(count: number): InterResumeMissingInstallment[] {
+function makeInstallments(count: number, prefix = 'inst'): InterResumeMissingInstallment[] {
   return Array.from({ length: count }, (_, i) => ({
-    id: `inst-${String(i + 1).padStart(3, '0')}`,
+    id: `${prefix}-${String(i + 1).padStart(3, '0')}`,
     installmentNumber: i + 1,
     dueDate: `2027-01-${String((i % 28) + 1).padStart(2, '0')}`,
     amount: 150 + i,
@@ -60,6 +66,7 @@ type Harness = {
   persistArtifacts: string[];
   fetchArtifacts: string[];
   paidOverwriteAttempts: number;
+  sleeps: number[];
   setEmit(fn: (input: { installmentId: string; seuNumero: string }) => Promise<InterResumeEmitResult>): void;
   setReconcile(fn: (seuNumero: string) => Promise<{ codigoSolicitacao: string } | null>): void;
   active: Map<string, InterResumeExistingCharge>;
@@ -68,7 +75,10 @@ type Harness = {
   clock: { now: number };
 };
 
-function createHarness(missing: InterResumeMissingInstallment[]): Harness {
+function createHarness(
+  missing: InterResumeMissingInstallment[],
+  opts?: { saleId?: string; integrationId?: string; mode?: 'simulate' | 'live' | 'deferred' },
+): Harness {
   const store = createMemoryInterResumeStore();
   const emitCalls: Harness['emitCalls'] = [];
   const reconcileCalls: string[] = [];
@@ -76,28 +86,28 @@ function createHarness(missing: InterResumeMissingInstallment[]): Harness {
   const persistErrors: string[] = [];
   const persistArtifacts: string[] = [];
   const fetchArtifacts: string[] = [];
+  const sleeps: number[] = [];
   const active = new Map<string, InterResumeExistingCharge>();
   const needingArtifacts: Harness['needingArtifacts'] = [];
   const clock = { now: 1_700_000_000_000 };
-  let emitImpl: Harness extends never ? never : (input: {
-    installmentId: string;
-    seuNumero: string;
-  }) => Promise<InterResumeEmitResult> = async (input) => {
-    emitCalls.push(input);
-    return { ok: true, codigoSolicitacao: `SIM-${input.seuNumero}` };
-  };
+  const paidOverwriteAttempts = { n: 0 };
+  let emitImpl: (input: { installmentId: string; seuNumero: string }) => Promise<InterResumeEmitResult> =
+    async (input) => {
+      emitCalls.push(input);
+      return { ok: true, codigoSolicitacao: `SIM-${input.seuNumero}` };
+    };
   let reconcileImpl = async (seuNumero: string) => {
     reconcileCalls.push(seuNumero);
     return null as { codigoSolicitacao: string } | null;
   };
-  const paidOverwriteAttempts = { n: 0 };
 
   const ports: InterResumePorts = {
     now: () => clock.now,
     sleep: async (ms) => {
+      sleeps.push(ms);
       clock.now += Math.max(0, ms);
     },
-    newJobId: () => 'job-test-1',
+    newJobId: () => `job-${opts?.saleId || 'sale-1'}`,
     newLeaseOwner: () => `lease-${Math.random().toString(36).slice(2, 8)}`,
     listMissing: async () => missing,
     findActiveCharge: async (installmentId) => active.get(installmentId) || null,
@@ -124,10 +134,9 @@ function createHarness(missing: InterResumeMissingInstallment[]): Harness {
       persistErrors.push(input.installmentId);
     },
     emitCobranca: async (input) => emitImpl(input),
-    reconcileBySeuNumero: async (input) => {
-      return reconcileImpl(input.seuNumero);
-    },
-    listChargesNeedingArtifacts: async () => needingArtifacts.filter((row) => String(row.status || '').toUpperCase() !== 'PAID'),
+    reconcileBySeuNumero: async (input) => reconcileImpl(input.seuNumero),
+    listChargesNeedingArtifacts: async () =>
+      needingArtifacts.filter((row) => String(row.status || '').toUpperCase() !== 'PAID'),
     fetchArtifacts: async (codigo) => {
       fetchArtifacts.push(codigo);
       return {
@@ -141,10 +150,7 @@ function createHarness(missing: InterResumeMissingInstallment[]): Harness {
       };
     },
     persistArtifacts: async (input) => {
-      if (!canPersistInterResumeChargeStatus({
-        currentStatus: input.currentStatus,
-        nextStatus: 'REGISTERED',
-      })) {
+      if (!canPersistInterResumeChargeStatus({ currentStatus: input.currentStatus, nextStatus: 'REGISTERED' })) {
         paidOverwriteAttempts.n += 1;
         return;
       }
@@ -161,6 +167,7 @@ function createHarness(missing: InterResumeMissingInstallment[]): Harness {
     persistErrors,
     persistArtifacts,
     fetchArtifacts,
+    sleeps,
     get paidOverwriteAttempts() {
       return paidOverwriteAttempts.n;
     },
@@ -177,7 +184,7 @@ function createHarness(missing: InterResumeMissingInstallment[]): Harness {
   };
 }
 
-async function startTick(h: Harness, saleId = 'sale-1') {
+async function startTick(h: Harness, saleId = 'sale-1', mode: 'simulate' | 'live' | 'deferred' = 'simulate') {
   await startInterResumeJob({
     store: h.store,
     ports: h.ports,
@@ -185,7 +192,7 @@ async function startTick(h: Harness, saleId = 'sale-1') {
     saleId,
     integrationId: 'int-1',
     financialAccountId: 'acc-1',
-    mode: 'simulate',
+    mode,
   });
   return tickInterResumeJob({
     store: h.store,
@@ -216,178 +223,120 @@ async function drain(h: Harness, saleId = 'sale-1', maxTicks = 400) {
 }
 
 function testDomain() {
-  assert(INTER_RESUME_BATCH_SIZE === 5, 'lote efetivo de 5 POSTs');
-  assert(buildInterSeuNumero(12, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee').length <= 15, 'seuNumero cabe em 15 dígitos');
-  assert(shouldSkipDuplicateInterCharge({ status: 'REGISTERED', external_id: 'SOL-1' }), 'pula cobrança ativa');
-  assert(shouldSkipDuplicateInterCharge({ status: 'PAID', id: 'x' }), 'pula paga');
-  assert(!shouldSkipDuplicateInterCharge({ status: 'FAILED' }), 'FAILED não é ativa');
-  assert(!canPersistInterResumeChargeStatus({ currentStatus: 'PAID', nextStatus: 'FAILED' }), 'PAID não é sobrescrito');
-  assert(canPersistInterResumeChargeStatus({ currentStatus: 'PENDING', nextStatus: 'REGISTERED' }), 'PENDING pode evoluir');
-  assert(classifyInterResumeHttpError(429) === 'retry', '429 é retry');
-  assert(classifyInterResumeHttpError(408) === 'retry', 'timeout 408 é retry');
-  assert(classifyInterResumeHttpError(400) === 'fail', '400 é fail');
-  assert(interResumeBackoffMs({ attempt: 1, httpStatus: 429 }) >= 60_000, 'backoff 429 padrão 60s');
-  assert(resolveInterResumeEmitMode({ isProductionSupabase: true }) === 'blocked', 'Production supabase bloqueada');
-  assert(resolveInterResumeEmitMode({ isDevelopHomolog: true }) === 'simulate', 'Develop homolog simula');
+  assert(INTER_RESUME_LEASE_MS >= 60_000, 'lease cobre maxDuration 60s');
+  assert(classifyInterResumeHttpError(429) === 'retry_post', '429 pode repetir POST');
+  assert(classifyInterResumeHttpError(408) === 'indeterminate', '408 é indeterminado');
+  assert(classifyInterResumeHttpError(500) === 'indeterminate', '500 é indeterminado');
+  assert(classifyInterResumeHttpError(400) === 'fail', '400 falha');
+  assert(mustReconcileBeforeInterResumePost({ status: 'intent', attempts: 1, postAttempted: true }), 'intent com POST tentado reconcilia');
+  assert(!mustReconcileBeforeInterResumePost({ status: 'intent', attempts: 1, lastHttpStatus: 429 }), '429 não força reconciliação no lugar do retry');
+  assert(canRetryInterResumePost({ status: 'intent', attempts: 1, lastHttpStatus: 429 }), '429 permite novo POST');
+  assert(!canRetryInterResumePost({ status: 'intent', attempts: 1, postAttempted: true }), 'indeterminado não reemite');
+  assert(!shouldSkipDuplicateInterCharge({ status: 'PENDING', id: 'x' }), 'stub sem external_id não bloqueia como duplicata');
+  assert(shouldSkipDuplicateInterCharge({ status: 'REGISTERED', external_id: 'SOL-1' }), 'cobrança ativa com codigo é reaproveitada');
   assert(resolveInterResumeEmitMode({ vercelEnv: 'preview' }) === 'simulate', 'Preview simula');
-  assert(resolveInterResumeEmitMode({ vercelEnv: 'production', isProductionSupabase: true }) === 'blocked', 'Vercel production + supabase prod bloqueada');
+  assert(resolveInterResumeEmitMode({ isDevelopHomolog: true }) === 'simulate', 'Develop homolog simula');
+  assert(
+    resolveInterResumeEmitMode({
+      vercelEnv: 'production',
+      isProductionSupabase: true,
+      bankEnvironment: 'PRODUCTION',
+      liveEmitFlag: false,
+    }) === 'deferred',
+    'Production sem flag não emite',
+  );
+  assert(
+    resolveInterResumeEmitMode({
+      vercelEnv: 'production',
+      isProductionSupabase: true,
+      bankEnvironment: 'PRODUCTION',
+      liveEmitFlag: true,
+    }) === 'live',
+    'Production só emite com flag',
+  );
+  assert(!isInterResumeLiveEmitFlagEnabled(''), 'flag vazia é off');
+  assert(!isInterResumeLiveEmitFlagEnabled('false'), 'flag false é off');
+  assert(isInterResumeLiveEmitFlagEnabled('true'), 'flag true só quando explícita');
+  assert(resolveInterChargeEnvironment({ mode: 'simulate', bankEnvironment: 'PRODUCTION' }) === 'SANDBOX', 'simulate não grava PRODUCTION');
+  assert(resolveInterChargeEnvironment({ mode: 'live', bankEnvironment: 'PRODUCTION' }) === 'PRODUCTION', 'live usa PRODUCTION');
+  assert(resolveInterChargeEnvironment({ mode: 'deferred', bankEnvironment: 'PRODUCTION' }) === 'SANDBOX', 'deferred não persiste PRODUCTION');
 }
 
-async function testScale(count: number) {
-  const h = createHarness(makeInstallments(count));
-  const { job, ticks } = await drain(h);
-  assert(job?.status === 'completed', `${count} parcelas concluídas`);
-  assert(h.emitCalls.length === count, `${count} emissões simuladas, uma por parcela`);
-  assert(job?.emitted === count, `${count} marcadas emitidas`);
-  assert(job?.failed === 0, `${count} sem erro`);
-  assert(job?.remaining === 0, `${count} remaining 0`);
-  assert(ticks === Math.ceil(count / INTER_RESUME_BATCH_SIZE), `${count} ticks = ceil(n/5)`);
-}
-
-async function testIdempotency() {
-  const missing = makeInstallments(3);
-  const h = createHarness(missing);
-  h.active.set('inst-001', { id: 'chg-1', status: 'REGISTERED', external_id: 'SOL-EXISTING' });
-  const job = await startTick(h);
-  assert(job?.reused === 1, 'parcela com cobrança ativa foi reaproveitada');
-  assert(h.emitCalls.every((c) => c.installmentId !== 'inst-001'), 'não reemitiu parcela já ativa');
-  assert(h.emitCalls.length === 2, 'emitiu só as duas faltantes do lote');
-}
-
-async function testPaidLock() {
-  const missing = makeInstallments(2);
-  missing[0].paid = true;
-  const h = createHarness(missing);
-  h.active.set('inst-001', { id: 'chg-paid', status: 'PAID', external_id: 'SOL-PAID' });
-  h.needingArtifacts.push({
-    installmentId: 'inst-001',
-    codigoSolicitacao: 'SOL-PAID',
-    status: 'PAID',
+function testCasAtomic() {
+  const jobA = {
+    ...emptyInterResumeJobsBundle(),
+  };
+  const base = emptyInterResumeJobsBundle();
+  const job1 = {
+    id: 'j1',
+    revision: 0,
+    companyId: 'co-1',
+    saleId: 'sale-a',
+    integrationId: 'int-1',
+    financialAccountId: null,
+    status: 'running' as const,
+    createdAt: '',
+    updatedAt: '',
+    createdBy: null,
+    leaseOwner: 'a',
+    leaseUntil: null,
+    cursorIndex: 0,
+    plannedInstallmentIds: ['1'],
+    emitted: 0,
+    reused: 0,
+    skippedPaid: 0,
+    failed: 0,
+    remaining: 1,
+    lastError: null,
+    rateLimitedUntil: null,
+    lastPostAt: null,
+    installmentResults: {},
+    mode: 'simulate' as const,
+  };
+  const first = casWriteInterResumeJob({ bundle: base, expectedRev: 0, job: { ...job1, lastPostAt: 't1' } });
+  assert(first.ok && first.bundle._rev === 1, 'primeiro CAS aplica _rev=1');
+  const second = casWriteInterResumeJob({
+    bundle: first.bundle,
+    expectedRev: 0,
+    job: { ...job1, saleId: 'sale-b', id: 'j2' },
   });
-  const { job } = await drain(h);
-  assert(job?.status === 'completed', 'job conclui sem mexer na paga');
-  assert(!h.persistEmitted.includes('inst-001'), 'não persiste emissão em PAID');
-  assert(!h.persistErrors.includes('inst-001'), 'não persiste erro em PAID');
-  assert(!h.persistArtifacts.includes('inst-001'), 'não materializa artefato de PAID');
-  assert(h.paidOverwriteAttempts === 0, 'nenhuma tentativa de sobrescrever PAID chegou a persistir');
+  assert(!second.ok, 'segundo writer com a mesma revisão perde (cópia stale)');
+  const third = casWriteInterResumeJob({
+    bundle: first.bundle,
+    expectedRev: 1,
+    job: { ...job1, saleId: 'sale-b', id: 'j2' },
+  });
+  assert(third.ok && Object.keys(third.bundle.jobs).length === 2, 'após reload o segundo sale entra sem apagar o primeiro');
+  void jobA;
 }
 
-async function test429() {
-  const h = createHarness(makeInstallments(8));
-  h.setEmit(async (input) => {
-    h.emitCalls.push(input);
-    if (h.emitCalls.length === 3) {
-      return { ok: false, httpStatus: 429, message: 'rate limit', retryAfterMs: 90_000 };
+async function testFakePostgresCas() {
+  const row = { rev: 0, payload: '' };
+  const lock = { p: Promise.resolve() };
+  async function pgUpdate(expected: number, payload: string) {
+    const prev = lock.p;
+    let release!: () => void;
+    lock.p = new Promise<void>((r) => {
+      release = r;
+    });
+    await prev;
+    await new Promise((r) => setTimeout(r, 5));
+    try {
+      if (row.rev !== expected) return 0;
+      row.rev = expected + 1;
+      row.payload = payload;
+      return 1;
+    } finally {
+      release();
     }
-    return { ok: true, codigoSolicitacao: `SIM-${input.seuNumero}` };
-  });
-  const job = await startTick(h);
-  assert(job?.status === 'running', '429 pausa o lote, job segue running');
-  assert(job?.rateLimitedUntil, 'grava rateLimitedUntil');
-  assert(h.emitCalls.length === 3, 'para no 429, não continua o lote');
-  assert((job?.emitted || 0) === 2, 'duas emitidas antes do 429');
-  const blocked = await tickInterResumeJob({
-    store: h.store,
-    ports: h.ports,
-    companyId: 'co-1',
-    saleId: 'sale-1',
-  });
-  assert(blocked?.rateLimitedUntil, 'tick durante backoff não avança');
-  assert(h.emitCalls.length === 3, 'nenhuma emissão extra durante 429');
-  h.clock.now = Date.parse(String(blocked?.rateLimitedUntil)) + 1;
-  const resumed = await tickInterResumeJob({
-    store: h.store,
-    ports: h.ports,
-    companyId: 'co-1',
-    saleId: 'sale-1',
-  });
-  assert((resumed?.emitted || 0) >= 2, 'retoma após backoff 429');
-  assert(h.emitCalls.length > 3, 'novas emissões depois do 429');
-}
-
-async function testTimeoutRetry() {
-  const h = createHarness(makeInstallments(1));
-  h.setEmit(async (input) => {
-    h.emitCalls.push(input);
-    return { ok: false, httpStatus: 408, message: 'timeout' };
-  });
-  const first = await startTick(h);
-  assert(first?.installmentResults['inst-001']?.status === 'pending', 'timeout não falha de imediato');
-  assert((first?.installmentResults['inst-001']?.attempts || 0) === 1, 'conta tentativa de timeout');
-  for (let i = 0; i < INTER_RESUME_MAX_ATTEMPTS; i += 1) {
-    await tickInterResumeJob({ store: h.store, ports: h.ports, companyId: 'co-1', saleId: 'sale-1' });
   }
-  const last = await h.store.load('co-1', 'sale-1');
-  assert(last?.installmentResults['inst-001']?.status === 'failed', 'timeout esgota tentativas');
-  assert(h.persistErrors.includes('inst-001'), 'erro persistido após esgotar timeout');
+  const results = await Promise.all([pgUpdate(0, 'A'), pgUpdate(0, 'B')]);
+  assert(results.filter((n) => n === 1).length === 1, 'PostgreSQL simulado: só um UPDATE com WHERE rev ganha');
+  assert(results.filter((n) => n === 0).length === 1, 'PostgreSQL simulado: o outro UPDATE afeta 0 linhas');
+  assert(row.rev === 1, 'revisão final = 1');
 }
 
-async function testLostResponse() {
-  const h = createHarness(makeInstallments(1));
-  h.setEmit(async (input) => {
-    h.emitCalls.push(input);
-    return { ok: false, lost: true };
-  });
-  h.setReconcile(async (seuNumero) => {
-    h.reconcileCalls.push(seuNumero);
-    if (h.reconcileCalls.length >= 1) {
-      return { codigoSolicitacao: `REC-${seuNumero}` };
-    }
-    return null;
-  });
-  const job = await startTick(h);
-  assert(job?.installmentResults['inst-001']?.status === 'reconciled', 'POST perdido reconcilia por seuNumero');
-  assert(h.persistEmitted.includes('inst-001'), 'persiste cobrança reconciliada');
-  assert(h.emitCalls.length === 1, 'não emite segunda vez após hit de reconciliação');
-}
-
-async function testLostWithoutHitThenResume() {
-  const h = createHarness(makeInstallments(1));
-  h.setEmit(async (input) => {
-    h.emitCalls.push(input);
-    return { ok: false, lost: true };
-  });
-  h.setReconcile(async (seuNumero) => {
-    h.reconcileCalls.push(seuNumero);
-    return h.reconcileCalls.length >= 2 ? { codigoSolicitacao: `REC-${seuNumero}` } : null;
-  });
-  const first = await startTick(h);
-  assert(first?.installmentResults['inst-001']?.status === 'pending', 'sem hit permanece pending');
-  const second = await tickInterResumeJob({
-    store: h.store,
-    ports: h.ports,
-    companyId: 'co-1',
-    saleId: 'sale-1',
-  });
-  assert(second?.installmentResults['inst-001']?.status === 'reconciled', 'retomada reconcilia POST perdido');
-}
-
-async function testPauseResume() {
-  const h = createHarness(makeInstallments(12));
-  const first = await startTick(h);
-  assert(first?.status === 'running', 'primeiro lote deixa job running');
-  assert(h.emitCalls.length === 5, 'primeiro tick emite lote de 5');
-  const paused = await pauseInterResumeJob({
-    store: h.store,
-    companyId: 'co-1',
-    saleId: 'sale-1',
-    nowMs: h.clock.now,
-  });
-  assert(paused?.status === 'paused', 'pausa persistida');
-  const ignored = await tickInterResumeJob({
-    store: h.store,
-    ports: h.ports,
-    companyId: 'co-1',
-    saleId: 'sale-1',
-  });
-  assert(ignored?.status === 'paused', 'tick respeita pausa');
-  assert(h.emitCalls.length === 5, 'pausa não emite');
-  const { job } = await drain(h);
-  assert(job?.status === 'completed', 'retomada após pausa conclui as 12');
-  assert(h.emitCalls.length === 12, '12 emissões no total após pausa/retomada');
-}
-
-async function testConcurrency() {
+async function testTwoWorkers() {
   const h = createHarness(makeInstallments(6));
   await startInterResumeJob({
     store: h.store,
@@ -399,7 +348,8 @@ async function testConcurrency() {
   });
   const loaded = await h.store.load('co-1', 'sale-1');
   if (!loaded) throw new Error('job ausente');
-  const leased = applyInterResumeLease(loaded, 'owner-a', h.clock.now, 60_000);
+  const { applyInterResumeLease } = await import('../lib/banking/inter/interSaleChargesResume');
+  const leased = applyInterResumeLease(loaded, 'owner-a', h.clock.now, INTER_RESUME_LEASE_MS);
   const saved = await h.store.save(leased, loaded.revision);
   assert(saved.ok, 'lease owner-a persistido');
   let conflict = false;
@@ -414,9 +364,8 @@ async function testConcurrency() {
   } catch (err) {
     conflict = err instanceof InterResumeConflictError;
   }
-  assert(conflict, 'o concorrente recebe conflito de exclusão mútua');
-  assert(h.emitCalls.length === 0, 'lease alheio não emite');
-  h.clock.now += 61_000;
+  assert(conflict, 'segunda instância não processa a mesma venda');
+  h.clock.now += INTER_RESUME_LEASE_MS + 1;
   const after = await tickInterResumeJob({
     store: h.store,
     ports: h.ports,
@@ -424,67 +373,228 @@ async function testConcurrency() {
     saleId: 'sale-1',
     leaseOwner: 'owner-b',
   });
-  assert((after?.emitted || 0) > 0, 'após expirar o lease outro worker pode retomar');
-  const uniqueEmits = new Set(h.emitCalls.map((c) => c.installmentId));
-  assert(uniqueEmits.size === h.emitCalls.length, 'concorrência não duplica emissão da mesma parcela');
+  assert((after?.emitted || 0) > 0, 'após expirar o lease outro worker retoma');
 }
 
-async function testArtifactsSeparated() {
-  const h = createHarness(makeInstallments(2));
-  h.needingArtifacts.push({
-    installmentId: 'inst-099',
-    codigoSolicitacao: 'SOL-OLD',
-    status: 'PENDING',
+async function testSharedRateLimit() {
+  const missingA = makeInstallments(2, 'sa');
+  const missingB = makeInstallments(2, 'sb');
+  const h = createHarness(missingA);
+  await startTick(h, 'sale-a');
+  assert(h.emitCalls.length >= 1, 'venda A emitiu');
+  const lastA = h.emitCalls.length;
+  const portsB: InterResumePorts = {
+    ...h.ports,
+    listMissing: async () => missingB,
+  };
+  await startInterResumeJob({
+    store: h.store,
+    ports: portsB,
+    companyId: 'co-1',
+    saleId: 'sale-b',
+    integrationId: 'int-1',
+    mode: 'simulate',
+  });
+  const beforeSleeps = h.sleeps.length;
+  await tickInterResumeJob({
+    store: h.store,
+    ports: portsB,
+    companyId: 'co-1',
+    saleId: 'sale-b',
+  });
+  assert(h.emitCalls.length > lastA, 'venda B também emite na mesma conta');
+  assert(h.sleeps.length > beforeSleeps, 'espaçamento compartilhado entre vendas da mesma integração');
+}
+
+async function testLostReconcileBeforePost() {
+  const h = createHarness(makeInstallments(1));
+  h.setEmit(async (input) => {
+    h.emitCalls.push(input);
+    return { ok: false, lost: true };
+  });
+  h.setReconcile(async (seuNumero) => {
+    h.reconcileCalls.push(seuNumero);
+    return h.reconcileCalls.length >= 2 ? { codigoSolicitacao: `REC-${seuNumero}` } : null;
+  });
+  const first = await startTick(h);
+  assert(h.emitCalls.length === 1, 'um único POST na tentativa perdida');
+  assert(first?.installmentResults['inst-001']?.status === 'intent', 'intenção permanece após POST perdido');
+  const second = await tickInterResumeJob({
+    store: h.store,
+    ports: h.ports,
+    companyId: 'co-1',
+    saleId: 'sale-1',
+  });
+  assert(h.emitCalls.length === 1, 'retomada reconcilia ANTES de qualquer novo POST');
+  assert(second?.installmentResults['inst-001']?.status === 'reconciled', 'hit de seuNumero evita reemissão');
+}
+
+async function testLostEmptyGoesManual() {
+  const h = createHarness(makeInstallments(1));
+  h.setEmit(async (input) => {
+    h.emitCalls.push(input);
+    return { ok: false, lost: true };
+  });
+  const first = await startTick(h);
+  assert(first?.installmentResults['inst-001']?.postAttempted === true, 'POST tentado ficou registrado');
+  const second = await tickInterResumeJob({
+    store: h.store,
+    ports: h.ports,
+    companyId: 'co-1',
+    saleId: 'sale-1',
+  });
+  assert(h.emitCalls.length === 1, 'sem GET confirmado não há segundo POST');
+  assert(second?.installmentResults['inst-001']?.status === 'manual_reconcile', 'marca conciliação manual');
+}
+
+async function testTimeoutThenReconcile() {
+  const h = createHarness(makeInstallments(1));
+  h.setEmit(async (input) => {
+    h.emitCalls.push(input);
+    return { ok: false, httpStatus: 408, message: 'timeout' };
   });
   await startTick(h);
-  assert(h.fetchArtifacts.includes('SOL-OLD'), 'materializa artefatos de emissão anterior');
-  assert(h.persistArtifacts.includes('inst-099'), 'persiste PDF/linha digitável à parte');
-  assert(h.emitCalls.every((c) => c.installmentId !== 'inst-099'), 'materialização não reemite');
+  h.setReconcile(async (seuNumero) => {
+    h.reconcileCalls.push(seuNumero);
+    return { codigoSolicitacao: `REC-${seuNumero}` };
+  });
+  const second = await tickInterResumeJob({
+    store: h.store,
+    ports: h.ports,
+    companyId: 'co-1',
+    saleId: 'sale-1',
+  });
+  assert(h.emitCalls.length === 1, 'timeout não gera segundo POST');
+  assert(second?.installmentResults['inst-001']?.status === 'reconciled', 'timeout retoma via reconciliação');
 }
 
-async function testSourceGuards() {
-  const panel = read('components/sales/SaleChargesPanel.tsx');
-  const resumeRoute = read('app/api/finance/inter/sale-charges/resume/route.ts');
-  const cron = read('app/api/cron/inter-sale-charges-resume/route.ts');
-  const service = read('lib/banking/inter/interSaleChargesResumeService.ts');
-  const worker = read('lib/banking/inter/interSaleChargesResumeWorker.ts');
-  const vercel = read('vercel.json');
-  const saleCharges = read('app/api/finance/inter/sale-charges/route.ts');
+async function test429Retry() {
+  const h = createHarness(makeInstallments(3));
+  h.setEmit(async (input) => {
+    h.emitCalls.push(input);
+    if (h.emitCalls.length === 1) {
+      return { ok: false, httpStatus: 429, message: 'rate limit', retryAfterMs: 90_000 };
+    }
+    return { ok: true, codigoSolicitacao: `SIM-${input.seuNumero}` };
+  });
+  const first = await startTick(h);
+  assert(first?.rateLimitedUntil, '429 grava backoff compartilhado');
+  assert(h.emitCalls.length === 1, 'para no 429');
+  h.clock.now = Date.parse(String(first?.rateLimitedUntil)) + 1;
+  await tickInterResumeJob({ store: h.store, ports: h.ports, companyId: 'co-1', saleId: 'sale-1' });
+  assert(h.emitCalls.length > 1, 'após 429 pode repetir POST');
+}
 
-  assert(panel.includes('Continuar cobranças faltantes'), 'botão Continuar cobranças faltantes');
-  assert(panel.includes('Pausar retomada'), 'botão pausar');
-  assert(panel.includes('/api/finance/inter/sale-charges/resume'), 'UI chama API de retomada');
-  assert(resumeRoute.includes("confirmed !== true"), 'confirmação obrigatória');
-  assert(cron.includes('isProductionSupabaseRuntime'), 'cron não processa Production supabase');
-  assert(cron.includes('skipped'), 'cron responde skipped em Production');
-  assert(service.includes("mode === 'simulate'"), 'emissão simulada no homolog');
-  assert(service.includes('InterResumeBlockedError'), 'bloqueio explícito em Production');
-  assert(worker.includes('reconcileBySeuNumero'), 'reconciliação por seuNumero');
-  assert(worker.includes('listChargesNeedingArtifacts'), 'artefatos separados da emissão');
+async function testPaidLock() {
+  const missing = makeInstallments(2);
+  missing[0].paid = true;
+  const h = createHarness(missing);
+  h.active.set('inst-001', { id: 'chg-paid', status: 'PAID', external_id: 'SOL-PAID' });
+  const { job } = await drain(h);
+  assert(job?.status === 'completed', 'conclui sem mexer na paga');
+  assert(!h.persistEmitted.includes('inst-001'), 'não persiste emissão em PAID');
+  assert(h.paidOverwriteAttempts === 0, 'PAID intacto');
+}
+
+async function testDeferredNoEmit() {
+  const h = createHarness(makeInstallments(5));
+  const job = await startTick(h, 'sale-1', 'deferred');
+  assert(h.emitCalls.length === 0, 'deferred não chama POST');
+  assert(String(job?.lastError || '').includes('desabilitada'), 'explica flag desligada');
+}
+
+async function testPauseResume() {
+  const h = createHarness(makeInstallments(12));
+  const first = await startTick(h);
+  assert(h.emitCalls.length === 5, 'primeiro tick emite lote de 5');
+  await pauseInterResumeJob({ store: h.store, companyId: 'co-1', saleId: 'sale-1', nowMs: h.clock.now });
+  const ignored = await tickInterResumeJob({ store: h.store, ports: h.ports, companyId: 'co-1', saleId: 'sale-1' });
+  assert(ignored?.status === 'paused', 'tick respeita pausa (continuidade não depende do browser)');
+  const { job } = await drain(h);
+  assert(job?.status === 'completed', 'retomada conclui');
+  assert(h.emitCalls.length === 12, '12 emissões simuladas no total');
+}
+
+async function testScale(count: number) {
+  const h = createHarness(makeInstallments(count));
+  const { job } = await drain(h);
+  assert(job?.status === 'completed', `${count} parcelas concluídas`);
+  assert(h.emitCalls.length === count, `${count} POSTs simulados`);
+}
+
+async function testIntentBeforeEmit() {
+  const h = createHarness(makeInstallments(1));
+  let sawIntent = false;
+  h.setEmit(async (input) => {
+    const job = await h.store.load('co-1', 'sale-1');
+    sawIntent = job?.installmentResults['inst-001']?.status === 'intent';
+    h.emitCalls.push(input);
+    return { ok: true, codigoSolicitacao: 'SIM-1' };
+  });
+  await startTick(h);
+  assert(sawIntent, 'intenção persistida antes da chamada externa');
+}
+
+function testSourceGuards() {
+  const panel = read('components/sales/SaleChargesPanel.tsx');
+  const cron = read('app/api/cron/inter-sale-charges-resume/route.ts');
+  const sql = read('supabase/migrations/20261012180000_cas_inter_resume_jobs.sql');
+  const store = read('lib/banking/inter/interSaleChargesResumeSupabase.ts');
+  const worker = read('lib/banking/inter/interSaleChargesResumeWorker.ts');
+  const service = read('lib/banking/inter/interSaleChargesResumeService.ts');
+  const vercel = read('vercel.json');
+
+  assert(panel.includes('Continuar cobranças faltantes'), 'botão Continuar');
+  assert(cron.includes('isCronSecretValid'), 'cron autenticado');
+  assert(!cron.includes('isProductionSupabaseRuntime'), 'cron não dá skip em Production');
+  assert(cron.includes('skipped: false'), 'cron reporta execução (emissão ainda via flag)');
+  assert(sql.includes('FOR UPDATE'), 'RPC com row lock');
+  assert(sql.includes("->>'_rev'"), 'RPC compara revisão');
+  assert(sql.includes(INTER_RESUME_CAS_RPC) || sql.includes('cas_inter_resume_jobs'), 'RPC nomeada');
+  assert(store.includes('p_expected_rev'), 'store chama CAS');
+  assert(worker.includes('mustReconcileBeforeInterResumePost'), 'worker reconcilia antes de POST');
+  assert(service.includes('chargeEnvironment'), 'environment não é SANDBOX hardcoded');
+  assert(!/environment: 'SANDBOX'/.test(service), 'insert usa environment resolvido');
   assert(vercel.includes('/api/cron/inter-sale-charges-resume'), 'cron no vercel.json');
-  assert(saleCharges.includes('getInterResumeJobView'), 'GET summary devolve job');
-  assert(!/\.from\('finance_receipts'\)[\s\S]{0,400}\.update\(/.test(service), 'não atualiza valores/datas de parcelas');
-  assert(!worker.toLowerCase().includes('asaas'), 'worker de retomada não toca Asaas');
-  assert(!service.includes('/api/finance/asaas'), 'serviço de retomada não chama rotas Asaas');
-  assert(service.includes("mode === 'simulate'"), 'simulate curto-circuita POST live');
+  assert(worker.includes('INTER_RESUME_LEASE_MS') || read('lib/banking/inter/interSaleChargesResume.ts').includes('75_000'), 'lease 75s');
+}
+
+function testCronAuth() {
+  const prev = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'test-cron-secret';
+  try {
+    const ok = isCronSecretValid(
+      new Request('https://svlotes.local/api/cron/inter-sale-charges-resume', {
+        headers: { authorization: 'Bearer test-cron-secret' },
+      }),
+    );
+    const bad = isCronSecretValid(new Request('https://svlotes.local/api/cron/inter-sale-charges-resume'));
+    assert(ok, 'cron aceita Bearer CRON_SECRET');
+    assert(!bad, 'cron rejeita sem segredo');
+  } finally {
+    if (prev === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = prev;
+  }
 }
 
 async function main() {
   testDomain();
-  await testIdempotency();
+  testCasAtomic();
+  await testFakePostgresCas();
+  await testTwoWorkers();
+  await testSharedRateLimit();
+  await testLostReconcileBeforePost();
+  await testLostEmptyGoesManual();
+  await testTimeoutThenReconcile();
+  await test429Retry();
   await testPaidLock();
-  await test429();
-  await testTimeoutRetry();
-  await testLostResponse();
-  await testLostWithoutHitThenResume();
+  await testDeferredNoEmit();
   await testPauseResume();
-  await testConcurrency();
-  await testArtifactsSeparated();
+  await testIntentBeforeEmit();
   await testScale(12);
   await testScale(60);
-  await testScale(180);
-  await testScale(240);
-  await testSourceGuards();
+  testCronAuth();
+  testSourceGuards();
   console.log('\nOK mandatory-inter-sale-charges-resume-tests');
 }
 

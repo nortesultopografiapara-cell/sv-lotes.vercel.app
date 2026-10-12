@@ -55,7 +55,8 @@ type InterResumeJobView = {
   lastError: string | null;
   rateLimitedUntil: string | null;
   updatedAt: string;
-  mode: 'simulate' | 'live';
+  mode: 'simulate' | 'live' | 'deferred';
+  manualReconcile?: number;
 };
 
 function stateLabel(state: SaleChargesSummary['uiState']): string {
@@ -686,6 +687,8 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
               {', '}faltantes {resumeJob.remaining}
               {', '}erros {resumeJob.failed}
               {resumeJob.rateLimitedUntil ? ' (aguardando limite da API)' : ''}
+              {resumeJob.mode === 'deferred' ? ' — emissão live desabilitada (flag)' : ''}
+              {resumeJob.manualReconcile ? `, conciliação manual ${resumeJob.manualReconcile}` : ''}
               {resumeJob.lastError ? ` — ${resumeJob.lastError}` : ''}
             </div>
           ) : null}

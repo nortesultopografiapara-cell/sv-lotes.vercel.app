@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { describeCronAuthFailure, isCronSecretValid } from '@/lib/saasCronAuth';
 import { tickDueInterResumeJobs } from '@/lib/banking/inter/interSaleChargesResumeService';
-import { isProductionSupabaseRuntime } from '@/lib/homolog/env';
+import { isInterResumeLiveEmitFlagEnabled } from '@/lib/banking/inter/interResumeLiveEmitFlag';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,19 +15,18 @@ async function handle(request: Request) {
       { status: 401 },
     );
   }
-  if (isProductionSupabaseRuntime()) {
-    return NextResponse.json({
-      ok: true,
-      skipped: true,
-      reason: 'cron Inter resume não roda contra o banco de Production nesta etapa.',
-      processed: 0,
-    });
-  }
   const { client: admin, error } = createServiceSupabase();
   if (!admin) return NextResponse.json({ error }, { status: 500 });
   try {
     const result = await tickDueInterResumeJobs(admin, 4);
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({
+      ok: true,
+      skipped: false,
+      liveEmitEnabled: result.liveEmitEnabled,
+      emitMode: result.emitMode,
+      processed: result.processed,
+      flag: isInterResumeLiveEmitFlagEnabled(),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro no cron Inter resume.';
     return NextResponse.json({ error: message }, { status: 500 });
