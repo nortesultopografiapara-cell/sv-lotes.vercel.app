@@ -647,6 +647,90 @@ export async function listInterCobrancasBySeuNumero(
   return null;
 }
 
+export type InterCobrancaListQuery = {
+  dataInicial: string;
+  dataFinal: string;
+  filtrarDataPor?: 'VENCIMENTO' | 'EMISSAO' | 'SITUACAO';
+  cpfCnpjPessoaPagadora?: string;
+  seuNumero?: string;
+  paginaAtual?: number;
+  itensPorPagina?: number;
+};
+
+export type InterCobrancaListItem = InterCobrancaDetail & {
+  dataVencimento: string | null;
+};
+
+export type InterCobrancaListPage = {
+  status: number;
+  cobrancas: InterCobrancaListItem[];
+  totalPaginas: number;
+  paginaAtual: number;
+};
+
+function pickDataVencimento(raw: Record<string, unknown>): string | null {
+  const cobranca = asRecord(raw.cobranca) || raw;
+  const due = String(cobranca.dataVencimento || raw.dataVencimento || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null;
+}
+
+/** GET /cobrancas — listagem paginada. Nunca POST. */
+export async function listInterCobrancasPage(
+  creds: InterOAuthCredentials,
+  query: InterCobrancaListQuery,
+  options?: { fetchFn?: InterOAuthFetchFn },
+): Promise<InterCobrancaListPage> {
+  const dataInicial = String(query.dataInicial || '').slice(0, 10);
+  const dataFinal = String(query.dataFinal || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) {
+    throw new Error('Período de listagem Inter inválido.');
+  }
+  const qs = new URLSearchParams({
+    dataInicial,
+    dataFinal,
+    filtrarDataPor: query.filtrarDataPor || 'VENCIMENTO',
+    'paginacao.itensPorPagina': String(Math.min(100, Math.max(1, query.itensPorPagina ?? 100))),
+    'paginacao.paginaAtual': String(Math.max(0, query.paginaAtual ?? 0)),
+  });
+  const cpf = String(query.cpfCnpjPessoaPagadora || '').replace(/\D/g, '');
+  if (cpf) qs.set('cpfCnpjPessoaPagadora', cpf);
+  const seu = String(query.seuNumero || '').trim().slice(0, 15);
+  if (seu) qs.set('seuNumero', seu);
+
+  const res = await authorizedRequest(creds, `/cobrancas?${qs.toString()}`, { method: 'GET' }, options);
+  if (res.status === 404) {
+    return { status: 404, cobrancas: [], totalPaginas: 0, paginaAtual: query.paginaAtual ?? 0 };
+  }
+  if (res.status < 200 || res.status >= 300 || !res.json) {
+    const err = new Error(`Falha ao consultar lista Inter (HTTP ${res.status}).`);
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
+  }
+  const rows = Array.isArray(res.json.cobrancas)
+    ? res.json.cobrancas
+    : Array.isArray(res.json.content)
+      ? res.json.content
+      : [];
+  const paginacao =
+    res.json.paginacao && typeof res.json.paginacao === 'object'
+      ? (res.json.paginacao as Record<string, unknown>)
+      : {};
+  const cobrancas: InterCobrancaListItem[] = [];
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue;
+    const rec = raw as Record<string, unknown>;
+    const detail = normalizeInterCobrancaDetail(rec);
+    cobrancas.push({ ...detail, dataVencimento: pickDataVencimento(rec) });
+  }
+  const totalRaw = Number(paginacao.totalPaginas ?? res.json.totalPaginas);
+  return {
+    status: res.status,
+    cobrancas,
+    totalPaginas: Number.isFinite(totalRaw) && totalRaw > 0 ? totalRaw : 0,
+    paginaAtual: Number(paginacao.paginaAtual ?? query.paginaAtual ?? 0) || 0,
+  };
+}
+
 export type InterCancelPollAttempt = {
   attempt: number;
   elapsedMsFromPost: number;

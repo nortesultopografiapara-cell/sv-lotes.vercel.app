@@ -64,6 +64,7 @@
     "test:inter-fase-final": "tsx scripts/mandatory-inter-fase-final-tests.ts",
     "test:inter-multi-accounts": "tsx scripts/mandatory-inter-multi-accounts-tests.ts",
     "test:inter-sale-charges-resume": "tsx scripts/mandatory-inter-sale-charges-resume-tests.ts",
+    "test:inter-admin-get-reconcile": "tsx scripts/mandatory-inter-admin-get-reconcile-tests.ts",
     "test:sale-finance-pending": "tsx scripts/mandatory-sale-finance-receipt-pending-tests.ts",
     "test:sale-balloon": "tsx scripts/mandatory-sale-balloon-installments-tests.ts",
     "test:sale-balloon-contract": "tsx scripts/mandatory-sale-balloon-contract-tests.ts",
