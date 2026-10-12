@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
 import { getInterSaleChargesSummary } from '@/lib/banking/inter/interSaleChargeService';
+import { getInterResumeJobView } from '@/lib/banking/inter/interSaleChargesResumeService';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'saleId obrigatório.' }, { status: 400 });
     }
     const summary = await getInterSaleChargesSummary(auth.admin, auth.tenantId, saleId);
-    return NextResponse.json({ ok: true, summary });
+    let job = null;
+    try {
+      job = await getInterResumeJobView(auth.admin, auth.tenantId, saleId);
+    } catch {
+      job = null;
+    }
+    return NextResponse.json({ ok: true, summary, job });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao carregar cobranças Inter.';
     console.error('[finance/inter/sale-charges GET]', message);

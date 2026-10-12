@@ -42,6 +42,22 @@ type GenerateResult = {
   progressTotal: number;
 };
 
+type InterResumeJobView = {
+  id: string;
+  saleId: string;
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed';
+  emitted: number;
+  reused: number;
+  skippedPaid: number;
+  failed: number;
+  remaining: number;
+  planned: number;
+  lastError: string | null;
+  rateLimitedUntil: string | null;
+  updatedAt: string;
+  mode: 'simulate' | 'live';
+};
+
 function stateLabel(state: SaleChargesSummary['uiState']): string {
   switch (state) {
     case 'no_account':
@@ -79,6 +95,8 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [info, setInfo] = useState('');
   const [chargeProvider, setChargeProvider] = useState<'ASAAS_COMPANY' | 'INTER'>('ASAAS_COMPANY');
   const [splitTick, setSplitTick] = useState(0);
+  const [resumeJob, setResumeJob] = useState<InterResumeJobView | null>(null);
+  const [resumeBusy, setResumeBusy] = useState(false);
 
   const loadSummary = useCallback(async () => {
     if (!saleId) return;
@@ -102,6 +120,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar cobranças');
       setSummary(data.summary as SaleChargesSummary);
+      setResumeJob((data.job as InterResumeJobView | null) || null);
       if (data.summary?.customerEmail) {
         setEmailTo(String(data.summary.customerEmail));
       }
@@ -117,7 +136,76 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     void loadSummary();
   }, [loadSummary]);
 
-  const canMutate = !disabled && !generating && !syncing && !pdfBusy && !emailBusy;
+  const canMutate = !disabled && !generating && !syncing && !pdfBusy && !emailBusy && !resumeBusy;
+
+  async function postInterResume(action: 'start' | 'pause' | 'tick', confirmed = true) {
+    if (!saleId) return null;
+    const res = await fetch('/api/finance/inter/sale-charges/resume', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saleId, action, confirmed }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { job?: InterResumeJobView; error?: string };
+    if (!res.ok) throw new Error(data.error || 'Falha na retomada Inter');
+    if (data.job) setResumeJob(data.job);
+    return data.job || null;
+  }
+
+  async function runContinueMissing() {
+    if (!saleId || chargeProvider !== 'INTER' || !summary) return;
+    const remaining = summary.chargesMissing;
+    if (remaining <= 0) return;
+    if (
+      !window.confirm(
+        `Continuar cobranças faltantes no Banco Inter?\n\nFaltantes agora: ${remaining}.\nO processamento segue no servidor em lotes, mesmo se fechar o navegador.\nEntrada paga e boletos já emitidos não serão alterados.`,
+      )
+    ) {
+      return;
+    }
+    setResumeBusy(true);
+    setError('');
+    setInfo('');
+    try {
+      const job = await postInterResume('start', true);
+      setInfo(
+        job
+          ? `Retomada Inter: ${job.emitted + job.reused} emitidas/reaproveitadas, ${job.remaining} restantes, ${job.failed} com erro.`
+          : 'Retomada Inter iniciada.',
+      );
+      await loadSummary();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao continuar cobranças Inter');
+    } finally {
+      setResumeBusy(false);
+    }
+  }
+
+  async function runPauseResume() {
+    if (!saleId || chargeProvider !== 'INTER') return;
+    setResumeBusy(true);
+    try {
+      await postInterResume('pause', true);
+      setInfo('Retomada Inter pausada. Use Continuar cobranças faltantes para retomar.');
+      await loadSummary();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao pausar');
+    } finally {
+      setResumeBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (chargeProvider !== 'INTER') return;
+    const active = resumeJob?.status === 'running' || resumeJob?.status === 'queued';
+    if (!active || !saleId) return;
+    const handle = window.setInterval(() => {
+      void postInterResume('tick', true)
+        .then(() => loadSummary())
+        .catch(() => undefined);
+    }, 8000);
+    return () => window.clearInterval(handle);
+  }, [chargeProvider, resumeJob?.status, saleId, loadSummary]);
 
   const pendingInstallmentsCount = useMemo(() => {
     if (!summary) return 0;
@@ -590,6 +678,18 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </div>
           ) : null}
 
+          {chargeProvider === 'INTER' && resumeJob ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+              Retomada Inter: <strong>{resumeJob.status}</strong>
+              {' — '}
+              emitidas {resumeJob.emitted + resumeJob.reused}/{resumeJob.planned}
+              {', '}faltantes {resumeJob.remaining}
+              {', '}erros {resumeJob.failed}
+              {resumeJob.rateLimitedUntil ? ' (aguardando limite da API)' : ''}
+              {resumeJob.lastError ? ` — ${resumeJob.lastError}` : ''}
+            </div>
+          ) : null}
+
           {lastErrors.length > 0 ? (
             <details className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
               <summary className="cursor-pointer font-semibold">
@@ -614,6 +714,34 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             >
               {generating ? 'Gerando…' : 'Gerar cobranças faltantes'}
             </button>
+            {chargeProvider === 'INTER' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={
+                    !canMutate ||
+                    !kpi.hasFinancialAccount ||
+                    resumeJob?.status === 'running' ||
+                    resumeJob?.status === 'queued' ||
+                    (kpi.chargesMissing <= 0 && resumeJob?.status !== 'paused' && resumeJob?.status !== 'failed')
+                  }
+                  onClick={() => void runContinueMissing()}
+                  className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-40"
+                >
+                  {resumeBusy ? 'Processando…' : 'Continuar cobranças faltantes'}
+                </button>
+                {resumeJob && (resumeJob.status === 'running' || resumeJob.status === 'queued') ? (
+                  <button
+                    type="button"
+                    disabled={resumeBusy}
+                    onClick={() => void runPauseResume()}
+                    className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 disabled:opacity-40"
+                  >
+                    Pausar retomada
+                  </button>
+                ) : null}
+              </>
+            ) : null}
             <button
               type="button"
               disabled={!canMutate}

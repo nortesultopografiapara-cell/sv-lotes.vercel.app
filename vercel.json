@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/buyer-installment-reminders",
       "schedule": "10,40 11-22 * * *"
+    },
+    {
+      "path": "/api/cron/inter-sale-charges-resume",
+      "schedule": "*/2 * * * *"
     }
   ],
   "functions": {
@@ -41,6 +45,12 @@
       "maxDuration": 60
     },
     "app/api/cron/buyer-installment-reminders/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/inter-sale-charges-resume/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/finance/inter/sale-charges/resume/route.ts": {
       "maxDuration": 60
     },
     "app/api/companies/update/route.ts": {

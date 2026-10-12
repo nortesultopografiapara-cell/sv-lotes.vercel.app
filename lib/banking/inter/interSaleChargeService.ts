@@ -795,28 +795,6 @@ export async function generateMissingInterSaleChargesBatch(
     throw new Error('Conta financeira desta venda não está vinculada ao Banco Inter.');
   }
 
-  const installments = await loadSaleScopedInstallments(admin, params.companyId, params.saleId);
-  const chargeMap = await listInterChargesForInstallments(
-    admin,
-    params.companyId,
-    installments.map((i) => i.id),
-  );
-  for (const [installmentId, row] of chargeMap.entries()) {
-    if (!interBankChargeMissingArtifacts(row as Record<string, unknown>)) continue;
-    const codigo = String((row as Record<string, unknown>).external_id || '').trim();
-    if (!codigo) continue;
-    try {
-      await refreshInterChargeArtifacts(admin, {
-        companyId: params.companyId,
-        installmentId,
-        externalId: codigo,
-        fetchFn: params.fetchFn,
-      });
-    } catch {
-      /* GET-only; não reemite */
-    }
-  }
-
   const afterRefresh = await getInterSaleChargesSummary(admin, params.companyId, params.saleId);
   const limit = Math.min(
     Math.max(1, Number(params.limit || SALE_CHARGES_GENERATE_BATCH_LIMIT)),

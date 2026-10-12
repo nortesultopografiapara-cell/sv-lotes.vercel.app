@@ -277,12 +277,14 @@ export function sanitizeInterApiErrorBody(bodyText: string): Record<string, unkn
 export class InterCobrancaHttpError extends Error {
   status: number;
   sanitized: Record<string, unknown>;
+  retryAfterMs: number | null;
   constructor(status: number, bodyText: string, operation: 'emitir' | 'cancelar' = 'emitir') {
     const sanitized = sanitizeInterApiErrorBody(bodyText);
     super(`Falha ao ${operation} cobrança Inter (HTTP ${status}). ${JSON.stringify(sanitized)}`);
     this.name = 'InterCobrancaHttpError';
     this.status = status;
     this.sanitized = sanitized;
+    this.retryAfterMs = null;
   }
 }
 
@@ -578,7 +580,12 @@ export async function createInterCobranca(
     options,
   );
   if (res.status < 200 || res.status >= 300 || !res.json) {
-    throw new InterCobrancaHttpError(res.status, res.bodyText || JSON.stringify(res.json || {}));
+    const err = new InterCobrancaHttpError(
+      res.status,
+      res.bodyText || JSON.stringify(res.json || {}),
+    );
+    err.retryAfterMs = parseRetryAfterHeader(res.headers);
+    throw err;
   }
   const codigo = String(
     res.json.codigoSolicitacao || res.json.idSolicitacao || '',
@@ -587,6 +594,57 @@ export async function createInterCobranca(
     throw new Error('Inter não retornou codigoSolicitacao.');
   }
   return { codigoSolicitacao: codigo, raw: res.json };
+}
+
+function parseRetryAfterHeader(headers?: Record<string, string> | null): number | null {
+  const raw = String(headers?.['retry-after'] || headers?.['Retry-After'] || '').trim();
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.floor(seconds * 1000);
+  const dateMs = Date.parse(raw);
+  if (!Number.isFinite(dateMs)) return null;
+  return Math.max(0, dateMs - Date.now());
+}
+
+export async function listInterCobrancasBySeuNumero(
+  creds: InterOAuthCredentials,
+  input: { seuNumero: string; dueDate: string },
+  options?: { fetchFn?: InterOAuthFetchFn },
+): Promise<InterCobrancaDetail | null> {
+  const seuNumero = String(input.seuNumero || '').trim().slice(0, 15);
+  const due = String(input.dueDate || '').slice(0, 10);
+  if (!seuNumero || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;
+  const qs = new URLSearchParams({
+    seuNumero,
+    dataInicial: due,
+    dataFinal: due,
+    filtrarDataPor: 'VENCIMENTO',
+    'paginacao.itensPorPagina': '10',
+    'paginacao.paginaAtual': '0',
+  });
+  const res = await authorizedRequest(
+    creds,
+    `/cobrancas?${qs.toString()}`,
+    { method: 'GET' },
+    options,
+  );
+  if (res.status === 404) return null;
+  if (res.status < 200 || res.status >= 300 || !res.json) {
+    throw new InterCobrancaHttpError(res.status, res.bodyText || JSON.stringify(res.json || {}));
+  }
+  const cobrancas = Array.isArray(res.json.cobrancas)
+    ? res.json.cobrancas
+    : Array.isArray(res.json.content)
+      ? res.json.content
+      : [];
+  for (const raw of cobrancas) {
+    if (!raw || typeof raw !== 'object') continue;
+    const detail = normalizeInterCobrancaDetail(raw as Record<string, unknown>);
+    if (String(detail.seuNumero || '').trim() === seuNumero && detail.codigoSolicitacao) {
+      return detail;
+    }
+  }
+  return null;
 }
 
 export type InterCancelPollAttempt = {
