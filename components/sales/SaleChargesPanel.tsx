@@ -45,11 +45,12 @@ type GenerateResult = {
 type InterResumeJobView = {
   id: string;
   saleId: string;
-  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'waiting_window';
   emitted: number;
   reused: number;
   skippedPaid: number;
   failed: number;
+  waitingWindow?: number;
   remaining: number;
   planned: number;
   lastError: string | null;
@@ -58,6 +59,31 @@ type InterResumeJobView = {
   mode: 'simulate' | 'live' | 'deferred';
   manualReconcile?: number;
 };
+
+function scheduleStateLabel(state: string): string {
+  switch (state) {
+    case 'paid':
+      return 'Paga';
+    case 'emitted':
+      return 'Boleto emitido';
+    case 'eligible':
+      return 'Elegível para emitir';
+    case 'waiting_window':
+      return 'Aguardando janela bancária';
+    case 'failed':
+      return 'Falha real de emissão';
+    case 'cancelled':
+      return 'Cancelada';
+    default:
+      return state;
+  }
+}
+
+function formatDueBr(value: string | null | undefined): string {
+  if (!value) return '—';
+  const [y, m, d] = String(value).slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : String(value);
+}
 
 function stateLabel(state: SaleChargesSummary['uiState']): string {
   switch (state) {
@@ -658,6 +684,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             <Kpi label="Pagas" value={String(kpi.paidInstallments)} />
             <Kpi label="Cobranças geradas" value={String(kpi.chargesGenerated)} />
             <Kpi label="Faltantes" value={String(kpi.chargesMissing)} />
+            {chargeProvider === 'INTER' ? (
+              <Kpi
+                label="Aguardando janela"
+                value={String(kpi.chargesWaitingBankWindow ?? 0)}
+              />
+            ) : null}
             <Kpi label="Com erro" value={String(kpi.chargesFailed)} />
             <Kpi label="Canceladas" value={String(kpi.chargesCancelled)} />
             <Kpi
@@ -668,7 +700,14 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             <Kpi label="Total parcelas" value={formatCurrencyBRL(kpi.totalAmount)} />
             <Kpi label="Já pago" value={formatCurrencyBRL(kpi.totalPaid)} />
             <Kpi label="Pendente" value={formatCurrencyBRL(kpi.totalPending)} />
-            <Kpi label="Elegíveis" value={String(kpi.eligibleInstallments)} />
+            <Kpi
+              label={chargeProvider === 'INTER' ? 'Elegíveis agora' : 'Elegíveis'}
+              value={String(
+                chargeProvider === 'INTER'
+                  ? kpi.chargesEligibleNow ?? 0
+                  : kpi.eligibleInstallments,
+              )}
+            />
           </div>
 
           <ChargeRevenueSplitDistribution key={splitTick} saleId={saleId} compact />
@@ -681,16 +720,56 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
           {chargeProvider === 'INTER' && resumeJob ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-              Retomada Inter: <strong>{resumeJob.status}</strong>
+              Retomada Inter: <strong>{resumeJob.status === 'waiting_window' ? 'aguardando janela bancária' : resumeJob.status}</strong>
               {' — '}
               emitidas {resumeJob.emitted + resumeJob.reused}/{resumeJob.planned}
-              {', '}faltantes {resumeJob.remaining}
-              {', '}erros {resumeJob.failed}
+              {', '}elegíveis restantes {resumeJob.remaining}
+              {', '}aguardando janela {resumeJob.waitingWindow || 0}
+              {', '}falhas reais {resumeJob.failed}
               {resumeJob.rateLimitedUntil ? ' (aguardando limite da API)' : ''}
               {resumeJob.mode === 'deferred' ? ' — emissão live desabilitada (flag)' : ''}
               {resumeJob.manualReconcile ? `, conciliação manual ${resumeJob.manualReconcile}` : ''}
-              {resumeJob.lastError ? ` — ${resumeJob.lastError}` : ''}
+              {resumeJob.lastError && !String(resumeJob.lastError).includes('AGUARDANDO_JANELA_BANCARIA')
+                ? ` — ${resumeJob.lastError}`
+                : ''}
             </div>
+          ) : null}
+
+          {chargeProvider === 'INTER' && Array.isArray(kpi.chargeSchedule) && kpi.chargeSchedule.length > 0 ? (
+            <details className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-800">
+              <summary className="cursor-pointer font-semibold">
+                Cronograma financeiro ({kpi.chargeSchedule.length} parcelas) — boletos emitidos, elegíveis e futuros sem boleto
+              </summary>
+              <p className="mt-2 text-[11px] text-slate-600">
+                Vencimentos e valores contratuais permanecem iguais. Parcelas fora da antecedência de 1000 dias do Banco Inter ficam aguardando a janela, sem falha de emissão.
+              </p>
+              <div className="mt-2 max-h-64 overflow-auto">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500">
+                      <th className="py-1 pr-2">Parcela</th>
+                      <th className="py-1 pr-2">Vencimento</th>
+                      <th className="py-1 pr-2">Valor</th>
+                      <th className="py-1">Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kpi.chargeSchedule.map((row) => (
+                      <tr key={row.id} className="border-b border-slate-100">
+                        <td className="py-1 pr-2 font-semibold">
+                          {row.installmentNumber == null
+                            ? '—'
+                            : String(Math.trunc(row.installmentNumber)).padStart(2, '0')}
+                        </td>
+                        <td className="py-1 pr-2">{formatDueBr(row.dueDate)}</td>
+                        <td className="py-1 pr-2">{formatCurrencyBRL(row.amount)}</td>
+                        <td className="py-1">{scheduleStateLabel(row.state)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           ) : null}
 
           {lastErrors.length > 0 ? (

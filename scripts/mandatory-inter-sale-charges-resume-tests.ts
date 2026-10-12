@@ -7,6 +7,18 @@ import path from 'node:path';
 import { isCronSecretValid } from '../lib/saasCronAuth';
 import { isInterResumeLiveEmitFlagEnabled } from '../lib/banking/inter/interResumeLiveEmitFlag';
 import {
+  INTER_BOLETO_EFFECTIVE_MAX_ADVANCE_DAYS,
+  INTER_BOLETO_MAX_ADVANCE_DAYS,
+  INTER_WAITING_BANK_WINDOW_CODE,
+  addCalendarDaysIso,
+  calendarDaysBetween,
+  classifyInterBoletoDueWindow,
+  isInterBoletoDueWithinBankWindow,
+  isInterBoletoDueWindowError,
+  isoDateFromMs,
+  partitionInstallmentsByInterDueWindow,
+} from '../lib/banking/inter/interBoletoDueWindow';
+import {
   INTER_RESUME_BATCH_SIZE,
   INTER_RESUME_CAS_RPC,
   INTER_RESUME_LEASE_MS,
@@ -19,6 +31,7 @@ import {
   hydrateJobFromBundle,
   mustReconcileBeforeInterResumePost,
   parseInterResumeJobsBundle,
+  planInterResumeWindowSplit,
   resolveInterChargeEnvironment,
   resolveInterResumeEmitMode,
   serializeInterResumeJobsBundle,
@@ -46,11 +59,19 @@ function read(rel: string): string {
   return fs.readFileSync(path.join(root, rel), 'utf8');
 }
 
-function makeInstallments(count: number, prefix = 'inst'): InterResumeMissingInstallment[] {
+function makeInstallments(
+  count: number,
+  prefix = 'inst',
+  opts?: { clockMs?: number; firstOffsetDays?: number; spacingDays?: number },
+): InterResumeMissingInstallment[] {
+  const clockMs = opts?.clockMs ?? 1_700_000_000_000;
+  const emit = isoDateFromMs(clockMs);
+  const firstOffset = opts?.firstOffsetDays ?? 10;
+  const spacing = opts?.spacingDays ?? 1;
   return Array.from({ length: count }, (_, i) => ({
     id: `${prefix}-${String(i + 1).padStart(3, '0')}`,
     installmentNumber: i + 1,
-    dueDate: `2027-01-${String((i % 28) + 1).padStart(2, '0')}`,
+    dueDate: addCalendarDaysIso(emit, firstOffset + i * spacing),
     amount: 150 + i,
     paid: false,
   }));

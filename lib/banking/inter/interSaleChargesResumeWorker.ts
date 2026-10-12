@@ -3,6 +3,12 @@
  * Intent persistida antes do POST. Sem re-POST se a tentativa anterior for indeterminada.
  */
 
+import {
+  buildInterWaitingWindowMessage,
+  classifyInterBoletoDueWindow,
+  isInterBoletoDueWindowError,
+  isoDateFromMs,
+} from '@/lib/banking/inter/interBoletoDueWindow';
 import { INTER_RESUME_LIVE_EMIT_DISABLED_MESSAGE } from '@/lib/banking/inter/interResumeLiveEmitFlag';
 import {
   INTER_RESUME_BATCH_SIZE,
@@ -25,6 +31,7 @@ import {
   mustReconcileBeforeInterResumePost,
   nextPostSpacingMs,
   planInterResumeBatch,
+  planInterResumeWindowSplit,
   releaseInterResumeLease,
   shouldSkipDuplicateInterCharge,
   type InterResumeExistingCharge,
@@ -127,6 +134,46 @@ export class InterResumeBlockedError extends Error {
   }
 }
 
+function emitDateFromPorts(ports: InterResumePorts): string {
+  return isoDateFromMs(ports.now());
+}
+
+function applyWindowPlanToJob(
+  job: InterSaleChargesResumeJob,
+  missing: InterResumeMissingInstallment[],
+  emitDate: string,
+  nowMs: number,
+): InterSaleChargesResumeJob {
+  const split = planInterResumeWindowSplit({
+    missing,
+    previous: job.installmentResults || {},
+    emitDate,
+  });
+  const next: InterSaleChargesResumeJob = {
+    ...job,
+    plannedInstallmentIds: split.plannedInstallmentIds,
+    waitingInstallmentIds: split.waitingInstallmentIds,
+    installmentResults: split.installmentResults,
+    cursorIndex: 0,
+    updatedAt: new Date(nowMs).toISOString(),
+  };
+  const synced = syncProgress(next);
+  if (synced.plannedInstallmentIds.length === 0) {
+    if (synced.failed > 0) return { ...synced, status: 'failed' };
+    if (synced.waitingWindow > 0) return { ...synced, status: 'waiting_window' };
+    return { ...synced, status: 'completed' };
+  }
+  return { ...synced, status: 'queued' };
+}
+
+function resolveTickReleaseStatus(job: InterSaleChargesResumeJob): InterSaleChargesResumeJob['status'] {
+  const remainingIds = job.plannedInstallmentIds.slice(job.cursorIndex);
+  if (remainingIds.length > 0) return 'running';
+  if (job.failed > 0) return 'failed';
+  if ((job.waitingInstallmentIds || []).length > 0 || job.waitingWindow > 0) return 'waiting_window';
+  return 'completed';
+}
+
 function syncProgress(job: InterSaleChargesResumeJob): InterSaleChargesResumeJob {
   const progress = countInterResumeProgress(job);
   return { ...job, ...progress };
@@ -196,42 +243,24 @@ export async function startInterResumeJob(params: {
   })) {
     throw new InterResumeConflictError();
   }
-  if (existing && (existing.status === 'paused' || existing.status === 'failed' || existing.status === 'queued')) {
+  if (
+    existing &&
+    (existing.status === 'paused' ||
+      existing.status === 'failed' ||
+      existing.status === 'queued' ||
+      existing.status === 'waiting_window')
+  ) {
     const missing = await params.ports.listMissing(params.saleId);
-    const plannedInstallmentIds = missing.map((row) => row.id);
-    const installmentResults: InterSaleChargesResumeJob['installmentResults'] = {};
-    for (const id of plannedInstallmentIds) {
-      const prev = existing.installmentResults[id];
-      if (!prev) continue;
-      if (prev.status === 'intent' || prev.status === 'manual_reconcile') {
-        installmentResults[id] = prev;
-        continue;
-      }
-      if (prev.status === 'failed' || prev.status === 'pending') {
-        if (mustReconcileBeforeInterResumePost(prev) || prev.postAttempted) {
-          installmentResults[id] = prev;
-        } else {
-          installmentResults[id] = {
-            ...prev,
-            status: 'pending',
-            attempts: 0,
-            lastError: null,
-          };
-        }
-      } else {
-        installmentResults[id] = prev;
-      }
-    }
-    const resumed = syncProgress({
-      ...existing,
-      status: 'queued',
-      lastError: null,
-      plannedInstallmentIds,
-      cursorIndex: 0,
-      installmentResults,
-      mode: params.mode,
-      updatedAt: new Date(now).toISOString(),
-    });
+    const resumed = applyWindowPlanToJob(
+      {
+        ...existing,
+        lastError: null,
+        mode: params.mode,
+      },
+      missing,
+      emitDateFromPorts(params.ports),
+      now,
+    );
     return persistJob(params.store, resumed, existing.revision);
   }
   if (existing && existing.status === 'running') {
@@ -243,17 +272,22 @@ export async function startInterResumeJob(params: {
   }
 
   const missing = await params.ports.listMissing(params.saleId);
-  const job = createInterResumeJob({
-    id: params.ports.newJobId(),
-    companyId: params.companyId,
-    saleId: params.saleId,
-    integrationId: params.integrationId,
-    financialAccountId: params.financialAccountId,
-    createdBy: params.createdBy,
-    plannedInstallmentIds: missing.map((row) => row.id),
-    nowMs: now,
-    mode: params.mode,
-  });
+  const job = applyWindowPlanToJob(
+    createInterResumeJob({
+      id: params.ports.newJobId(),
+      companyId: params.companyId,
+      saleId: params.saleId,
+      integrationId: params.integrationId,
+      financialAccountId: params.financialAccountId,
+      createdBy: params.createdBy,
+      plannedInstallmentIds: missing.map((row) => row.id),
+      nowMs: now,
+      mode: params.mode,
+    }),
+    missing,
+    emitDateFromPorts(params.ports),
+    now,
+  );
   return persistJob(params.store, job, existing?.revision ?? 0);
 }
 
@@ -273,6 +307,30 @@ export async function pauseInterResumeJob(params: {
   return persistJob(params.store, paused, existing.revision);
 }
 
+export async function reopenInterResumeWaitingWindow(params: {
+  store: InterResumeJobStore;
+  ports: InterResumePorts;
+  companyId: string;
+  saleId: string;
+  mode: 'simulate' | 'live' | 'deferred';
+}): Promise<InterSaleChargesResumeJob | null> {
+  const existing = await params.store.load(params.companyId, params.saleId);
+  if (!existing) return null;
+  if (existing.status === 'paused' || existing.status === 'running') return existing;
+  const now = params.ports.now();
+  const missing = await params.ports.listMissing(params.saleId);
+  const next = applyWindowPlanToJob(
+    { ...existing, lastError: null, mode: params.mode },
+    missing,
+    emitDateFromPorts(params.ports),
+    now,
+  );
+  if (next.status === 'waiting_window' && (next.plannedInstallmentIds || []).length === 0) {
+    return persistJob(params.store, next, existing.revision);
+  }
+  return persistJob(params.store, { ...next, status: 'queued' }, existing.revision);
+}
+
 export async function tickInterResumeJob(params: {
   store: InterResumeJobStore;
   ports: InterResumePorts;
@@ -284,7 +342,9 @@ export async function tickInterResumeJob(params: {
 }): Promise<InterSaleChargesResumeJob | null> {
   const loaded = await params.store.load(params.companyId, params.saleId);
   if (!loaded) return null;
-  if (loaded.status === 'paused' || loaded.status === 'completed') return loaded;
+  if (loaded.status === 'paused' || loaded.status === 'completed' || loaded.status === 'waiting_window') {
+    return loaded;
+  }
 
   const now0 = params.ports.now();
   if (isInterResumeRateLimited(loaded, now0)) return loaded;
@@ -384,6 +444,26 @@ export async function tickInterResumeJob(params: {
       const dueDate = String(row?.dueDate || '').slice(0, 10);
       const amount = Number(row?.amount || 0);
       const seuNumero = prev?.seuNumero || buildInterSeuNumero(row?.installmentNumber, installmentId);
+      const emitDate = emitDateFromPorts(params.ports);
+      const windowKind = classifyInterBoletoDueWindow({ dueDate, emitDate });
+
+      if (windowKind !== 'eligible' && !mustReconcileBeforeInterResumePost(prev)) {
+        const waitingIds = [...new Set([...(job.waitingInstallmentIds || []), installmentId])];
+        job = {
+          ...setResult(job, installmentId, {
+            status: 'waiting_window',
+            attempts: prev?.attempts || 0,
+            seuNumero,
+            lastError: buildInterWaitingWindowMessage({ dueDate, emitDate }),
+            lastHttpStatus: null,
+            postAttempted: false,
+          }),
+          waitingInstallmentIds: waitingIds,
+        };
+        advanceCursor();
+        job = await persistAndRenew({ store: params.store, job, owner, nowMs: params.ports.now() });
+        continue;
+      }
 
       if (mustReconcileBeforeInterResumePost(prev)) {
         const hit = await params.ports.reconcileBySeuNumero({ seuNumero, dueDate });
@@ -559,6 +639,23 @@ export async function tickInterResumeJob(params: {
         job = await persistAndRenew({ store: params.store, job, owner, nowMs: params.ports.now() });
         break;
       }
+      if (isInterBoletoDueWindowError(emitted.message, httpStatus)) {
+        const waitingIds = [...new Set([...(job.waitingInstallmentIds || []), installmentId])];
+        job = {
+          ...setResult(job, installmentId, {
+            status: 'waiting_window',
+            attempts,
+            postAttempted: false,
+            lastHttpStatus: httpStatus,
+            lastError: buildInterWaitingWindowMessage({ dueDate, emitDate }),
+            seuNumero,
+          }),
+          waitingInstallmentIds: waitingIds,
+        };
+        advanceCursor();
+        job = await persistAndRenew({ store: params.store, job, owner, nowMs: params.ports.now() });
+        continue;
+      }
       const fail = attempts >= INTER_RESUME_MAX_ATTEMPTS || kind === 'fail';
       job = setResult(job, installmentId, {
         status: fail ? 'failed' : 'pending',
@@ -581,13 +678,7 @@ export async function tickInterResumeJob(params: {
       if (!fail) break;
     }
 
-    const remainingIds = job.plannedInstallmentIds.slice(job.cursorIndex);
-    const nextStatus =
-      remainingIds.length === 0
-        ? job.failed > 0
-          ? 'failed'
-          : 'completed'
-        : 'running';
+    const nextStatus = resolveTickReleaseStatus(syncProgress(job));
     return persistJob(
       params.store,
       releaseInterResumeLease(syncProgress(job), params.ports.now(), nextStatus),

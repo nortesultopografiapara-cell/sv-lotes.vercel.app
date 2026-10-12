@@ -78,6 +78,18 @@ export type SaleChargesSummary = {
   printableChargesCount: number;
   chargesFailed: number;
   chargesCancelled: number;
+  /** Inter: parcelas sem boleto cujo vencimento ainda excede a antecedência bancária. */
+  chargesWaitingBankWindow?: number;
+  /** Inter: parcelas faltantes que já cabem na janela de 1000 dias. */
+  chargesEligibleNow?: number;
+  /** Cronograma da venda (Inter) distinguindo emitido / elegível / aguardando janela. */
+  chargeSchedule?: Array<{
+    id: string;
+    installmentNumber: number | null;
+    dueDate: string | null;
+    amount: number;
+    state: 'paid' | 'emitted' | 'eligible' | 'waiting_window' | 'failed' | 'cancelled';
+  }>;
   firstDueDate: string | null;
   lastDueDate: string | null;
   totalAmount: number;

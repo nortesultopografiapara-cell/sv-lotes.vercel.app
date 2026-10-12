@@ -48,9 +48,18 @@ import {
 } from '@/lib/finance/releaseLotShared';
 import {
   buildSaleChargesSummaryFromRows,
+  isCanceledFinanceReceipt,
+  installmentHasBlockingCharge,
   type SaleChargeInstallmentRow,
   type SaleChargesSummary,
 } from '@/lib/finance/saleChargesShared';
+import {
+  assertInterBoletoDueWithinBankWindow,
+  classifyInterBoletoDueWindow,
+  InterBoletoWaitingWindowError,
+  partitionInstallmentsByInterDueWindow,
+} from '@/lib/banking/inter/interBoletoDueWindow';
+import { todayBrazilIsoDate } from '@/lib/companySubscriptionDates';
 import { loadSaleContext, loadSaleScopedInstallments } from '@/lib/finance/saleChargesService';
 import {
   assertInterEmissionAllowedForRevenueSplit,
@@ -517,11 +526,45 @@ export async function getInterSaleChargesSummary(
         }
       : {};
 
+  const emitDate = todayBrazilIsoDate();
+  const windowSplit = partitionInstallmentsByInterDueWindow(summary.missingInstallments, {
+    emitDate,
+  });
+  const chargeByInstallment = new Map(charges.map((c) => [String(c.installmentId), c]));
+  const chargeSchedule = installments
+    .filter((row) => !isCanceledFinanceReceipt(row))
+    .map((row) => {
+      const charge = chargeByInstallment.get(String(row.id)) || null;
+      const dueDate = row.due_date ? String(row.due_date).slice(0, 10) : null;
+      const amount = Math.round(Number(row.amount || 0) * 100) / 100;
+      const paid =
+        String(row.status || '').toLowerCase() === 'pago' ||
+        String(row.status || '').toLowerCase() === 'paid' ||
+        Boolean(row.paid_at) ||
+        charge?.status === 'PAID';
+      let state: NonNullable<SaleChargesSummary['chargeSchedule']>[number]['state'] = 'eligible';
+      if (paid) state = 'paid';
+      else if (charge?.status === 'FAILED') state = 'failed';
+      else if (charge && installmentHasBlockingCharge(charge)) state = 'emitted';
+      else if (classifyInterBoletoDueWindow({ dueDate, emitDate }) === 'eligible') state = 'eligible';
+      else state = 'waiting_window';
+      return {
+        id: String(row.id),
+        installmentNumber: row.installment_number == null ? null : Number(row.installment_number),
+        dueDate,
+        amount,
+        state,
+      };
+    });
+
   return {
     ...summary,
     ...carneOverride,
     chargeProvider: 'INTER' as const,
     financialAccountName: providerInfo.financialAccountName || summary.financialAccountName,
+    chargesWaitingBankWindow: windowSplit.waiting.length,
+    chargesEligibleNow: windowSplit.eligible.length,
+    chargeSchedule,
   };
 }
 
@@ -653,6 +696,7 @@ export async function createInterInstallmentCharge(
   if (!(amount > 0)) throw new Error('Valor da parcela inválido.');
   const dueDate = String(receipt.due_date || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new Error('Vencimento inválido.');
+  assertInterBoletoDueWithinBankWindow({ dueDate });
 
   const seuNumero = onlyDigits(String(receipt.installment_number ?? '') + input.installmentId.replace(/-/g, ''))
     .slice(-15) || input.installmentId.replace(/-/g, '').slice(0, 15);
@@ -800,8 +844,11 @@ export async function generateMissingInterSaleChargesBatch(
     Math.max(1, Number(params.limit || SALE_CHARGES_GENERATE_BATCH_LIMIT)),
     SALE_CHARGES_GENERATE_BATCH_LIMIT,
   );
+  const eligibleNow = partitionInstallmentsByInterDueWindow(afterRefresh.missingInstallments, {
+    emitDate: todayBrazilIsoDate(),
+  }).eligible;
   const plan = planGenerateMissingCharges({
-    missingOrdered: afterRefresh.missingInstallments,
+    missingOrdered: eligibleNow,
     quantityRequested: limit,
   });
   const batch = plan.selected;
@@ -825,6 +872,10 @@ export async function generateMissingInterSaleChargesBatch(
       else created += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao emitir Inter.';
+      if (err instanceof InterBoletoWaitingWindowError || /AGUARDANDO_JANELA_BANCARIA/.test(message)) {
+        skipped += 1;
+        continue;
+      }
       if (/já está paga/i.test(message)) {
         skipped += 1;
         continue;

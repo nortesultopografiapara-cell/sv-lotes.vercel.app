@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/inter-sale-charges-resume",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/inter-sale-charges-window",
+      "schedule": "15 11 * * *"
     }
   ],
   "functions": {
@@ -48,6 +52,9 @@
       "maxDuration": 60
     },
     "app/api/cron/inter-sale-charges-resume/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/inter-sale-charges-window/route.ts": {
       "maxDuration": 60
     },
     "app/api/finance/inter/sale-charges/resume/route.ts": {

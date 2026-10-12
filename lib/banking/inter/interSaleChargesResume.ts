@@ -3,6 +3,11 @@
  * Emissão e artefatos são fases distintas; lote pequeno; 429 com backoff compartilhado.
  */
 
+import {
+  buildInterWaitingWindowMessage,
+  isInterBoletoDueWithinBankWindow,
+  isInterBoletoDueWindowError,
+} from '@/lib/banking/inter/interBoletoDueWindow';
 import { isInterResumeLiveEmitFlagEnabled } from '@/lib/banking/inter/interResumeLiveEmitFlag';
 
 export const INTER_RESUME_BATCH_SIZE = 5;
@@ -40,7 +45,8 @@ export type InterResumeJobStatus =
   | 'running'
   | 'paused'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'waiting_window';
 
 export type InterResumeInstallmentStatus =
   | 'pending'
@@ -50,7 +56,8 @@ export type InterResumeInstallmentStatus =
   | 'skipped_paid'
   | 'failed'
   | 'reconciled'
-  | 'manual_reconcile';
+  | 'manual_reconcile'
+  | 'waiting_window';
 
 export type InterResumeInstallmentResult = {
   status: InterResumeInstallmentStatus;
@@ -93,7 +100,9 @@ export type InterSaleChargesResumeJob = {
   reused: number;
   skippedPaid: number;
   failed: number;
+  waitingWindow?: number;
   remaining: number;
+  waitingInstallmentIds?: string[];
   lastError: string | null;
   rateLimitedUntil: string | null;
   lastPostAt: string | null;
@@ -139,7 +148,11 @@ export function canAcquireInterResumeLease(params: {
   owner: string;
   nowMs: number;
 }): boolean {
-  if (params.job.status === 'paused' || params.job.status === 'completed') {
+  if (
+    params.job.status === 'paused' ||
+    params.job.status === 'completed' ||
+    params.job.status === 'waiting_window'
+  ) {
     return false;
   }
   if (!params.job.leaseOwner || isInterResumeLeaseExpired(params.job, params.nowMs)) {
@@ -190,7 +203,9 @@ export function planInterResumeBatch(
   job: InterSaleChargesResumeJob,
   batchSize: number = INTER_RESUME_BATCH_SIZE,
 ): string[] {
-  if (job.status === 'paused' || job.status === 'completed') return [];
+  if (job.status === 'paused' || job.status === 'completed' || job.status === 'waiting_window') {
+    return [];
+  }
   const size = Math.max(1, Math.floor(batchSize));
   return job.plannedInstallmentIds.slice(job.cursorIndex, job.cursorIndex + size);
 }
@@ -272,24 +287,36 @@ export function countInterResumeProgress(job: InterSaleChargesResumeJob): {
   reused: number;
   skippedPaid: number;
   failed: number;
+  waitingWindow: number;
   remaining: number;
 } {
   let emitted = 0;
   let reused = 0;
   let skippedPaid = 0;
   let failed = 0;
-  for (const item of Object.values(job.installmentResults || {})) {
+  let waitingWindow = 0;
+  let waitingInPlanned = 0;
+  const plannedSet = new Set(job.plannedInstallmentIds || []);
+  for (const [id, item] of Object.entries(job.installmentResults || {})) {
     if (item.status === 'emitted' || item.status === 'reconciled') emitted += 1;
     else if (item.status === 'reused') reused += 1;
     else if (item.status === 'skipped_paid') skippedPaid += 1;
     else if (item.status === 'failed' || item.status === 'manual_reconcile') failed += 1;
+    else if (item.status === 'waiting_window') {
+      waitingWindow += 1;
+      if (plannedSet.has(id)) waitingInPlanned += 1;
+    }
   }
-  const done = emitted + reused + skippedPaid + failed;
+  if (waitingWindow === 0 && Array.isArray(job.waitingInstallmentIds)) {
+    waitingWindow = job.waitingInstallmentIds.length;
+  }
+  const done = emitted + reused + skippedPaid + failed + waitingInPlanned;
   return {
     emitted,
     reused,
     skippedPaid,
     failed,
+    waitingWindow,
     remaining: Math.max(0, job.plannedInstallmentIds.length - done),
   };
 }
@@ -326,7 +353,9 @@ export function createInterResumeJob(input: {
     reused: 0,
     skippedPaid: 0,
     failed: 0,
+    waitingWindow: 0,
     remaining: ids.length,
+    waitingInstallmentIds: [],
     lastError: null,
     rateLimitedUntil: null,
     lastPostAt: null,
@@ -393,7 +422,95 @@ export function hydrateJobFromBundle(
     revision: bundle._rev,
     lastPostAt: bundle._rate.lastPostAt,
     rateLimitedUntil: bundle._rate.rateLimitedUntil,
+    waitingWindow: Number(job.waitingWindow || 0),
+    waitingInstallmentIds: Array.isArray(job.waitingInstallmentIds)
+      ? job.waitingInstallmentIds
+      : [],
   };
+}
+
+export function planInterResumeWindowSplit(params: {
+  missing: Array<{ id: string; dueDate?: string | null }>;
+  previous: Record<string, InterResumeInstallmentResult>;
+  emitDate: string;
+}): {
+  plannedInstallmentIds: string[];
+  waitingInstallmentIds: string[];
+  installmentResults: Record<string, InterResumeInstallmentResult>;
+} {
+  const plannedInstallmentIds: string[] = [];
+  const waitingInstallmentIds: string[] = [];
+  const installmentResults: Record<string, InterResumeInstallmentResult> = {};
+
+  for (const row of params.missing) {
+    const prev = params.previous[row.id];
+    const inWindow = isInterBoletoDueWithinBankWindow({
+      dueDate: row.dueDate,
+      emitDate: params.emitDate,
+    });
+    const windowError = isInterBoletoDueWindowError(prev?.lastError, prev?.lastHttpStatus);
+
+    if (prev && INTER_RESUME_TERMINAL_STATUSES.has(prev.status) && !windowError) {
+      installmentResults[row.id] = prev;
+      continue;
+    }
+
+    if (!inWindow) {
+      if (prev && mustReconcileBeforeInterResumePost(prev) && !windowError) {
+        installmentResults[row.id] = prev;
+        plannedInstallmentIds.push(row.id);
+        continue;
+      }
+      waitingInstallmentIds.push(row.id);
+      installmentResults[row.id] = {
+        status: 'waiting_window',
+        attempts: prev?.attempts || 0,
+        lastError: buildInterWaitingWindowMessage({
+          dueDate: row.dueDate,
+          emitDate: params.emitDate,
+        }),
+        codigoSolicitacao: prev?.codigoSolicitacao || null,
+        seuNumero: prev?.seuNumero || null,
+        lastHttpStatus: windowError ? prev?.lastHttpStatus || 400 : null,
+        postAttempted: false,
+        intentAt: prev?.intentAt || null,
+      };
+      continue;
+    }
+
+    plannedInstallmentIds.push(row.id);
+    if (!prev) continue;
+    if (prev.status === 'waiting_window' || windowError) {
+      installmentResults[row.id] = {
+        ...prev,
+        status: 'pending',
+        lastError: null,
+        lastHttpStatus: null,
+        postAttempted: false,
+      };
+      continue;
+    }
+    if (prev.status === 'intent' || prev.status === 'manual_reconcile') {
+      installmentResults[row.id] = prev;
+      continue;
+    }
+    if (prev.status === 'failed' || prev.status === 'pending') {
+      if (mustReconcileBeforeInterResumePost(prev) || prev.postAttempted) {
+        installmentResults[row.id] = prev;
+      } else {
+        installmentResults[row.id] = {
+          ...prev,
+          status: 'pending',
+          attempts: 0,
+          lastError: null,
+        };
+      }
+    } else {
+      installmentResults[row.id] = prev;
+    }
+  }
+
+  return { plannedInstallmentIds, waitingInstallmentIds, installmentResults };
 }
 
 /**
@@ -439,6 +556,8 @@ export function canRetryInterResumePost(
   result: InterResumeInstallmentResult | null | undefined,
 ): boolean {
   if (!result) return true;
+  if (result.status === 'waiting_window') return true;
+  if (isInterBoletoDueWindowError(result.lastError, result.lastHttpStatus)) return true;
   if (INTER_RESUME_TERMINAL_STATUSES.has(result.status)) return false;
   if (result.lastHttpStatus === 429) return true;
   if (result.status === 'pending' && !result.postAttempted && !result.seuNumero) return true;
@@ -450,6 +569,8 @@ export function mustReconcileBeforeInterResumePost(
 ): boolean {
   if (!result) return false;
   if (result.status === 'manual_reconcile') return false;
+  if (result.status === 'waiting_window') return false;
+  if (isInterBoletoDueWindowError(result.lastError, result.lastHttpStatus)) return false;
   if (result.status === 'intent') return result.lastHttpStatus !== 429;
   if (result.postAttempted && result.lastHttpStatus !== 429) return true;
   if (result.seuNumero && result.lastHttpStatus !== 429 && result.status === 'pending') return true;
@@ -505,6 +626,7 @@ export function interResumePublicView(job: InterSaleChargesResumeJob | null) {
     reused: progress.reused,
     skippedPaid: progress.skippedPaid,
     failed: progress.failed,
+    waitingWindow: progress.waitingWindow,
     remaining: progress.remaining,
     planned: job.plannedInstallmentIds.length,
     cursorIndex: job.cursorIndex,

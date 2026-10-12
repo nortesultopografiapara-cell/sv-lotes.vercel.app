@@ -37,6 +37,7 @@ import {
   InterResumeBlockedError,
   InterResumeConflictError,
   pauseInterResumeJob,
+  reopenInterResumeWaitingWindow,
   startInterResumeJob,
   tickInterResumeJob,
   type InterResumePorts,
@@ -523,4 +524,79 @@ export async function tickDueInterResumeJobs(
     }
   }
   return { processed, liveEmitEnabled, emitMode };
+}
+
+function jobHasWaitingWindow(job: InterSaleChargesResumeJob): boolean {
+  if (job.status === 'waiting_window') return true;
+  if (Array.isArray(job.waitingInstallmentIds) && job.waitingInstallmentIds.length > 0) return true;
+  return Object.values(job.installmentResults || {}).some((item) => item.status === 'waiting_window');
+}
+
+export async function tickWaitingInterResumeWindows(
+  admin: SupabaseClient,
+  limit = 4,
+): Promise<{
+  scanned: number;
+  reopened: number;
+  processed: number;
+  liveEmitEnabled: boolean;
+  emitMode: 'simulate' | 'live' | 'deferred';
+}> {
+  const emitMode = resolveInterResumeRuntimeMode();
+  const liveEmitEnabled = isInterResumeLiveEmitFlagEnabled();
+  const { data, error } = await admin
+    .from('bank_integrations')
+    .select('id, company_id, metadata, environment')
+    .eq('provider', 'INTER')
+    .limit(80);
+  if (error) throw new Error(error.message);
+  let scanned = 0;
+  let reopened = 0;
+  let processed = 0;
+  for (const row of data || []) {
+    if (processed >= limit) break;
+    const jobs = asRecord(asRecord(row.metadata)[INTER_RESUME_JOBS_METADATA_KEY]);
+    for (const [saleId, rawJob] of Object.entries(jobs)) {
+      if (processed >= limit) break;
+      if (saleId === '_rev' || saleId === '_rate') continue;
+      const job = rawJob as InterSaleChargesResumeJob;
+      if (!job || typeof job !== 'object') continue;
+      if (job.status === 'paused' || job.status === 'running') continue;
+      if (!jobHasWaitingWindow(job) && job.status !== 'completed' && job.status !== 'failed') continue;
+      scanned += 1;
+      try {
+        const resolved = await resolveIntegration(admin, String(row.company_id), saleId);
+        const mode = resolveInterResumeRuntimeMode(resolved.bankEnvironment);
+        const store = createSupabaseInterResumeStore(admin, resolved.integrationId);
+        const ports = createInterResumePorts({
+          admin,
+          companyId: String(row.company_id),
+          saleId,
+          integrationId: resolved.integrationId,
+          financialAccountId: resolved.financialAccountId,
+          mode,
+          bankEnvironment: resolved.bankEnvironment,
+        });
+        const next = await reopenInterResumeWaitingWindow({
+          store,
+          ports,
+          companyId: String(row.company_id),
+          saleId,
+          mode,
+        });
+        if (!next || next.status !== 'queued' || next.plannedInstallmentIds.length === 0) continue;
+        reopened += 1;
+        await tickInterResumeJob({
+          store,
+          ports,
+          companyId: String(row.company_id),
+          saleId,
+        });
+        processed += 1;
+      } catch {
+        /* próximo job */
+      }
+    }
+  }
+  return { scanned, reopened, processed, liveEmitEnabled, emitMode };
 }
