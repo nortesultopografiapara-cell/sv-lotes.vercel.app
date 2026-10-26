@@ -232,6 +232,10 @@ function createStore() {
           state.filters.push([col, val]);
           return api;
         },
+        in: (col: string, vals: unknown[]) => {
+          state.filters.push([col, vals]);
+          return api;
+        },
         order: () => api,
         limit: () => api,
         maybeSingle: async () => {
