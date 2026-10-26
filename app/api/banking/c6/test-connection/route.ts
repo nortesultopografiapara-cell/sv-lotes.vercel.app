@@ -44,11 +44,23 @@ export async function POST(request: Request) {
       success: test.success,
       environment: test.environment,
       tokenType: test.tokenType,
+      tokenTypeSource: test.tokenTypeSource,
       expiresIn: test.expiresIn,
+      expiresInSource: test.expiresInSource,
+      scope: test.scope,
+      scopeSource: test.scopeSource,
       scopes: test.scopes,
       message: test.message,
       status: test.status,
       testedAt: test.testedAt,
+      httpStatus: test.httpStatus,
+      authUrlHost: test.authUrlHost,
+      method: test.method,
+      path: test.path,
+      grantType: test.grantType,
+      oauthCredentialReturned: test.oauthCredentialReturned,
+      fromCache: test.fromCache,
+      evidence: test.evidence,
     };
 
     const json = JSON.stringify(payload);

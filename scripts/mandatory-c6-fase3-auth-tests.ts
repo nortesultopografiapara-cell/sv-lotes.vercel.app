@@ -7,11 +7,16 @@ import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
 import {
+  assertC6ConnectionTestPublicSafe,
   requestC6AccessToken,
   sanitizeC6Scopes,
   toPublicC6ConnectionTest,
   type C6AuthFetchFn,
 } from '../lib/banking/c6/c6AuthClient';
+import {
+  formatC6At01EvidenceReport,
+  parseC6OAuthBodyFields,
+} from '../lib/banking/c6/c6At01Evidence';
 import {
   C6_AUTH_GRANT_TYPE,
   C6_AUTH_URL,
@@ -194,7 +199,14 @@ async function testPublicPayloadNeverHasToken() {
   assert.equal(pub.success, true);
   assert.deepEqual(pub.scopes, ['baas.read', 'baas.write']);
   assert.equal(pub.tokenType, 'Bearer');
+  assert.equal(pub.tokenTypeSource, 'returned');
   assert.equal(pub.expiresIn, 120);
+  assert.equal(pub.expiresInSource, 'returned');
+  assert.equal(pub.httpStatus, 200);
+  assert.equal(pub.oauthCredentialReturned, true);
+  assert.equal(pub.fromCache, false);
+  assert.equal(pub.evidence.httpStatus, 200);
+  assertC6ConnectionTestPublicSafe(pub);
   console.log('OK testPublicPayloadNeverHasToken');
 }
 
@@ -234,6 +246,11 @@ function testUiRouteAndBadge() {
   assert.match(panel, /\/api\/banking\/c6\/test-connection/);
   assert.match(panel, /payloadJson\.includes\('access_token'\)/);
   assert.match(panel, /ainda não homologada para emissão/);
+  assert.match(panel, /Evidência AT_01 \(sanitizada\)/);
+  assert.match(panel, /Copiar evidência AT_01/);
+  assert.match(panel, /tokenTypeSource/);
+  assert.match(panel, /expiresInSource/);
+  assert.doesNotMatch(panel, /lastConnectionTestAt/);
 
   const banks = read('components/finance/BanksDevelopmentPanel.tsx');
   assert.match(banks, /Em homologação/);
@@ -245,8 +262,12 @@ function testUiRouteAndBadge() {
   assert.match(route, /tokenType/);
   assert.match(route, /expiresIn/);
   assert.match(route, /scopes/);
+  assert.match(route, /httpStatus/);
+  assert.match(route, /testedAt/);
+  assert.match(route, /evidence/);
   assert.match(route, /json\.includes\('access_token'\)/);
   assert.doesNotMatch(route, /asaas|interSaleCharge/i);
+  assert.doesNotMatch(route, /console\.(log|info|debug)\(/);
 
   const authClient = read('lib/banking/c6/c6AuthClient.ts');
   assert.match(authClient, /new https\.Agent/);
@@ -271,7 +292,102 @@ function testDoesNotFallIntoAsaasInterAndEmitBlocked() {
   assert.match(inter, /throwIfC6EmissionAttempt/);
   const auth = read('lib/banking/c6/c6AuthClient.ts');
   assert.doesNotMatch(auth, /create-charge|boleto|bolepix|\/pix/i);
+  const repo = read('lib/banking/c6/c6ConfigRepository.ts');
+  assert.doesNotMatch(repo, /lastConnectionTestAt|testedAt|httpStatus/);
   console.log('OK testDoesNotFallIntoAsaasInterAndEmitBlocked');
+}
+
+async function testHttpStatusAndReturnedVsDefaultFields() {
+  const fixedAt = '2026-10-26T19:20:00.000Z';
+  {
+    const fetchFn: C6AuthFetchFn = async () => ({
+      status: 201,
+      bodyText: JSON.stringify({
+        access_token: 'tok-201-must-not-leak',
+        token_type: 'Bearer',
+        expires_in: 240,
+        scope: 'baas.auth baas.read',
+      }),
+    });
+    const r = await requestC6AccessToken(baseCreds, { fetchFn, bypassCache: true });
+    assert.equal(r.ok, true);
+    const pub = toPublicC6ConnectionTest(r, fixedAt);
+    assert.equal(pub.httpStatus, 201);
+    assert.equal(pub.tokenType, 'Bearer');
+    assert.equal(pub.tokenTypeSource, 'returned');
+    assert.equal(pub.expiresIn, 240);
+    assert.equal(pub.expiresInSource, 'returned');
+    assert.equal(pub.scope, 'baas.auth baas.read');
+    assert.equal(pub.scopeSource, 'returned');
+    assert.equal(pub.testedAt, fixedAt);
+    const json = JSON.stringify(pub);
+    assert.equal(json.includes('tok-201-must-not-leak'), false);
+    assert.equal(json.includes('access_token'), false);
+    assert.equal(json.includes('accessToken'), false);
+    assert.equal(json.includes('BEGIN CERTIFICATE'), false);
+    assertC6ConnectionTestPublicSafe(pub);
+  }
+  {
+    const fetchFn: C6AuthFetchFn = async () => ({
+      status: 200,
+      bodyText: JSON.stringify({
+        access_token: 'tok-defaults-must-not-become-at01',
+      }),
+    });
+    const r = await requestC6AccessToken(baseCreds, { fetchFn, bypassCache: true });
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.tokenType, 'Bearer');
+      assert.equal(r.expiresIn, 3600);
+      assert.equal(r.tokenTypeReturned, false);
+      assert.equal(r.expiresInReturned, false);
+      assert.equal(r.scopeReturned, false);
+    }
+    const pub = toPublicC6ConnectionTest(r, fixedAt);
+    assert.equal(pub.httpStatus, 200);
+    assert.equal(pub.tokenType, null);
+    assert.equal(pub.tokenTypeSource, 'absent');
+    assert.equal(pub.expiresIn, null);
+    assert.equal(pub.expiresInSource, 'absent');
+    assert.equal(pub.scope, null);
+    assert.equal(pub.scopeSource, 'absent');
+    assert.deepEqual(pub.scopes, []);
+    const json = JSON.stringify(pub);
+    assert.equal(json.includes('"tokenType":"Bearer"'), false);
+    assert.equal(json.includes('"expiresIn":3600'), false);
+    assert.equal(json.includes('tok-defaults-must-not-become-at01'), false);
+    const report = formatC6At01EvidenceReport(pub.evidence);
+    assert.match(report, /HTTP status \(C6\): 200/);
+    assert.match(report, /2026-10-26T19:20:00.000Z/);
+    assert.match(report, /token_type: não retornado/);
+    assert.match(report, /expires_in: não retornado/);
+    assert.match(report, /scope: não retornado/);
+    assert.equal(report.includes('tok-defaults-must-not-become-at01'), false);
+    assert.equal(report.includes('access_token'), false);
+    assert.equal(report.includes('BEGIN PRIVATE KEY'), false);
+    assertC6ConnectionTestPublicSafe(pub);
+  }
+  {
+    const parsed = parseC6OAuthBodyFields({
+      token_type: 'Bearer',
+      expires_in: '300',
+      scope: 'baas.read',
+    });
+    assert.equal(parsed.tokenTypeReturned, true);
+    assert.equal(parsed.tokenType, 'Bearer');
+    assert.equal(parsed.expiresInReturned, true);
+    assert.equal(parsed.expiresIn, 300);
+    assert.equal(parsed.scopeReturned, true);
+    const omitted = parseC6OAuthBodyFields({});
+    assert.equal(omitted.tokenTypeReturned, false);
+    assert.equal(omitted.tokenType, null);
+    assert.equal(omitted.tokenTypeForCache, 'Bearer');
+    assert.equal(omitted.expiresInReturned, false);
+    assert.equal(omitted.expiresIn, null);
+    assert.equal(omitted.expiresInForCache, 3600);
+    assert.equal(omitted.scopeReturned, false);
+  }
+  console.log('OK testHttpStatusAndReturnedVsDefaultFields');
 }
 
 function testMinimumConfigHelper() {
@@ -332,6 +448,7 @@ async function main() {
   testUiRouteAndBadge();
   testDoesNotFallIntoAsaasInterAndEmitBlocked();
   testMinimumConfigHelper();
+  await testHttpStatusAndReturnedVsDefaultFields();
   console.log('ALL mandatory-c6-fase3-auth-tests passed');
 }
 

@@ -1,7 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { FileKey2, Loader2, PlugZap, ShieldCheck, Upload } from 'lucide-react';
+import { Copy, FileKey2, Loader2, PlugZap, ShieldCheck, Upload } from 'lucide-react';
+import {
+  formatC6At01EvidenceReport,
+  isC6At01EvidencePublic,
+  type C6At01EvidencePublic,
+} from '@/lib/banking/c6/c6At01Evidence';
 import {
   hasMinimumC6AuthConfig,
   type C6BankConfigPublic,
@@ -74,6 +79,8 @@ export function C6BankConfigPanel({
   >('UNTESTED');
   const [testScopes, setTestScopes] = useState<string[]>([]);
   const [testMeta, setTestMeta] = useState('');
+  const [testEvidence, setTestEvidence] = useState<C6At01EvidencePublic | null>(null);
+  const [evidenceCopied, setEvidenceCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +102,8 @@ export function C6BankConfigPanel({
       setTestStatus('UNTESTED');
       setTestScopes([]);
       setTestMeta('');
+      setTestEvidence(null);
+      setEvidenceCopied(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar');
     } finally {
@@ -186,6 +195,8 @@ export function C6BankConfigPanel({
       setTestStatus('UNTESTED');
       setTestScopes([]);
       setTestMeta('');
+      setTestEvidence(null);
+      setEvidenceCopied(false);
       setInfo(
         saved.message ||
           'Configuração salva. Emissão C6 Bank ainda não homologada.',
@@ -208,6 +219,8 @@ export function C6BankConfigPanel({
     setError('');
     setInfo('');
     setTestMeta('');
+    setTestEvidence(null);
+    setEvidenceCopied(false);
     try {
       const res = await fetch('/api/banking/c6/test-connection', {
         method: 'POST',
@@ -222,24 +235,41 @@ export function C6BankConfigPanel({
       if (
         payloadJson.includes('access_token') ||
         payloadJson.includes('accessToken') ||
+        payloadJson.includes('BEGIN CERTIFICATE') ||
+        payloadJson.includes('BEGIN PRIVATE KEY') ||
+        payloadJson.includes('client_secret') ||
+        payloadJson.includes('clientSecret') ||
         /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{8,}/.test(payloadJson)
       ) {
         setTestStatus('FAILED');
         setError('Resposta de teste bloqueada: token não pode aparecer no frontend.');
         return;
       }
+      const evidence = isC6At01EvidencePublic(data.evidence) ? data.evidence : null;
       const scopes = Array.isArray(data.scopes)
         ? (data.scopes as unknown[]).map((s) => String(s)).filter(Boolean)
-        : [];
+        : evidence?.scopes || [];
       setTestScopes(scopes);
+      setTestEvidence(evidence);
       if (data.success) {
         setTestStatus('VALIDATED');
+        const httpLabel =
+          typeof data.httpStatus === 'number' ? `HTTP C6: ${data.httpStatus}` : '';
+        const when = data.testedAt
+          ? new Date(String(data.testedAt)).toLocaleString('pt-BR', {
+              timeZone: 'America/Sao_Paulo',
+            })
+          : '';
+        const typeLabel =
+          data.tokenTypeSource === 'returned' && data.tokenType
+            ? `token_type: ${String(data.tokenType)} (retornado)`
+            : 'token_type: não retornado';
+        const expLabel =
+          data.expiresInSource === 'returned' && typeof data.expiresIn === 'number'
+            ? `expires_in: ${data.expiresIn}s (retornado)`
+            : 'expires_in: não retornado';
         setTestMeta(
-          [
-            `Ambiente: ${data.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}`,
-            data.tokenType ? `Tipo: ${String(data.tokenType)}` : '',
-            typeof data.expiresIn === 'number' ? `Expira em: ${data.expiresIn}s` : '',
-          ]
+          [`Ambiente: ${data.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}`, httpLabel, typeLabel, expLabel, when]
             .filter(Boolean)
             .join(' · '),
         );
@@ -253,6 +283,16 @@ export function C6BankConfigPanel({
       setError(e instanceof Error ? e.message : 'Erro ao testar conexão');
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function copyAt01Evidence() {
+    if (!testEvidence) return;
+    try {
+      await navigator.clipboard.writeText(formatC6At01EvidenceReport(testEvidence));
+      setEvidenceCopied(true);
+    } catch {
+      setEvidenceCopied(false);
     }
   }
 
@@ -395,6 +435,55 @@ export function C6BankConfigPanel({
                 </span>
               ))}
             </p>
+          ) : null}
+          {testEvidence ? (
+            <div className="mt-3 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <p className="font-semibold text-amber-100">Evidência AT_01 (sanitizada)</p>
+              <p>HTTP status (C6): {testEvidence.httpStatus ?? 'não capturado'}</p>
+              <p>
+                Ambiente:{' '}
+                {testEvidence.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}
+              </p>
+              <p>
+                Data/hora:{' '}
+                {testEvidence.testedAt
+                  ? new Date(testEvidence.testedAt).toLocaleString('pt-BR', {
+                      timeZone: 'America/Sao_Paulo',
+                    })
+                  : 'não capturada'}{' '}
+                ({testEvidence.testedAt || '—'} UTC)
+              </p>
+              <p>
+                token_type:{' '}
+                {testEvidence.tokenTypeSource === 'returned'
+                  ? `${testEvidence.tokenType || '—'} (retornado pelo C6)`
+                  : 'não retornado (não usar padrão)'}
+              </p>
+              <p>
+                expires_in:{' '}
+                {testEvidence.expiresInSource === 'returned'
+                  ? `${testEvidence.expiresIn ?? '—'} (retornado pelo C6)`
+                  : 'não retornado (não usar padrão)'}
+              </p>
+              <p>
+                scope:{' '}
+                {testEvidence.scopeSource === 'returned'
+                  ? `${testEvidence.scope || '(vazio após sanitização)'} (retornado pelo C6)`
+                  : 'não retornado (não usar padrão)'}
+              </p>
+              <p>
+                Endpoint: {testEvidence.method} https://{testEvidence.authUrlHost}
+                {testEvidence.path}
+              </p>
+              <button
+                type="button"
+                onClick={() => void copyAt01Evidence()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/15"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {evidenceCopied ? 'Evidência copiada' : 'Copiar evidência AT_01'}
+              </button>
+            </div>
           ) : null}
         </div>
       ) : null}

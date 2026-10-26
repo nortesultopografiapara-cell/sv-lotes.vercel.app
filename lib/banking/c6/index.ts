@@ -22,9 +22,16 @@ export {
   getC6AuthUrl,
 } from '@/lib/banking/c6/c6Endpoints';
 export {
+  formatC6At01EvidenceReport,
+  parseC6OAuthBodyFields,
+  sanitizeC6Scopes,
+  toC6At01EvidencePublic,
+  type C6At01EvidencePublic,
+  type C6AuthFieldSource,
+} from '@/lib/banking/c6/c6At01Evidence';
+export {
   assertC6ConnectionTestPublicSafe,
   requestC6AccessToken,
-  sanitizeC6Scopes,
   toPublicC6ConnectionTest,
 } from '@/lib/banking/c6/c6AuthClient';
 export { runCompanyC6ConnectionTest } from '@/lib/banking/c6/c6ConnectionTest';

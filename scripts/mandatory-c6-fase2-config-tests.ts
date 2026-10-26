@@ -341,6 +341,8 @@ function testPanelAndRoutes() {
   assert.match(testRoute, /export async function POST/);
   assert.match(testRoute, /runCompanyC6ConnectionTest/);
   assert.match(testRoute, /json\.includes\('access_token'\)/);
+  assert.match(testRoute, /httpStatus/);
+  assert.match(testRoute, /evidence/);
 
   const link = read('app/api/banking/c6/link-financial-account/route.ts');
   assert.match(link, /createC6FinancialAccount/);
@@ -348,7 +350,12 @@ function testPanelAndRoutes() {
   assert.doesNotMatch(link, /recoverMislinked/);
 
   const libDir = path.join(root, 'lib/banking/c6');
-  const authHttpFiles = new Set(['c6Endpoints.ts', 'c6AuthClient.ts', 'c6ConnectionTest.ts']);
+  const authHttpFiles = new Set([
+    'c6Endpoints.ts',
+    'c6AuthClient.ts',
+    'c6ConnectionTest.ts',
+    'c6At01Evidence.ts',
+  ]);
   for (const file of fs.readdirSync(libDir)) {
     const src = fs.readFileSync(path.join(libDir, file), 'utf8');
     assert.doesNotMatch(src, /cobranca\/v3|bolepix/i, `${file} sem cobrança remota`);

@@ -137,6 +137,7 @@ function testNoHttpClient() {
     'c6Endpoints.ts',
     'c6AuthClient.ts',
     'c6ConnectionTest.ts',
+    'c6At01Evidence.ts',
   ]);
   for (const file of fs.readdirSync(dir)) {
     const src = fs.readFileSync(path.join(libDirJoin(dir, file)), 'utf8');

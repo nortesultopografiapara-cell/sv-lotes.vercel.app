@@ -15,6 +15,16 @@ import {
   setCachedC6Token,
   type C6CachedToken,
 } from '@/lib/banking/c6/c6TokenCache';
+import {
+  C6_AT01_FORBIDDEN_PUBLIC_FRAGMENTS,
+  parseC6OAuthBodyFields,
+  toC6At01EvidencePublic,
+  type C6At01EvidencePublic,
+  type C6AuthFieldSource,
+} from '@/lib/banking/c6/c6At01Evidence';
+
+export { sanitizeC6Scopes, formatC6At01EvidenceReport } from '@/lib/banking/c6/c6At01Evidence';
+export type { C6At01EvidencePublic, C6AuthFieldSource } from '@/lib/banking/c6/c6At01Evidence';
 
 export type C6AuthCredentials = {
   companyId: string;
@@ -36,6 +46,13 @@ export type C6AuthSuccess = {
   environment: BankEnvironment;
   authUrlHost: string;
   fromCache: boolean;
+  httpStatus: number | null;
+  tokenTypeReturned: boolean;
+  expiresInReturned: boolean;
+  scopeReturned: boolean;
+  tokenTypeRaw: string | null;
+  expiresInRaw: number | null;
+  scopeRaw: string | null;
 };
 
 export type C6AuthFailureCode =
@@ -78,14 +95,6 @@ export function sanitizeC6ErrorBody(raw: string): string {
     .replace(/"client_secret"\s*:\s*"[^"]*"/gi, '"client_secret":"[redacted]"')
     .replace(/client_secret=[^&\s]*/gi, 'client_secret=[redacted]')
     .slice(0, 400);
-}
-
-export function sanitizeC6Scopes(raw: string | undefined | null): string[] {
-  return String(raw || '')
-    .split(/[\s,]+/)
-    .map((part) => part.trim())
-    .filter((part) => /^[A-Za-z0-9:._\-/]{1,80}$/.test(part))
-    .slice(0, 40);
 }
 
 export function mapC6AuthHttpError(status: number): C6AuthFailureCode {
@@ -243,6 +252,13 @@ export async function requestC6AccessToken(
         environment,
         authUrlHost: getC6AuthHost(environment),
         fromCache: true,
+        httpStatus: null,
+        tokenTypeReturned: false,
+        expiresInReturned: false,
+        scopeReturned: false,
+        tokenTypeRaw: null,
+        expiresInRaw: null,
+        scopeRaw: null,
       };
     }
   }
@@ -336,17 +352,15 @@ export async function requestC6AccessToken(
     };
   }
 
-  const expiresIn = Number(parsed.expires_in);
-  const ttlSec = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600;
+  const fields = parseC6OAuthBodyFields(parsed);
   const now = options?.nowMs ?? Date.now();
-  const expiresAtMs = now + ttlSec * 1000;
-  const tokenType = String(parsed.token_type || 'Bearer');
-  const scope = parsed.scope ? String(parsed.scope) : undefined;
+  const expiresAtMs = now + fields.expiresInForCache * 1000;
+  const scope = fields.scopeRaw || undefined;
 
   const cached: C6CachedToken = {
     accessToken,
     expiresAtMs,
-    tokenType,
+    tokenType: fields.tokenTypeForCache,
     scope,
   };
   setCachedC6Token(creds.companyId, environment, cached, creds.integrationId);
@@ -354,13 +368,20 @@ export async function requestC6AccessToken(
   return {
     ok: true,
     accessToken,
-    tokenType,
-    expiresIn: ttlSec,
+    tokenType: fields.tokenTypeForCache,
+    expiresIn: fields.expiresInForCache,
     expiresAtMs,
     scope,
     environment,
     authUrlHost,
     fromCache: false,
+    httpStatus: status,
+    tokenTypeReturned: fields.tokenTypeReturned,
+    expiresInReturned: fields.expiresInReturned,
+    scopeReturned: fields.scopeReturned,
+    tokenTypeRaw: fields.tokenType,
+    expiresInRaw: fields.expiresIn,
+    scopeRaw: fields.scopeRaw,
   };
 }
 
@@ -368,13 +389,24 @@ export async function requestC6AccessToken(
 export type C6ConnectionTestPublic = {
   success: boolean;
   environment: BankEnvironment;
-  tokenType?: string;
-  expiresIn?: number;
+  tokenType: string | null;
+  tokenTypeSource: C6AuthFieldSource;
+  expiresIn: number | null;
+  expiresInSource: C6AuthFieldSource;
+  scope: string | null;
+  scopeSource: C6AuthFieldSource;
   scopes: string[];
   message: string;
   status: 'UNTESTED' | 'VALIDATED' | 'FAILED';
   testedAt: string;
+  httpStatus: number | null;
   authUrlHost?: string;
+  method: 'POST';
+  path: '/v1/auth/';
+  grantType: 'client_credentials';
+  oauthCredentialReturned: boolean;
+  fromCache: boolean;
+  evidence: C6At01EvidencePublic;
   code?: C6AuthFailureCode;
 };
 
@@ -383,42 +415,99 @@ export function toPublicC6ConnectionTest(
   testedAt = new Date().toISOString(),
 ): C6ConnectionTestPublic {
   if (result.ok) {
+    const tokenTypeSource: C6AuthFieldSource = result.fromCache
+      ? 'absent'
+      : result.tokenTypeReturned
+        ? 'returned'
+        : 'absent';
+    const expiresInSource: C6AuthFieldSource = result.fromCache
+      ? 'absent'
+      : result.expiresInReturned
+        ? 'returned'
+        : 'absent';
+    const scopeSource: C6AuthFieldSource = result.fromCache
+      ? 'absent'
+      : result.scopeReturned
+        ? 'returned'
+        : 'absent';
+    const evidence = toC6At01EvidencePublic({
+      success: true,
+      environment: result.environment,
+      httpStatus: result.fromCache ? null : result.httpStatus,
+      testedAt,
+      tokenType: result.tokenTypeRaw,
+      tokenTypeSource,
+      expiresIn: result.expiresInRaw,
+      expiresInSource,
+      scopeRaw: result.scopeRaw,
+      scopeSource,
+      oauthCredentialReturned: true,
+      fromCache: result.fromCache,
+      authUrlHost: result.authUrlHost,
+    });
     return {
       success: true,
       environment: result.environment,
-      tokenType: result.tokenType,
-      expiresIn: result.expiresIn,
-      scopes: sanitizeC6Scopes(result.scope),
+      tokenType: evidence.tokenType,
+      tokenTypeSource: evidence.tokenTypeSource,
+      expiresIn: evidence.expiresIn,
+      expiresInSource: evidence.expiresInSource,
+      scope: evidence.scope,
+      scopeSource: evidence.scopeSource,
+      scopes: evidence.scopes,
       message: 'Conexão validada.',
       status: 'VALIDATED',
       testedAt,
-      authUrlHost: result.authUrlHost,
+      httpStatus: evidence.httpStatus,
+      authUrlHost: evidence.authUrlHost,
+      method: evidence.method,
+      path: evidence.path,
+      grantType: evidence.grantType,
+      oauthCredentialReturned: true,
+      fromCache: evidence.fromCache,
+      evidence,
     };
   }
+
+  const evidence = toC6At01EvidencePublic({
+    success: false,
+    environment: result.environment,
+    httpStatus: result.httpStatus ?? null,
+    testedAt,
+    tokenTypeSource: 'absent',
+    expiresInSource: 'absent',
+    scopeSource: 'absent',
+    oauthCredentialReturned: false,
+    fromCache: false,
+  });
   return {
     success: false,
     environment: result.environment,
+    tokenType: null,
+    tokenTypeSource: 'absent',
+    expiresIn: null,
+    expiresInSource: 'absent',
+    scope: null,
+    scopeSource: 'absent',
     scopes: [],
     message: result.message,
     status: 'FAILED',
     testedAt,
+    httpStatus: evidence.httpStatus,
+    authUrlHost: evidence.authUrlHost,
+    method: evidence.method,
+    path: evidence.path,
+    grantType: evidence.grantType,
+    oauthCredentialReturned: false,
+    fromCache: false,
+    evidence,
     code: result.code,
   };
 }
 
 export function assertC6ConnectionTestPublicSafe(payload: C6ConnectionTestPublic): void {
   const json = JSON.stringify(payload);
-  const forbidden = [
-    'access_token',
-    'accessToken',
-    'client_secret',
-    'clientSecret',
-    'BEGIN CERTIFICATE',
-    'BEGIN PRIVATE KEY',
-    'BEGIN RSA PRIVATE KEY',
-    'encrypted_payload',
-  ];
-  for (const token of forbidden) {
+  for (const token of C6_AT01_FORBIDDEN_PUBLIC_FRAGMENTS) {
     if (json.includes(token)) {
       throw new Error(`Resposta C6 de teste expõe material sensível (${token}).`);
     }
