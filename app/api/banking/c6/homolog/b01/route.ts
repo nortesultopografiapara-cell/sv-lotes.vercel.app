@@ -12,6 +12,8 @@ import {
 import { C6BoletoValidationError } from '@/lib/banking/c6/c6BoletoValidation';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { loadC6HomologIdempotency } from '@/lib/banking/c6/c6BoletoIdempotency';
+import { loadC6HomologAtomicRow } from '@/lib/banking/c6/c6HomologIdempotencyRepository';
+import { C6HomologIdempotencyError } from '@/lib/banking/c6/c6HomologIdempotency';
 import type { C6BoletoCreateInput } from '@/lib/banking/c6/c6BoletoTypes';
 
 export const runtime = 'nodejs';
@@ -30,6 +32,7 @@ function hasClientLiveOverride(body: Record<string, unknown>): boolean {
 /**
  * POST /api/banking/c6/homolog/b01
  * Prepara B_01 (Sandbox). Sempre 409. Nunca emite. Fora de vendas/Central.
+ * Lê a tabela de idempotência se existir; nunca chama reserve/complete RPC.
  */
 export async function POST(request: Request) {
   const auth = await authorizeBankingRoute(request);
@@ -77,11 +80,21 @@ export async function POST(request: Request) {
     const persistedIdempotency = integrationId
       ? (await loadC6HomologIdempotency(auth.admin, auth.tenantId, integrationId)).index
       : {};
+    const ref = String(body.external_reference_id || '').trim();
+    const existingAtomic =
+      integrationId && ref
+        ? await loadC6HomologAtomicRow(auth.admin, {
+            companyId: auth.tenantId,
+            integrationId,
+            externalReferenceId: ref,
+          })
+        : null;
 
     const payload = {
       companyId: auth.tenantId,
       environment: 'SANDBOX' as const,
-      external_reference_id: String(body.external_reference_id || ''),
+      billing_scheme: '21',
+      external_reference_id: ref,
       amount: Number(body.amount),
       due_date: String(body.due_date || ''),
       payer: body.payer,
@@ -93,6 +106,7 @@ export async function POST(request: Request) {
       sessionCompanyId: auth.tenantId,
       integrationId,
       persistedIdempotency,
+      existingAtomic,
       credentials: {
         companyId: auth.tenantId,
         integrationId,
@@ -130,6 +144,12 @@ export async function POST(request: Request) {
   } catch (err) {
     if (err instanceof C6HomologAuthorizationError) {
       return NextResponse.json({ error: err.message }, { status: 403 });
+    }
+    if (err instanceof C6HomologIdempotencyError) {
+      return NextResponse.json(
+        { error: err.message, reason: err.reason, blocked: true, executed: false },
+        { status: 409 },
+      );
     }
     if (err instanceof C6BoletoValidationError) {
       return NextResponse.json({ error: err.message, fields: err.fields }, { status: 400 });

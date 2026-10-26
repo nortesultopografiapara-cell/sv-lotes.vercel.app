@@ -1,12 +1,8 @@
 /**
- * Idempotência persistente B_01: empresa + integração + external_reference_id.
- * Usa bank_integrations.metadata (coluna já existente). Sem migration.
- *
- * A rota bloqueada (HTTP 409) apenas CONSULTA. Reserva/gravação fica para
- * emissão autorizada futura — preparar agora não pode queimar a referência.
- *
- * Limitação: update JSON sem RPC CAS não é atômico sob corrida extrema.
- * Unicidade estrita no banco exigiria índice UNIQUE (migration futura).
+ * Legado: índice em bank_integrations.metadata.
+ * Fase 3B.3 usa a tabela c6_homolog_idempotency (UNIQUE + INSERT ON CONFLICT).
+ * Este módulo permanece só como leitura complementar enquanto a migration
+ * não for autorizada. Não gravar emissão por aqui.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';

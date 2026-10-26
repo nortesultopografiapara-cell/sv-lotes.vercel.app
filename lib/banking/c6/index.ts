@@ -78,9 +78,17 @@ export {
   C6_B01_CONFIRMATION_PHRASE,
   captureC6HomologB01Blocked,
   executeC6HomologB01Simulated,
+  executeC6HomologB01WithIdempotency,
 } from '@/lib/banking/c6/c6BoletoHomologB01';
 export {
   C6_HOMOLOG_IDEMPOTENCY_META_KEY,
   assertC6HomologRefAvailable,
   parseC6HomologIdempotency,
 } from '@/lib/banking/c6/c6BoletoIdempotency';
+export {
+  C6_B01_RECONCILE_PHRASE,
+  C6_HOMOLOG_TABLE,
+  C6HomologIdempotencyError,
+  classifyC6HomologHttpOutcome,
+  createMemoryC6HomologIdempotencyStore,
+} from '@/lib/banking/c6/c6HomologIdempotency';

@@ -324,10 +324,13 @@ function testWebhookGapAndNoSalesWiring() {
   assert.match(route, /isPlatformAdmin/);
   assert.match(route, /captureC6HomologB01Blocked/);
   assert.match(route, /loadC6HomologIdempotency/);
+  assert.match(route, /loadC6HomologAtomicRow/);
   assert.match(route, /assertC6HomologB01SandboxOnly/);
   assert.doesNotMatch(route, /executeC6BankSlipCreate/);
   assert.doesNotMatch(route, /executeC6HomologB01Simulated/);
+  assert.doesNotMatch(route, /executeC6HomologB01WithIdempotency/);
   assert.doesNotMatch(route, /reserveC6HomologIdempotency/);
+  assert.doesNotMatch(route, /reserve_c6_homolog_idempotency/);
   assert.match(route, /hasClientLiveOverride/);
   assert.match(route, /Parâmetros de emissão ao vivo não são aceitos/);
   assert.match(route, /status: 409/);

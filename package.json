@@ -51,6 +51,7 @@
     "test:c6-fase3": "tsx scripts/mandatory-c6-fase3-auth-tests.ts",
     "test:c6-fase3b": "tsx scripts/mandatory-c6-fase3b-boleto-tests.ts",
     "test:c6-fase3b1": "tsx scripts/mandatory-c6-fase3b1-homolog-tests.ts",
+    "test:c6-fase3b3": "tsx scripts/mandatory-c6-fase3b3-idempotency-tests.ts",
     "test:inter-fase-a": "tsx scripts/mandatory-inter-bank-config-fase-a-tests.ts",
     "test:inter-fase-b": "tsx scripts/mandatory-inter-oauth-fase-b-tests.ts",
     "test:inter-fase-c": "tsx scripts/mandatory-inter-webhook-fase-c-tests.ts",
