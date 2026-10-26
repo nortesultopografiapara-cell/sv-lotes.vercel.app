@@ -355,6 +355,8 @@ function testPanelAndRoutes() {
     'c6AuthClient.ts',
     'c6ConnectionTest.ts',
     'c6At01Evidence.ts',
+    'c6BoletoEndpoints.ts',
+    'c6BoletoClient.ts',
   ]);
   for (const file of fs.readdirSync(libDir)) {
     const src = fs.readFileSync(path.join(libDir, file), 'utf8');

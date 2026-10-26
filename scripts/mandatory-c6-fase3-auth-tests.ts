@@ -338,7 +338,7 @@ async function testHttpStatusAndReturnedVsDefaultFields() {
     assert.equal(r.ok, true);
     if (r.ok) {
       assert.equal(r.tokenType, 'Bearer');
-      assert.equal(r.expiresIn, 3600);
+      assert.equal(r.expiresIn, 600);
       assert.equal(r.tokenTypeReturned, false);
       assert.equal(r.expiresInReturned, false);
       assert.equal(r.scopeReturned, false);
@@ -355,6 +355,7 @@ async function testHttpStatusAndReturnedVsDefaultFields() {
     const json = JSON.stringify(pub);
     assert.equal(json.includes('"tokenType":"Bearer"'), false);
     assert.equal(json.includes('"expiresIn":3600'), false);
+    assert.equal(json.includes('"expiresIn":600'), false);
     assert.equal(json.includes('tok-defaults-must-not-become-at01'), false);
     const report = formatC6At01EvidenceReport(pub.evidence);
     assert.match(report, /HTTP status \(C6\): 200/);
@@ -384,7 +385,7 @@ async function testHttpStatusAndReturnedVsDefaultFields() {
     assert.equal(omitted.tokenTypeForCache, 'Bearer');
     assert.equal(omitted.expiresInReturned, false);
     assert.equal(omitted.expiresIn, null);
-    assert.equal(omitted.expiresInForCache, 3600);
+    assert.equal(omitted.expiresInForCache, 600);
     assert.equal(omitted.scopeReturned, false);
   }
   console.log('OK testHttpStatusAndReturnedVsDefaultFields');

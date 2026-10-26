@@ -42,7 +42,8 @@ export type C6ParsedOAuthBodyFields = {
 };
 
 const DEFAULT_TOKEN_TYPE_FOR_CACHE = 'Bearer';
-const DEFAULT_EXPIRES_IN_FOR_CACHE = 3600;
+/** Fallback só para TTL de cache. Nunca exibir no AT_01 se expires_in não veio do C6. */
+export const C6_OAUTH_CACHE_FALLBACK_SECONDS = 600;
 
 export function sanitizeC6Scopes(raw: string | undefined | null): string[] {
   return String(raw || '')
@@ -84,7 +85,7 @@ export function parseC6OAuthBodyFields(
     tokenTypeForCache: tokenType || DEFAULT_TOKEN_TYPE_FOR_CACHE,
     expiresInReturned,
     expiresIn,
-    expiresInForCache: expiresIn ?? DEFAULT_EXPIRES_IN_FOR_CACHE,
+    expiresInForCache: expiresIn ?? C6_OAUTH_CACHE_FALLBACK_SECONDS,
     scopeReturned,
     scopeRaw,
   };
