@@ -240,7 +240,7 @@ function testSharedGuardsInEmitPaths() {
   const creds = read('lib/finance/financialAccountCredentialResolver.ts');
   assert.match(creds, /C6EmissionNotHomologatedError/);
 
-  const migration = read('supabase/migrations/20261013120000_bank_integrations_provider_c6.sql');
+  const migration = read('supabase/migrations/20261026150000_bank_integrations_provider_c6.sql');
   assert.match(migration, /'C6'/);
   assert.match(migration, /'INTER'/);
   assert.match(migration, /'ASAAS_COMPANY'/);
