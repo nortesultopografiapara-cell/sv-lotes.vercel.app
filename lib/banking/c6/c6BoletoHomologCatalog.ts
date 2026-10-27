@@ -168,7 +168,7 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
       'Roteiro: POST /webhooks/ na API de notificações, body url + service="BANK_SLIP", HTTP 200, Authorization Bearer.',
       'OpenAPI de boleto 1.7.2 não descreve /webhooks/. Host BaaS já homologado: POST https://baas-api-sandbox.c6bank.info/v1/webhooks/.',
       'Receptor HTTPS isolado /api/banking/c6/webhooks/{integrationId}. financeMutation=false. Sem baixa financeira.',
-      'C6 não documenta HMAC no payload de entrada; origem = token de rota. Referência B07S261027. Cadastro C6 aguarda CADASTRAR_B07_WEBHOOK_SANDBOX.',
+      'Portal oficial /apis/webhook: GET /v1/webhooks/?service=BANK_SLIP antes do POST. C6 não documenta HMAC no payload de entrada; origem = token de rota. Referência B07S261027.',
     ],
     returnedStatus: null,
     returnedBody: null,

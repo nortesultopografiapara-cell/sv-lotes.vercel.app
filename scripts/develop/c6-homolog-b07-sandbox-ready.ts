@@ -59,6 +59,7 @@ function main() {
         consult: {
           method: 'GET',
           url: buildC6WebhookConsultUrl('SANDBOX'),
+          official: 'https://developers.c6bank.com.br/apis/webhook',
           executed: false,
         },
       },

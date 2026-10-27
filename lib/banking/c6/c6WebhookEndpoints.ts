@@ -23,7 +23,9 @@ export function buildC6WebhookConsultUrl(
   environment: BankEnvironment,
   service: string = C6_NOTIFICATIONS_SERVICE,
 ): string {
-  return `${getC6WebhooksBaseUrl(environment)}${encodeURIComponent(String(service || '').trim())}`;
+  const base = getC6WebhooksBaseUrl(environment);
+  const params = new URLSearchParams({ service: String(service || '').trim() || C6_NOTIFICATIONS_SERVICE });
+  return `${base}?${params.toString()}`;
 }
 
 export function redactC6WebhookUrl(url: string): string {

@@ -18,6 +18,7 @@ import {
   assertC6HomologB07SandboxOnly,
   buildC6HomologB07CallbackUrl,
   c6HomologB07LiveExecuteOptions,
+  consultC6HomologB07Existing,
   executeC6HomologB07WithIdempotency,
   isC6HomologB07LiveAuthorized,
   prepareC6HomologB07Consult,
@@ -214,7 +215,7 @@ export async function GET(request: Request) {
         method: consult.method,
         url: buildC6WebhookConsultUrl('SANDBOX'),
         executed: false,
-        reason: 'OpenAPI de notificações ausente neste repo. Sem GET bancário nesta etapa.',
+        reason: 'GET oficial /v1/webhooks/?service=BANK_SLIP (portal /apis/webhook). Executado só no POST autorizado.',
       },
       reference: {
         external_reference_id: C6_B07_IDEMPOTENCY_REF,
@@ -335,6 +336,44 @@ export async function POST(request: Request) {
       );
     }
     const scopes = assertC6BankSlipWriteScope(oauth.scopeRaw || oauth.scope);
+    const credentials = {
+      companyId: auth.tenantId,
+      integrationId: secrets.integrationId,
+      environment: 'SANDBOX' as const,
+      clientId: secrets.clientId,
+      clientSecret: secrets.clientSecret,
+      certificatePem: secrets.certificatePem,
+      privateKeyPem: secrets.privateKeyPem,
+    };
+    const consult = await consultC6HomologB07Existing(credentials, oauth.accessToken);
+    assertC6BoletoEvidencePublicSafe(consult.evidence);
+    if (consult.interpretation.outcome !== 'absent') {
+      const payloadOut = {
+        blocked: true,
+        executed: false,
+        persistReservation: false,
+        testCase: 'B_07',
+        financeMutation: C6_WEBHOOK_FINANCE_MUTATION,
+        scopes,
+        consult: {
+          executed: true,
+          outcome: consult.interpretation.outcome,
+          httpStatus: consult.interpretation.httpStatus,
+          service: consult.interpretation.service,
+          urlRedacted: consult.interpretation.urlRedacted,
+          webhookId: consult.interpretation.webhookId,
+        },
+        evidence: consult.evidence,
+        message:
+          consult.interpretation.outcome === 'present'
+            ? 'Webhook BANK_SLIP já cadastrado. POST não enviado.'
+            : 'GET oficial não confirmou ausência com segurança. POST não enviado.',
+      };
+      const blocked = c6HomologBlockedIfSensitive(payloadOut);
+      if (blocked) return blocked;
+      return NextResponse.json(payloadOut, { status: 409 });
+    }
+
     const store = createSupabaseC6HomologIdempotencyAdapter(auth.admin);
     const origin = new URL(request.url).origin;
     const callbackUrl = buildC6HomologB07CallbackUrl(origin, secrets.integrationId);
@@ -349,15 +388,7 @@ export async function POST(request: Request) {
         existingAtomic,
         store,
         callbackUrl,
-        credentials: {
-          companyId: auth.tenantId,
-          integrationId: secrets.integrationId,
-          environment: 'SANDBOX',
-          clientId: secrets.clientId,
-          clientSecret: secrets.clientSecret,
-          certificatePem: secrets.certificatePem,
-          privateKeyPem: secrets.privateKeyPem,
-        },
+        credentials,
       },
       c6HomologB07LiveExecuteOptions(oauth.accessToken),
     );
@@ -370,6 +401,14 @@ export async function POST(request: Request) {
       testCase: 'B_07',
       financeMutation: C6_WEBHOOK_FINANCE_MUTATION,
       scopes,
+      consult: {
+        executed: true,
+        outcome: consult.interpretation.outcome,
+        httpStatus: consult.interpretation.httpStatus,
+        service: consult.interpretation.service,
+        urlRedacted: consult.interpretation.urlRedacted,
+        webhookId: consult.interpretation.webhookId,
+      },
       evidence: result.evidence,
       wordEvidence,
       persistedIdempotency: result.idempotency,

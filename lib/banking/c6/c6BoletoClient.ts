@@ -335,10 +335,12 @@ export function prepareC6WebhookConsult(
     url,
     host,
     path: pathFromUrl(url, host),
-    headers: sanitizeC6BoletoGetHeaders(
-      withAuthHeaders({ Accept: JSON_CONTENT_TYPE }, options?.accessToken),
-      'GET',
-      null,
+    headers: withAuthHeaders(
+      {
+        Accept: JSON_CONTENT_TYPE,
+        'Content-Type': FORM_CONTENT_TYPE,
+      },
+      options?.accessToken,
     ),
     body: null,
     jsonBody: null,
@@ -588,6 +590,14 @@ export async function executeC6WebhookRegister(
   options?: C6BoletoExecuteOptions,
 ): Promise<C6BoletoExecuteResult> {
   const prepared = prepareC6WebhookRegister(creds, input, { accessToken: options?.accessToken });
+  return executePrepared(creds, prepared, options, options?.testCase || 'B_07');
+}
+
+export async function executeC6WebhookConsult(
+  creds: C6AuthCredentials,
+  options?: C6BoletoExecuteOptions,
+): Promise<C6BoletoExecuteResult> {
+  const prepared = prepareC6WebhookConsult(creds, { accessToken: options?.accessToken });
   return executePrepared(creds, prepared, options, options?.testCase || 'B_07');
 }
 

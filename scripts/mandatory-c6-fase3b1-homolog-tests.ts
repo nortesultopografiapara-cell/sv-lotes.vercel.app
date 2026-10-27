@@ -59,7 +59,7 @@ import {
   authorizeC6HomologB07,
 } from '../lib/banking/c6/c6BoletoHomologB07';
 import { C6_WEBHOOK_FINANCE_MUTATION } from '../lib/banking/c6/c6WebhookReceiver';
-import { C6_WEBHOOKS_URL } from '../lib/banking/c6/c6WebhookEndpoints';
+import { C6_WEBHOOKS_URL, buildC6WebhookConsultUrl } from '../lib/banking/c6/c6WebhookEndpoints';
 import { C6_NOTIFICATIONS_SERVICE } from '../lib/banking/c6/c6NotificationsOpenApi';
 import { prepareC6WebhookRegister } from '../lib/banking/c6/c6BoletoClient';
 import {
@@ -913,6 +913,7 @@ function testPreparedB07Webhook() {
   assert.equal(prepared.method, 'POST');
   assert.equal(prepared.operation, 'webhook');
   assert.equal(prepared.url, C6_WEBHOOKS_URL.SANDBOX);
+  assert.match(buildC6WebhookConsultUrl('SANDBOX'), /[?&]service=BANK_SLIP/);
   assert.equal(prepared.jsonBody?.service, 'BANK_SLIP');
   assert.match(String(prepared.jsonBody?.url || ''), /token=\[redacted\]/);
   assert.doesNotMatch(JSON.stringify(prepared.jsonBody), /token=test/);

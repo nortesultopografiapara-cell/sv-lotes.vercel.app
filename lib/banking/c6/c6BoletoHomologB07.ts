@@ -7,6 +7,7 @@ import { isPlatformAdmin } from '@/lib/rls';
 import type { C6AuthCredentials } from '@/lib/banking/c6/c6AuthClient';
 import {
   capturePreparedC6BoletoEvidence,
+  executeC6WebhookConsult,
   executeC6WebhookRegister,
   prepareC6WebhookConsult,
   prepareC6WebhookRegister,
@@ -125,6 +126,57 @@ export function prepareC6HomologB07Consult(
   creds: Pick<C6AuthCredentials, 'companyId' | 'environment' | 'integrationId'>,
 ): C6BoletoPreparedHttp {
   return prepareC6WebhookConsult(creds);
+}
+
+export function interpretC6WebhookConsultResult(result: C6BoletoExecuteResult): {
+  outcome: 'absent' | 'present' | 'ambiguous';
+  httpStatus: number | null;
+  service: string | null;
+  urlRedacted: string | null;
+  webhookId: string | null;
+} {
+  const status = result.httpStatus;
+  const body = result.evidence.responseBody;
+  const record = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  const list = Array.isArray(body) ? body : record ? [record] : [];
+  const items = list
+    .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    .map((item) => item as Record<string, unknown>)
+    .filter((item) => Object.keys(item).length > 0);
+  const match = items.find((item) => String(item.service || '') === C6_NOTIFICATIONS_SERVICE && Boolean(item.url));
+  if (match) {
+    return {
+      outcome: 'present',
+      httpStatus: status,
+      service: String(match.service),
+      urlRedacted: String(match.url),
+      webhookId: match.id ? String(match.id) : null,
+    };
+  }
+  if (status === 404 || (status === 200 && items.length === 0)) {
+    return { outcome: 'absent', httpStatus: status, service: null, urlRedacted: null, webhookId: null };
+  }
+  return {
+    outcome: 'ambiguous',
+    httpStatus: status,
+    service: null,
+    urlRedacted: null,
+    webhookId: null,
+  };
+}
+
+export async function consultC6HomologB07Existing(
+  credentials: C6HomologB07Input['credentials'],
+  oauthToken: string,
+  now?: Date,
+): Promise<C6BoletoExecuteResult & { interpretation: ReturnType<typeof interpretC6WebhookConsultResult> }> {
+  const result = await executeC6WebhookConsult(credentials, {
+    accessToken: oauthToken,
+    allowSandboxLive: true,
+    now,
+    testCase: 'B_07',
+  });
+  return { ...result, interpretation: interpretC6WebhookConsultResult(result) };
 }
 
 export function isC6HomologB07LiveAuthorized(): boolean {
