@@ -58,6 +58,7 @@ import {
   evaluateInadimplenciaPolicy,
   INADIMPLENCIA_NO_DEFAULT_MESSAGE,
 } from '@/lib/finance/inadimplenciaGuards';
+import { BANK_CANCEL_IN_PROGRESS_CODE } from '@/lib/finance/releaseLotBankCancelBudget';
 import { supabase } from '@/lib/supabase';
 
 function terminationSuccessFallbackMessage(code: string): string {
@@ -493,47 +494,58 @@ export function ReleaseLotConfirmModal({
         setError('Senha inválida. A operação foi bloqueada.');
         return;
       }
-      const res = await fetch(`/api/lots/${encodeURIComponent(lot.id)}/release`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          motiveCode: motive.motiveCode,
-          motiveDetail: motive.motiveDetail,
-          acknowledged: true,
-          hasImprovements: hasImprovements === 'sim',
-          improvementsAppraisalStatus:
-            hasImprovements === 'sim' ? improvementsAppraisalStatus : 'NONE',
-          improvementsAppraisalCompleted:
-            hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED',
-          improvementItems:
-            hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED'
-              ? parsedImprovementItems
-              : [],
-          refundDestination: destination,
-          exceptionalAgreement: motive.motiveCode === 'distrato' && exceptionEnabled,
-          exceptionalReason:
-            motive.motiveCode === 'distrato' && exceptionEnabled
-              ? exceptionJustification
-              : null,
-          exceptionalRefundAmount:
-            motive.motiveCode === 'distrato' &&
-            exceptionEnabled &&
-            exceptionMode === 'amount'
-              ? Number(String(exceptionValue).replace(',', '.'))
-              : null,
-          exceptionalRetentionPercent:
-            motive.motiveCode === 'distrato' &&
-            exceptionEnabled &&
-            exceptionMode === 'percent'
-              ? Number(String(exceptionValue).replace(',', '.'))
-              : null,
-          refundFirstDueDate: needsRefundSchedule ? refundFirstDueDate || null : null,
-          idempotencyKey: preview?.idempotencyKey || null,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok || json.success === false) {
+      const payload = {
+        motiveCode: motive.motiveCode,
+        motiveDetail: motive.motiveDetail,
+        acknowledged: true,
+        hasImprovements: hasImprovements === 'sim',
+        improvementsAppraisalStatus:
+          hasImprovements === 'sim' ? improvementsAppraisalStatus : 'NONE',
+        improvementsAppraisalCompleted:
+          hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED',
+        improvementItems:
+          hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED'
+            ? parsedImprovementItems
+            : [],
+        refundDestination: destination,
+        exceptionalAgreement: motive.motiveCode === 'distrato' && exceptionEnabled,
+        exceptionalReason:
+          motive.motiveCode === 'distrato' && exceptionEnabled
+            ? exceptionJustification
+            : null,
+        exceptionalRefundAmount:
+          motive.motiveCode === 'distrato' &&
+          exceptionEnabled &&
+          exceptionMode === 'amount'
+            ? Number(String(exceptionValue).replace(',', '.'))
+            : null,
+        exceptionalRetentionPercent:
+          motive.motiveCode === 'distrato' &&
+          exceptionEnabled &&
+          exceptionMode === 'percent'
+            ? Number(String(exceptionValue).replace(',', '.'))
+            : null,
+        refundFirstDueDate: needsRefundSchedule ? refundFirstDueDate || null : null,
+        idempotencyKey: preview?.idempotencyKey || null,
+      };
+      let json: Record<string, unknown> = {};
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        res = await fetch(`/api/lots/${encodeURIComponent(lot.id)}/release`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, retry: attempt > 0 }),
+        });
+        json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (json.code === BANK_CANCEL_IN_PROGRESS_CODE) {
+          setError(String(json.message || 'Cancelamento bancário em andamento. Continuando…'));
+          await new Promise((resolve) => window.setTimeout(resolve, 1200));
+          continue;
+        }
+        break;
+      }
+      if (!res || !res.ok || json.success === false) {
         const stage = json.stage ? `\nEtapa: ${json.stage}` : '';
         const code = json.code ? `\nCódigo: ${json.code}` : '';
         setError(
