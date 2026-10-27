@@ -99,6 +99,7 @@ export async function middleware(request: NextRequest) {
   const isCompanyExportApi = /^\/api\/master\/companies\/[^/]+\/exports(\/|$)/.test(
     url.pathname,
   );
+  const isC6HomologApi = url.pathname.startsWith('/api/banking/c6/homolog');
   const isPublicRoute =
     isLanding ||
     isDemoPage ||
@@ -114,6 +115,8 @@ export async function middleware(request: NextRequest) {
     if (!user) {
       return NextResponse.json(companyAdminUnauthorizedJson(), { status: 401 });
     }
+  } else if (isC6HomologApi) {
+    // Homologação C6 autentica na rota (cookie ou Bearer). Não redirecionar para HTML.
   } else if (isPublicRoute) {
     if (user || isDemoMode) {
       if (isLanding) {
@@ -133,7 +136,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. PROTECTED ROUTES - NO SESSION
-  if (!user && !isDemoMode && !isDevPreview) {
+  if (!user && !isDemoMode && !isDevPreview && !isC6HomologApi) {
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }

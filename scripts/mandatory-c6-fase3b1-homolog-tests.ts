@@ -338,6 +338,13 @@ function testWebhookGapAndNoSalesWiring() {
   const central = read('components/charges/ChargesPageClient.tsx');
   assert.doesNotMatch(sale, /homolog\/b01/);
   assert.doesNotMatch(central, /homolog\/b01/);
+  const middleware = read('middleware.ts');
+  assert.match(middleware, /isC6HomologApi/);
+  assert.match(middleware, /\/api\/banking\/c6\/homolog/);
+  assert.doesNotMatch(
+    middleware.slice(middleware.indexOf('const publicRoutes'), middleware.indexOf('const isCompanyExportApi')),
+    /homolog/,
+  );
   const route = read('app/api/banking/c6/homolog/b01/route.ts');
   assert.match(route, /isPlatformAdmin/);
   assert.match(route, /captureC6HomologB01Blocked/);
