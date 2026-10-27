@@ -8,11 +8,14 @@ import https from 'node:https';
 import path from 'node:path';
 import {
   assertC6ConnectionTestPublicSafe,
+  mapC6AuthHttpError,
+  pickC6AuthDiagnosticHeaders,
   requestC6AccessToken,
   sanitizeC6Scopes,
   toPublicC6ConnectionTest,
   type C6AuthFetchFn,
 } from '../lib/banking/c6/c6AuthClient';
+import { inspectC6LoadedCertificatePublic } from '../lib/banking/c6/c6LocalValidation';
 import {
   formatC6At01EvidenceReport,
   parseC6OAuthBodyFields,
@@ -176,7 +179,55 @@ async function testHttpErrorsAndTls() {
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.code, 'AUTH_FORBIDDEN');
   }
+  {
+    const fetchFn: C6AuthFetchFn = async () => ({
+      status: 503,
+      bodyText: JSON.stringify({ error: 'service_unavailable', access_token: 'nope' }),
+      headers: {
+        'content-type': 'application/json',
+        server: 'c6-gateway',
+        'x-request-id': 'req-c6-503-test',
+        authorization: 'Bearer should-not-leak',
+      },
+      durationMs: 42,
+    });
+    const r = await requestC6AccessToken(baseCreds, { fetchFn, bypassCache: true });
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.code, 'AUTH_UNAVAILABLE');
+      assert.equal(r.httpStatus, 503);
+      assert.equal(r.diagnostic?.tlsCompleted, true);
+      assert.equal(r.diagnostic?.requestId, 'req-c6-503-test');
+      assert.equal(r.diagnostic?.server, 'c6-gateway');
+      assert.equal(r.diagnostic?.durationMs, 42);
+      assert.equal(r.diagnostic?.sanitizedBody?.includes('nope'), false);
+      const pub = toPublicC6ConnectionTest(r);
+      assertC6ConnectionTestPublicSafe(pub);
+      assert.equal(pub.httpDiagnostic?.requestId, 'req-c6-503-test');
+    }
+  }
   console.log('OK testHttpErrorsAndTls');
+}
+
+function testCertificateInspectAnd503Mapping() {
+  assert.equal(mapC6AuthHttpError(503), 'AUTH_UNAVAILABLE');
+  assert.equal(mapC6AuthHttpError(502), 'AUTH_UNAVAILABLE');
+  assert.equal(mapC6AuthHttpError(504), 'AUTH_UNAVAILABLE');
+  assert.equal(mapC6AuthHttpError(401), 'AUTH_REJECTED');
+  const inspect = inspectC6LoadedCertificatePublic('not-a-cert', 'not-a-key');
+  assert.equal(inspect.pemCertificateOk, false);
+  assert.equal(inspect.pemPrivateKeyOk, false);
+  assert.equal(inspect.pairMatches, false);
+  assert.equal(inspect.expired, false);
+  const picked = pickC6AuthDiagnosticHeaders({
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer secret',
+    'x-request-id': 'abc',
+  });
+  assert.equal(picked.contentType, 'application/json');
+  assert.equal(picked.requestId, 'abc');
+  assert.equal(picked.headerNames.includes('authorization'), false);
+  console.log('OK testCertificateInspectAnd503Mapping');
 }
 
 async function testPublicPayloadNeverHasToken() {
@@ -257,6 +308,8 @@ function testUiRouteAndBadge() {
   assert.doesNotMatch(banks, />Ativo</);
 
   const route = read('app/api/banking/c6/test-connection/route.ts');
+  assert.match(route, /export async function GET/);
+  assert.match(route, /inspectOnly: true/);
   assert.match(route, /authorizeBankingRoute/);
   assert.match(route, /success/);
   assert.match(route, /tokenType/);
@@ -443,6 +496,7 @@ async function main() {
   await testMtlsRequiredAndSandboxPost();
   await testProductionBlockedAndUrlStillMapped();
   await testHttpErrorsAndTls();
+  testCertificateInspectAnd503Mapping();
   await testPublicPayloadNeverHasToken();
   testScopesSanitized();
   testTenantIsolationCache();

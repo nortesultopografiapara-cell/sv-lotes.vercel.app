@@ -339,6 +339,7 @@ function testPanelAndRoutes() {
 
   const testRoute = read('app/api/banking/c6/test-connection/route.ts');
   assert.match(testRoute, /export async function POST/);
+  assert.match(testRoute, /export async function GET/);
   assert.match(testRoute, /runCompanyC6ConnectionTest/);
   assert.match(testRoute, /json\.includes\('access_token'\)/);
   assert.match(testRoute, /httpStatus/);

@@ -92,6 +92,85 @@ export function validateC6PrivateKeyPem(raw: string): C6LocalValidationResult {
   }
 }
 
+export type C6CertificateInspectPublic = {
+  pemCertificateOk: boolean;
+  pemPrivateKeyOk: boolean;
+  pairMatches: boolean;
+  validFrom: string | null;
+  validTo: string | null;
+  expired: boolean;
+  notYetValid: boolean;
+  fingerprintSha256Prefix: string | null;
+  keyType: 'rsa' | 'ec' | 'other' | null;
+};
+
+function toIsoOrNull(value: string | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function publicKeyType(
+  type: string | undefined,
+): C6CertificateInspectPublic['keyType'] {
+  if (type === 'rsa') return 'rsa';
+  if (type === 'ec') return 'ec';
+  if (type) return 'other';
+  return null;
+}
+
+/** Inspeção local do material carregado. Sem PEM, subject, serial ou chave. */
+export function inspectC6LoadedCertificatePublic(
+  certificatePem: string,
+  privateKeyPem: string,
+  nowMs = Date.now(),
+): C6CertificateInspectPublic {
+  const pemCertificateOk = validateC6CertificatePem(certificatePem).ok;
+  const pemPrivateKeyOk = validateC6PrivateKeyPem(privateKeyPem).ok;
+  const empty: C6CertificateInspectPublic = {
+    pemCertificateOk,
+    pemPrivateKeyOk,
+    pairMatches: false,
+    validFrom: null,
+    validTo: null,
+    expired: false,
+    notYetValid: false,
+    fingerprintSha256Prefix: null,
+    keyType: null,
+  };
+  if (!pemCertificateOk || !pemPrivateKeyOk) return empty;
+
+  try {
+    const cert = new X509Certificate(normalizePem(certificatePem));
+    const privateKey = createPrivateKey(normalizePem(privateKeyPem));
+    const fromCert = cert.publicKey.export({ type: 'spki', format: 'der' });
+    const fromKey = createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
+    const pairMatches = Buffer.from(fromCert).equals(Buffer.from(fromKey));
+    const validFrom = toIsoOrNull(cert.validFrom);
+    const validTo = toIsoOrNull(cert.validTo);
+    const now = nowMs;
+    const expired = Boolean(validTo && now > Date.parse(validTo));
+    const notYetValid = Boolean(validFrom && now < Date.parse(validFrom));
+    const fingerprintSha256Prefix = String(cert.fingerprint256 || '')
+      .replace(/:/g, '')
+      .slice(0, 12)
+      .toLowerCase() || null;
+    return {
+      pemCertificateOk: true,
+      pemPrivateKeyOk: true,
+      pairMatches,
+      validFrom,
+      validTo,
+      expired,
+      notYetValid,
+      fingerprintSha256Prefix,
+      keyType: publicKeyType(privateKey.asymmetricKeyType),
+    };
+  } catch {
+    return empty;
+  }
+}
+
 export function validateC6CertificateKeyPair(
   certificatePem: string,
   privateKeyPem: string,

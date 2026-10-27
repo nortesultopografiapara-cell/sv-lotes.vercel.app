@@ -22,6 +22,7 @@ import {
   type C6At01EvidencePublic,
   type C6AuthFieldSource,
 } from '@/lib/banking/c6/c6At01Evidence';
+import type { C6CertificateInspectPublic } from '@/lib/banking/c6/c6LocalValidation';
 
 export { sanitizeC6Scopes, formatC6At01EvidenceReport } from '@/lib/banking/c6/c6At01Evidence';
 export type { C6At01EvidencePublic, C6AuthFieldSource } from '@/lib/banking/c6/c6At01Evidence';
@@ -64,9 +65,22 @@ export type C6AuthFailureCode =
   | 'AUTH_REJECTED'
   | 'AUTH_FORBIDDEN'
   | 'AUTH_INVALID_RESPONSE'
+  | 'AUTH_UNAVAILABLE'
   | 'NETWORK_ERROR'
   | 'PRODUCTION_AUTH_BLOCKED'
   | 'UNKNOWN';
+
+export type C6AuthHttpDiagnosticPublic = {
+  tlsCompleted: boolean;
+  durationMs: number | null;
+  contentType: string | null;
+  retryAfter: string | null;
+  server: string | null;
+  requestId: string | null;
+  headerNames: string[];
+  sanitizedBody: string | null;
+  remoteHost: string;
+};
 
 export type C6AuthFailure = {
   ok: false;
@@ -74,6 +88,7 @@ export type C6AuthFailure = {
   message: string;
   httpStatus?: number;
   environment: BankEnvironment;
+  diagnostic?: C6AuthHttpDiagnosticPublic;
 };
 
 export type C6AuthResult = C6AuthSuccess | C6AuthFailure;
@@ -86,20 +101,102 @@ export type C6AuthFetchFn = (
     body: string;
     agent: https.Agent;
   },
-) => Promise<{ status: number; bodyText: string }>;
+) => Promise<{
+  status: number;
+  bodyText: string;
+  headers?: Record<string, string>;
+  durationMs?: number;
+}>;
+
+const C6_AUTH_DIAGNOSTIC_HEADER_ALLOWLIST = [
+  'content-type',
+  'content-length',
+  'date',
+  'server',
+  'retry-after',
+  'x-request-id',
+  'x-correlation-id',
+  'x-amzn-requestid',
+  'x-amzn-trace-id',
+  'cf-ray',
+  'x-cache',
+  'via',
+] as const;
 
 export function sanitizeC6ErrorBody(raw: string): string {
   return String(raw || '')
     .replace(/-----BEGIN[\s\S]*?-----END[^-]*-----/g, '[pem-redacted]')
-    .replace(/"access_token"\s*:\s*"[^"]*"/gi, '"access_token":"[redacted]"')
-    .replace(/"client_secret"\s*:\s*"[^"]*"/gi, '"client_secret":"[redacted]"')
-    .replace(/client_secret=[^&\s]*/gi, 'client_secret=[redacted]')
+    .replace(/"access_token"\s*:\s*"[^"]*"/gi, '"oauth":"[redacted]"')
+    .replace(/access_token/gi, '[redacted]')
+    .replace(/"client_secret"\s*:\s*"[^"]*"/gi, '"secret":"[redacted]"')
+    .replace(/client_secret/gi, '[redacted]')
+    .replace(/client_id=[^&\s]*/gi, 'client=[redacted]')
     .slice(0, 400);
+}
+
+function sanitizeC6HeaderValue(raw: string): string {
+  return sanitizeC6ErrorBody(raw).slice(0, 120);
+}
+
+export function pickC6AuthDiagnosticHeaders(
+  headers: Record<string, string> | undefined,
+): Pick<
+  C6AuthHttpDiagnosticPublic,
+  'contentType' | 'retryAfter' | 'server' | 'requestId' | 'headerNames'
+> {
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    const name = String(key || '').trim().toLowerCase();
+    if (!name || !C6_AUTH_DIAGNOSTIC_HEADER_ALLOWLIST.includes(name as typeof C6_AUTH_DIAGNOSTIC_HEADER_ALLOWLIST[number])) {
+      continue;
+    }
+    const clean = sanitizeC6HeaderValue(String(value || ''));
+    if (clean) normalized[name] = clean;
+  }
+  const requestId =
+    normalized['x-request-id'] ||
+    normalized['x-correlation-id'] ||
+    normalized['x-amzn-requestid'] ||
+    normalized['cf-ray'] ||
+    null;
+  return {
+    contentType: normalized['content-type'] || null,
+    retryAfter: normalized['retry-after'] || null,
+    server: normalized['server'] || null,
+    requestId,
+    headerNames: Object.keys(normalized).sort(),
+  };
+}
+
+export function buildC6AuthHttpDiagnostic(input: {
+  tlsCompleted: boolean;
+  durationMs?: number;
+  headers?: Record<string, string>;
+  bodyText?: string;
+  remoteHost: string;
+}): C6AuthHttpDiagnosticPublic {
+  const picked = pickC6AuthDiagnosticHeaders(input.headers);
+  const sanitizedBody = input.bodyText ? sanitizeC6ErrorBody(input.bodyText) : null;
+  return {
+    tlsCompleted: input.tlsCompleted,
+    durationMs:
+      typeof input.durationMs === 'number' && Number.isFinite(input.durationMs)
+        ? Math.max(0, Math.round(input.durationMs))
+        : null,
+    contentType: picked.contentType,
+    retryAfter: picked.retryAfter,
+    server: picked.server,
+    requestId: picked.requestId,
+    headerNames: picked.headerNames,
+    sanitizedBody: sanitizedBody || null,
+    remoteHost: input.remoteHost,
+  };
 }
 
 export function mapC6AuthHttpError(status: number): C6AuthFailureCode {
   if (status === 401) return 'AUTH_REJECTED';
   if (status === 403) return 'AUTH_FORBIDDEN';
+  if (status === 502 || status === 503 || status === 504) return 'AUTH_UNAVAILABLE';
   return 'AUTH_REJECTED';
 }
 
@@ -125,6 +222,8 @@ export function humanizeC6AuthFailure(
       return 'Autenticação rejeitada pelo C6 Bank. Verifique Client ID, Secret e certificado.';
     case 'AUTH_FORBIDDEN':
       return 'Autenticação recusada (403). A aplicação C6 não está autorizada para este ambiente.';
+    case 'AUTH_UNAVAILABLE':
+      return `O C6 Bank Sandbox retornou indisponibilidade (HTTP ${httpStatus || 503}). As credenciais não foram classificadas como inválidas.`;
     case 'AUTH_INVALID_RESPONSE':
       return 'Resposta de autenticação inválida (sem access_token).';
     case 'NETWORK_ERROR':
@@ -149,32 +248,46 @@ function isTlsOrCertError(err: unknown): boolean {
 }
 
 const defaultFetch: C6AuthFetchFn = async (url, init) => {
-  const { statusCode, body } = await new Promise<{ statusCode: number; body: string }>(
-    (resolve, reject) => {
-      const req = https.request(
-        url,
-        {
-          method: init.method,
-          headers: init.headers,
-          agent: init.agent,
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-          res.on('end', () => {
-            resolve({
-              statusCode: res.statusCode || 0,
-              body: Buffer.concat(chunks).toString('utf8'),
-            });
+  const started = Date.now();
+  const { statusCode, body, headers } = await new Promise<{
+    statusCode: number;
+    body: string;
+    headers: Record<string, string>;
+  }>((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: init.method,
+        headers: init.headers,
+        agent: init.agent,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        res.on('end', () => {
+          const hdrs: Record<string, string> = {};
+          for (const [key, value] of Object.entries(res.headers || {})) {
+            if (typeof value === 'string') hdrs[key.toLowerCase()] = value;
+            else if (Array.isArray(value) && value[0]) hdrs[key.toLowerCase()] = String(value[0]);
+          }
+          resolve({
+            statusCode: res.statusCode || 0,
+            body: Buffer.concat(chunks).toString('utf8'),
+            headers: hdrs,
           });
-        },
-      );
-      req.on('error', reject);
-      req.write(init.body);
-      req.end();
-    },
-  );
-  return { status: statusCode, bodyText: body };
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(init.body);
+    req.end();
+  });
+  return {
+    status: statusCode,
+    bodyText: body,
+    headers,
+    durationMs: Date.now() - started,
+  };
 };
 
 export async function requestC6AccessToken(
@@ -288,6 +401,9 @@ export async function requestC6AccessToken(
 
   let status = 0;
   let bodyText = '';
+  let responseHeaders: Record<string, string> | undefined;
+  let durationMs: number | undefined;
+  const requestStarted = Date.now();
   try {
     const res = await fetchFn(authUrl, {
       method: 'POST',
@@ -300,6 +416,8 @@ export async function requestC6AccessToken(
     });
     status = res.status;
     bodyText = res.bodyText;
+    responseHeaders = res.headers;
+    durationMs = res.durationMs ?? Date.now() - requestStarted;
   } catch (err) {
     const code = isTlsOrCertError(err) ? 'MTLS_ERROR' : 'NETWORK_ERROR';
     return {
@@ -307,6 +425,11 @@ export async function requestC6AccessToken(
       code,
       message: humanizeC6AuthFailure(code),
       environment,
+      diagnostic: buildC6AuthHttpDiagnostic({
+        tlsCompleted: false,
+        durationMs: Date.now() - requestStarted,
+        remoteHost: authUrlHost,
+      }),
     };
   } finally {
     try {
@@ -318,13 +441,19 @@ export async function requestC6AccessToken(
 
   if (status < 200 || status >= 300) {
     const code = mapC6AuthHttpError(status);
-    void sanitizeC6ErrorBody(bodyText);
     return {
       ok: false,
       code,
       message: humanizeC6AuthFailure(code, status),
       httpStatus: status,
       environment,
+      diagnostic: buildC6AuthHttpDiagnostic({
+        tlsCompleted: true,
+        durationMs,
+        headers: responseHeaders,
+        bodyText,
+        remoteHost: authUrlHost,
+      }),
     };
   }
 
@@ -408,6 +537,9 @@ export type C6ConnectionTestPublic = {
   fromCache: boolean;
   evidence: C6At01EvidencePublic;
   code?: C6AuthFailureCode;
+  inspectOnly?: boolean;
+  certificateInspect?: C6CertificateInspectPublic | null;
+  httpDiagnostic?: C6AuthHttpDiagnosticPublic | null;
 };
 
 export function toPublicC6ConnectionTest(
@@ -502,6 +634,7 @@ export function toPublicC6ConnectionTest(
     fromCache: false,
     evidence,
     code: result.code,
+    httpDiagnostic: result.diagnostic || null,
   };
 }
 

@@ -13,6 +13,7 @@ import {
   type C6AuthFetchFn,
   type C6ConnectionTestPublic,
 } from '@/lib/banking/c6/c6AuthClient';
+import { inspectC6LoadedCertificatePublic } from '@/lib/banking/c6/c6LocalValidation';
 import { clearCachedC6Token } from '@/lib/banking/c6/c6TokenCache';
 import {
   hasMinimumC6AuthConfig,
@@ -24,6 +25,13 @@ export type C6ConnectionTestBundle = {
   config: C6BankConfigPublic;
 };
 
+function attachInspect(
+  test: C6ConnectionTestPublic,
+  extras: Partial<C6ConnectionTestPublic>,
+): C6ConnectionTestPublic {
+  return { ...test, ...extras };
+}
+
 export async function runCompanyC6ConnectionTest(
   admin: SupabaseClient,
   companyId: string,
@@ -32,6 +40,7 @@ export async function runCompanyC6ConnectionTest(
     fetchFn?: C6AuthFetchFn;
     financialAccountId?: string | null;
     integrationId?: string | null;
+    inspectOnly?: boolean;
   },
 ): Promise<C6ConnectionTestBundle> {
   const lookup = {
@@ -84,6 +93,60 @@ export async function runCompanyC6ConnectionTest(
     return { test, config: existing };
   }
 
+  const certificateInspect = inspectC6LoadedCertificatePublic(
+    secrets.certificatePem,
+    secrets.privateKeyPem,
+  );
+  const localMaterialOk =
+    certificateInspect.pemCertificateOk &&
+    certificateInspect.pemPrivateKeyOk &&
+    certificateInspect.pairMatches &&
+    !certificateInspect.expired &&
+    !certificateInspect.notYetValid;
+
+  if (options?.inspectOnly) {
+    const test = attachInspect(
+      toPublicC6ConnectionTest({
+        ok: false,
+        code: 'UNKNOWN',
+        message: localMaterialOk
+          ? 'Inspeção local do certificado concluída. C6 não foi chamado.'
+          : 'Inspeção local do certificado encontrou problema. C6 não foi chamado.',
+        environment: secrets.environment,
+      }),
+      {
+        status: 'UNTESTED',
+        inspectOnly: true,
+        certificateInspect,
+        httpDiagnostic: null,
+      },
+    );
+    return { test, config: existing };
+  }
+
+  if (!localMaterialOk) {
+    const test = attachInspect(
+      toPublicC6ConnectionTest({
+        ok: false,
+        code: certificateInspect.expired
+          ? 'MTLS_ERROR'
+          : !certificateInspect.pairMatches
+            ? 'MTLS_ERROR'
+            : !certificateInspect.pemCertificateOk
+              ? 'MISSING_CERTIFICATE'
+              : 'MISSING_PRIVATE_KEY',
+        message: certificateInspect.expired
+          ? 'Certificado C6 expirado. Autenticação não foi enviada.'
+          : !certificateInspect.pairMatches
+            ? 'Certificado e chave privada não correspondem. Autenticação não foi enviada.'
+            : 'Material PEM inválido. Autenticação não foi enviada.',
+        environment: secrets.environment,
+      }),
+      { certificateInspect, inspectOnly: false, httpDiagnostic: null },
+    );
+    return { test, config: existing };
+  }
+
   clearCachedC6Token(companyId, secrets.environment, secrets.integrationId);
 
   const oauth = await requestC6AccessToken(
@@ -104,7 +167,7 @@ export async function runCompanyC6ConnectionTest(
   );
 
   return {
-    test: toPublicC6ConnectionTest(oauth),
+    test: attachInspect(toPublicC6ConnectionTest(oauth), { certificateInspect }),
     config: existing,
   };
 }
