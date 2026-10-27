@@ -63,8 +63,8 @@ export type C6BoletoExecuteOptions = {
   now?: Date;
   testCase?: C6BoletoEvidenceCase;
   /**
-   * Reservado para autorização expressa futura no Sandbox.
-   * Sozinho não basta: throwIfC6EmissionAttempt continua ativo.
+   * HTTP Sandbox real. Exige ambiente SANDBOX, flag live e allowSandboxLive.
+   * Não libera Production nem emissão comercial (Asaas/Inter/vendas).
    */
   allowSandboxLive?: boolean;
 };
@@ -233,17 +233,27 @@ export function prepareC6BankSlipCancel(
   };
 }
 
+function isC6SandboxLiveExecute(
+  environment: BankEnvironment,
+  options?: C6BoletoExecuteOptions,
+): boolean {
+  return (
+    environment === 'SANDBOX' &&
+    options?.allowSandboxLive === true &&
+    isC6BoletoSandboxLiveAuthorized(environment)
+  );
+}
+
 function assertExecuteGate(
   environment: BankEnvironment,
   options?: C6BoletoExecuteOptions,
 ): void {
-  const simulated = options?.allowSimulatedHttp === true && typeof options.fetchFn === 'function';
-  if (simulated) {
-    if (environment === 'PRODUCTION') {
-      throw new C6EmissionNotHomologatedError();
-    }
-    return;
+  if (environment === 'PRODUCTION') {
+    throw new C6EmissionNotHomologatedError();
   }
+  const simulated = options?.allowSimulatedHttp === true && typeof options.fetchFn === 'function';
+  if (simulated) return;
+  if (isC6SandboxLiveExecute(environment, options)) return;
   throwIfC6EmissionAttempt('C6');
 }
 
@@ -350,6 +360,7 @@ async function executePrepared(
 
     const expected = C6_BOLETO_OPERATIONS[prepared.operation].successStatus;
     const ok = res.status === expected;
+    const liveHttp = isC6SandboxLiveExecute(creds.environment, options) && !options?.fetchFn;
     const evidence = evidenceFromPreparedC6Boleto(
       { ...prepared, headers: { ...headers, Authorization: 'Bearer [redacted]' } },
       {
@@ -361,7 +372,9 @@ async function executePrepared(
         responseText: res.bodyText,
         contentType: res.contentType,
         message: ok
-          ? 'Resposta simulada do boleto C6. Status efetivo registrado sem forçar divergências do roteiro.'
+          ? liveHttp
+            ? 'Boleto C6 Sandbox emitido.'
+            : 'Resposta simulada do boleto C6. Status efetivo registrado sem forçar divergências do roteiro.'
           : `C6 retornou HTTP ${res.status}. Status efetivo registrado.`,
       },
     );

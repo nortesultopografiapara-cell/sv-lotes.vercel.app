@@ -26,6 +26,7 @@ import {
 import {
   C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
   C6EmissionNotHomologatedError,
+  isC6BoletoSandboxLiveAuthorized,
   throwIfC6EmissionAttempt,
 } from '@/lib/banking/c6/c6EmitGuard';
 import {
@@ -147,6 +148,25 @@ export function authorizeC6HomologB01(input: C6HomologB01Input): C6BoletoPrepare
   return prepared;
 }
 
+export function isC6HomologB01LiveAuthorized(): boolean {
+  return isC6BoletoSandboxLiveAuthorized('SANDBOX');
+}
+
+/** Opções server-side do B_01 live. A rota não monta accessToken no próprio arquivo. */
+export function c6HomologB01LiveExecuteOptions(
+  oauthToken: string,
+  now?: Date,
+): Pick<C6BoletoExecuteOptions, 'accessToken' | 'allowSandboxLive' | 'now'> & {
+  persistReservation: true;
+} {
+  return {
+    persistReservation: true,
+    allowSandboxLive: true,
+    accessToken: oauthToken,
+    now,
+  };
+}
+
 export function captureC6HomologB01Blocked(
   input: C6HomologB01Input,
 ): { prepared: C6BoletoPreparedHttp; evidence: C6BoletoEvidencePublic } {
@@ -182,13 +202,15 @@ function extractC6BankSlipId(evidence: C6BoletoEvidencePublic): string | null {
 }
 
 /**
- * Reserva atômica + PROCESSING + HTTP simulado ou bloqueio.
- * Sem fetchFn continua bloqueado e grava FAILED (EMIT_NOT_HOMOLOGATED),
- * para não deixar a referência em PROCESSING.
+ * Reserva atômica + PROCESSING + HTTP simulado ou live Sandbox.
+ * Sem fetchFn e sem live: bloqueado, grava FAILED (EMIT_NOT_HOMOLOGATED).
  */
 export async function executeC6HomologB01WithIdempotency(
   input: C6HomologB01Input,
-  options: Pick<C6BoletoExecuteOptions, 'fetchFn' | 'accessToken' | 'authFetchFn' | 'now'> & {
+  options: Pick<
+    C6BoletoExecuteOptions,
+    'fetchFn' | 'accessToken' | 'authFetchFn' | 'now' | 'allowSandboxLive'
+  > & {
     persistReservation?: boolean;
   } = {},
 ): Promise<C6BoletoExecuteResult & { idempotency: C6HomologIdempotencyRow | null }> {
@@ -250,7 +272,12 @@ export async function executeC6HomologB01WithIdempotency(
     return done.row || reserved;
   };
 
-  if (!options.fetchFn) {
+  const live =
+    options.allowSandboxLive === true &&
+    isC6HomologB01LiveAuthorized() &&
+    input.credentials.environment === 'SANDBOX';
+
+  if (!options.fetchFn && !live) {
     await finish('FAILED', null, 'EMIT_NOT_HOMOLOGATED', C6_EMIT_NOT_HOMOLOGATED_MESSAGE, null);
     throwIfC6EmissionAttempt('C6');
   }
@@ -259,13 +286,20 @@ export async function executeC6HomologB01WithIdempotency(
     const result = await executeC6BankSlipCreate(input.credentials, input.payload, {
       ...options,
       now: options.now || input.now,
-      allowSimulatedHttp: true,
+      allowSimulatedHttp: Boolean(options.fetchFn),
+      allowSandboxLive: live,
       testCase: 'B_01',
     });
     assertC6BoletoEvidencePublicSafe(result.evidence);
+    const transport =
+      result.evidence.testCase === 'INT_TIMEOUT'
+        ? 'TIMEOUT'
+        : result.httpStatus == null && !result.ok
+          ? 'NETWORK'
+          : 'ok';
     const outcome = classifyC6HomologHttpOutcome({
       httpStatus: result.httpStatus,
-      transport: 'ok',
+      transport,
     });
     const row = await finish(
       outcome,

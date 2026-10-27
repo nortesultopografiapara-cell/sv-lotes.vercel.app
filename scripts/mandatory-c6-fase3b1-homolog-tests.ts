@@ -358,6 +358,11 @@ function testWebhookGapAndNoSalesWiring() {
   assert.match(route, /hasClientLiveOverride/);
   assert.match(route, /Parâmetros de emissão ao vivo não são aceitos/);
   assert.match(route, /status: 409/);
+  assert.match(route, /export async function GET/);
+  assert.match(route, /getBankingEncryptionKeyDiagnostics/);
+  assert.match(route, /assertNotProductionRuntime/);
+  assert.match(route, /encryptionKeyConfigured/);
+  assert.doesNotMatch(route, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
   console.log('OK testWebhookGapAndNoSalesWiring');
 }
 

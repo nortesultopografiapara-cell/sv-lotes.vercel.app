@@ -12,6 +12,7 @@ import {
   C6_BOLETO_OPENAPI_SPEC,
   C6_BOLETO_OPENAPI_VERSION,
   C6_BOLETO_OPERATIONS,
+  hasC6BankSlipWriteScope,
 } from '../lib/banking/c6/c6BoletoOpenApi';
 import {
   C6_BANK_SLIPS_URL,
@@ -208,6 +209,15 @@ function testPreparedSecondaryOperations() {
   console.log('OK testPreparedSecondaryOperations');
 }
 
+function testBankSlipWriteScope() {
+  assert.equal(hasC6BankSlipWriteScope('bankslip.write'), true);
+  assert.equal(hasC6BankSlipWriteScope('baas.auth bankslip.write'), true);
+  assert.equal(hasC6BankSlipWriteScope(['baas.bankslip.write']), true);
+  assert.equal(hasC6BankSlipWriteScope('baas.auth'), false);
+  assert.equal(hasC6BankSlipWriteScope(null), false);
+  console.log('OK testBankSlipWriteScope');
+}
+
 function testEmitRemainsBlocked() {
   assert.throws(() => throwIfC6EmissionAttempt('C6'), (err: unknown) => {
     assert.equal(err instanceof C6EmissionNotHomologatedError, true);
@@ -237,9 +247,28 @@ async function testExecuteBlockedWithoutSimulation() {
   process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY] = 'true';
   try {
     await assert.rejects(
-      () => executeC6BankSlipCreate(credsA, b01Input(), { now, accessToken: TOKEN, allowSandboxLive: true }),
+      () =>
+        executeC6BankSlipCreate(
+          { ...credsA, environment: 'PRODUCTION' },
+          { ...b01Input(), environment: 'PRODUCTION', billing_scheme: '15' },
+          { now, accessToken: TOKEN, allowSandboxLive: true },
+        ),
       C6EmissionNotHomologatedError,
     );
+    const created = {
+      id: BANK_SLIP_ID,
+      amount: 123.45,
+      due_date: DUE,
+      billing_scheme: '21',
+    };
+    const result = await executeC6BankSlipCreate(credsA, b01Input(), {
+      now,
+      accessToken: TOKEN,
+      allowSandboxLive: true,
+      fetchFn: mockFetch(201, created),
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.httpStatus, 201);
   } finally {
     if (prev == null) delete process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY];
     else process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY] = prev;
@@ -410,6 +439,7 @@ async function main() {
   testWalletAndUrls();
   testB01ValidationSuccessAndFailures();
   testPreparedSecondaryOperations();
+  testBankSlipWriteScope();
   testEmitRemainsBlocked();
   await testExecuteBlockedWithoutSimulation();
   await testSimulatedB01Success();

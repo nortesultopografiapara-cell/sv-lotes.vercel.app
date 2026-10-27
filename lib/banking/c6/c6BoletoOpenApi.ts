@@ -59,6 +59,41 @@ export const C6_BOLETO_LIMITS = {
 export const C6_BOLETO_PARTNER_SOFTWARE_NAME = 'SV LOTES' as const;
 export const C6_BOLETO_PARTNER_SOFTWARE_VERSION = '1.0.0' as const;
 
+/** Escopo OAuth exigido para POST /v1/bank_slips/. Sem este token a emissão B_01 aborta. */
+export const C6_BOLETO_WRITE_SCOPE = 'bankslip.write' as const;
+
+export function hasC6BankSlipWriteScope(raw: string | string[] | null | undefined): boolean {
+  const scopes = Array.isArray(raw)
+    ? raw.map((part) => String(part || '').trim()).filter(Boolean)
+    : String(raw || '')
+        .split(/[\s,]+/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+  return scopes.some(
+    (scope) => scope === C6_BOLETO_WRITE_SCOPE || scope.endsWith('.bankslip.write'),
+  );
+}
+
+export class C6BoletoScopeError extends Error {
+  constructor(message = 'Escopo bankslip.write ausente. Emissão B_01 interrompida.') {
+    super(message);
+    this.name = 'C6BoletoScopeError';
+  }
+}
+
+export function assertC6BankSlipWriteScope(raw: string | string[] | null | undefined): string[] {
+  const scopes = Array.isArray(raw)
+    ? raw.map((part) => String(part || '').trim()).filter(Boolean)
+    : String(raw || '')
+        .split(/[\s,]+/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+  if (!hasC6BankSlipWriteScope(scopes)) {
+    throw new C6BoletoScopeError();
+  }
+  return scopes;
+}
+
 export const C6_BOLETO_OPERATIONS = {
   emit: { method: 'POST', path: '/v1/bank_slips/', successStatus: 201 },
   alter: { method: 'PUT', path: '/v1/bank_slips/{id}', successStatus: 200 },

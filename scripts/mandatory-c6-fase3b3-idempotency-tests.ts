@@ -29,6 +29,7 @@ import {
 } from '../lib/banking/c6/c6HomologIdempotency';
 import { C6BoletoTransportError } from '../lib/banking/c6/c6BoletoClient';
 import {
+  C6_BOLETO_SANDBOX_LIVE_ENV_KEY,
   C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
   C6EmissionNotHomologatedError,
 } from '../lib/banking/c6/c6EmitGuard';
@@ -496,6 +497,10 @@ async function testBlockedPathDoesNotEmit() {
   assert.doesNotMatch(route, /accessToken:/);
   assert.doesNotMatch(route, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
   assert.doesNotMatch(route, /baas-api-sandbox\.c6bank\.info\/v1\/bank_slips/);
+  assert.match(route, /export async function GET/);
+  assert.match(route, /getBankingEncryptionKeyDiagnostics/);
+  assert.match(route, /assertNotProductionRuntime/);
+  assert.doesNotMatch(route, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
   const sale = read('components/sales/SaleChargesPanel.tsx');
   const central = read('components/charges/ChargesPageClient.tsx');
   assert.doesNotMatch(sale, /homolog\/b01/);
@@ -725,6 +730,39 @@ async function testSimulatedAgentAndHttpsUnusedByStore() {
   console.log('OK testSimulatedAgentAndHttpsUnusedByStore');
 }
 
+async function testSandboxLiveIdempotencyWithMockHttp() {
+  const prev = process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY];
+  process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY] = 'true';
+  const store = storeForCompanies();
+  try {
+    const result = await executeC6HomologB01WithIdempotency(
+      {
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B01_CONFIRMATION_PHRASE,
+        credentials: credsFor(companyA, integrationA),
+        payload: payloadFor(companyA, 'B01A000032'),
+        integrationId: integrationA,
+        store,
+        now,
+      },
+      {
+        persistReservation: true,
+        allowSandboxLive: true,
+        accessToken: TOKEN,
+        now,
+        fetchFn: async () => successFetch(),
+      },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.httpStatus, 201);
+    assert.equal(result.idempotency?.status, 'SUCCEEDED');
+  } finally {
+    if (prev == null) delete process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY];
+    else process.env[C6_BOLETO_SANDBOX_LIVE_ENV_KEY] = prev;
+  }
+  console.log('OK testSandboxLiveIdempotencyWithMockHttp');
+}
+
 async function main() {
   testMigrationSql();
   testClassifyOutcome();
@@ -738,6 +776,7 @@ async function main() {
   await testFingerprintRequiredAndImmutable();
   await testOldAttemptCannotStartNewer();
   await testSimulatedAgentAndHttpsUnusedByStore();
+  await testSandboxLiveIdempotencyWithMockHttp();
   console.log('ALL mandatory-c6-fase3b3-idempotency-tests passed');
 }
 
