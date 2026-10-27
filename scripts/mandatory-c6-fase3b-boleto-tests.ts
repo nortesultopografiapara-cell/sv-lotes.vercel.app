@@ -8,6 +8,7 @@ import https from 'node:https';
 import path from 'node:path';
 import {
   C6_BOLETO_BILLING_SCHEME,
+  C6_BOLETO_CHARGE_TYPES,
   C6_BOLETO_CREATE_REQUIRED_FIELDS,
   C6_BOLETO_OPENAPI_SPEC,
   C6_BOLETO_OPENAPI_VERSION,
@@ -185,6 +186,26 @@ function testB01ValidationSuccessAndFailures() {
   for (const [label, fn] of cases) {
     assert.throws(fn, C6BoletoValidationError, label);
   }
+  const withCharges = buildC6BankSlipCreateBody(
+    b01Input({
+      external_reference_id: 'B02A000001',
+      interest: { type: 'V', value: 2, dead_line: 0 },
+      fine: { type: 'V', value: 10, dead_line: 0 },
+    }),
+    now,
+  );
+  assert.deepEqual(withCharges.interest, { type: 'V', value: 2, dead_line: 0 });
+  assert.deepEqual(withCharges.fine, { type: 'V', value: 10, dead_line: 0 });
+  assert.throws(
+    () =>
+      buildC6BankSlipCreateBody(
+        b01Input({ interest: { type: 'X' as 'V', value: 1, dead_line: 0 } }),
+        now,
+      ),
+    C6BoletoValidationError,
+  );
+  assert.equal(C6_BOLETO_CHARGE_TYPES.includes('V'), true);
+  assert.equal(C6_BOLETO_CHARGE_TYPES.includes('P'), true);
   console.log('OK testB01ValidationSuccessAndFailures');
 }
 

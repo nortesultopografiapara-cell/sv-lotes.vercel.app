@@ -34,13 +34,13 @@ export type C6BoletoDiscount = {
 };
 
 export type C6BoletoInterest = {
-  type: string;
+  type: 'V' | 'P';
   value: number;
   dead_line: number;
 };
 
 export type C6BoletoFine = {
-  type: string;
+  type: 'V' | 'P';
   value: number;
   dead_line: number;
 };

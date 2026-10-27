@@ -19,6 +19,10 @@ import {
   executeC6HomologB01Simulated,
 } from '../lib/banking/c6/c6BoletoHomologB01';
 import {
+  C6_B02_CONFIRMATION_PHRASE,
+  authorizeC6HomologB02,
+} from '../lib/banking/c6/c6BoletoHomologB02';
+import {
   assertC6HomologRefAvailable,
   c6HomologIdempotencyKey,
   mergeC6HomologIdempotencyMetadata,
@@ -26,7 +30,7 @@ import {
 } from '../lib/banking/c6/c6BoletoIdempotency';
 import { parseC6OAuthBodyFields } from '../lib/banking/c6/c6At01Evidence';
 import { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '../lib/banking/c6/c6EmitGuard';
-import { C6BoletoValidationError } from '../lib/banking/c6/c6BoletoValidation';
+import { C6BoletoValidationError, buildC6BankSlipCreateBody } from '../lib/banking/c6/c6BoletoValidation';
 import { C6BoletoTransportError, executeC6BankSlipCreate } from '../lib/banking/c6/c6BoletoClient';
 import type { C6AuthCredentials } from '../lib/banking/c6/c6AuthClient';
 import type { C6BoletoCreateInput } from '../lib/banking/c6/c6BoletoTypes';
@@ -40,6 +44,10 @@ import {
   C6_B01_SANDBOX_PREPARED_REF,
   buildC6HomologB01SandboxPayload,
 } from './develop/c6-homolog-b01-sandbox-ready';
+import {
+  C6_B02_SANDBOX_PREPARED_REF,
+  buildC6HomologB02SandboxPayload,
+} from './develop/c6-homolog-b02-sandbox-ready';
 import { C6_BOLETO_EXTERNAL_REFERENCE_PATTERN } from '../lib/banking/c6/c6BoletoOpenApi';
 
 const root = process.cwd();
@@ -338,6 +346,8 @@ function testWebhookGapAndNoSalesWiring() {
   const central = read('components/charges/ChargesPageClient.tsx');
   assert.doesNotMatch(sale, /homolog\/b01/);
   assert.doesNotMatch(central, /homolog\/b01/);
+  assert.doesNotMatch(sale, /homolog\/b02/);
+  assert.doesNotMatch(central, /homolog\/b02/);
   const middleware = read('middleware.ts');
   assert.match(middleware, /isC6HomologApi/);
   assert.match(middleware, /\/api\/banking\/c6\/homolog/);
@@ -370,6 +380,17 @@ function testWebhookGapAndNoSalesWiring() {
   assert.match(route, /assertNotProductionRuntime/);
   assert.match(route, /encryptionKeyConfigured/);
   assert.doesNotMatch(route, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
+  const routeB02 = read('app/api/banking/c6/homolog/b02/route.ts');
+  assert.match(routeB02, /export async function GET/);
+  assert.match(routeB02, /executeC6HomologB02WithIdempotency/);
+  assert.match(routeB02, /EMITIR_B02_SANDBOX/);
+  assert.match(routeB02, /B02S261027/);
+  assert.match(routeB02, /C6_B01_FORBIDDEN_REF/);
+  assert.match(routeB02, /não reutiliza B_01/);
+  assert.doesNotMatch(routeB02, /fetchFn:/);
+  assert.doesNotMatch(routeB02, /accessToken:/);
+  assert.doesNotMatch(routeB02, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
+  assert.doesNotMatch(routeB02, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
   console.log('OK testWebhookGapAndNoSalesWiring');
 }
 
@@ -407,6 +428,83 @@ function testPreparedB01SandboxPayload() {
   console.log('OK testPreparedB01SandboxPayload');
 }
 
+function testPreparedB02SandboxPayload() {
+  assert.equal(C6_BOLETO_EXTERNAL_REFERENCE_PATTERN.test(C6_B02_SANDBOX_PREPARED_REF), true);
+  assert.equal(C6_B02_SANDBOX_PREPARED_REF, 'B02S261027');
+  assert.notEqual(C6_B02_SANDBOX_PREPARED_REF, C6_B01_SANDBOX_PREPARED_REF);
+  const prepared = buildC6HomologB02SandboxPayload(C6_B01_SANDBOX_COMPANY_ID);
+  const body = buildC6BankSlipCreateBody(prepared, now);
+  assert.equal(body.external_reference_id, 'B02S261027');
+  assert.equal(body.amount, 234.56);
+  assert.equal(body.due_date, '2026-11-20');
+  assert.equal(body.billing_scheme, '21');
+  assert.deepEqual(body.interest, { type: 'V', value: 2, dead_line: 0 });
+  assert.deepEqual(body.fine, { type: 'V', value: 10, dead_line: 0 });
+  assert.throws(
+    () =>
+      authorizeC6HomologB01({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B01_CONFIRMATION_PHRASE,
+        credentials: {
+          companyId: C6_B01_SANDBOX_COMPANY_ID,
+          integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+          environment: 'SANDBOX',
+          clientId: 'blocked',
+          clientSecret: 'blocked',
+          certificatePem: 'blocked',
+          privateKeyPem: 'blocked',
+        },
+        payload: prepared,
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  assert.equal(C6_BOLETO_HOMOLOG_CASES.B_02.readyToExecute, false);
+  const authorized = authorizeC6HomologB02({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B02_CONFIRMATION_PHRASE,
+    credentials: {
+      companyId: C6_B01_SANDBOX_COMPANY_ID,
+      integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+      environment: 'SANDBOX',
+      clientId: 'blocked',
+      clientSecret: 'blocked',
+      certificatePem: 'blocked',
+      privateKeyPem: 'blocked',
+    },
+    payload: prepared,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+    now,
+  });
+  assert.equal(authorized.jsonBody?.interest?.type, 'V');
+  assert.equal(authorized.jsonBody?.fine?.type, 'V');
+  assert.throws(
+    () =>
+      authorizeC6HomologB02({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B02_CONFIRMATION_PHRASE,
+        credentials: {
+          companyId: C6_B01_SANDBOX_COMPANY_ID,
+          integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+          environment: 'SANDBOX',
+          clientId: 'blocked',
+          clientSecret: 'blocked',
+          certificatePem: 'blocked',
+          privateKeyPem: 'blocked',
+        },
+        payload: { ...prepared, external_reference_id: C6_B01_SANDBOX_PREPARED_REF },
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  console.log('OK testPreparedB02SandboxPayload');
+}
+
 async function main() {
   testOfficialCatalog();
   testRoteiroAndMatrixPresent();
@@ -418,6 +516,7 @@ async function main() {
   await testTimeoutInternalCase();
   testWebhookGapAndNoSalesWiring();
   testPreparedB01SandboxPayload();
+  testPreparedB02SandboxPayload();
   console.log('ALL mandatory-c6-fase3b1-homolog-tests passed');
 }
 

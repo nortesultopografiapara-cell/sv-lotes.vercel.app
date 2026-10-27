@@ -33,6 +33,10 @@ export const C6_BOLETO_ADDRESS_REQUIRED_FIELDS = [
 
 export const C6_BOLETO_STATUS = ['CREATED', 'PAID', 'CANCELLED'] as const;
 
+/** OpenAPI 1.7.2: V = valor, P = percentual. Juros diários; multa uma vez. */
+export const C6_BOLETO_CHARGE_TYPES = ['V', 'P'] as const;
+export type C6BoletoChargeType = (typeof C6_BOLETO_CHARGE_TYPES)[number];
+
 export const C6_BOLETO_BILLING_TYPE = ['3', '4'] as const;
 
 export const C6_BOLETO_EXTERNAL_REFERENCE_PATTERN = /^[a-zA-Z0-9]{1,10}$/;

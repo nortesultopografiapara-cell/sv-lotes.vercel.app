@@ -5,6 +5,7 @@
 import { onlyDigits } from '@/lib/inputMasks';
 import {
   C6_BOLETO_ADDRESS_REQUIRED_FIELDS,
+  C6_BOLETO_CHARGE_TYPES,
   C6_BOLETO_CREATE_REQUIRED_FIELDS,
   C6_BOLETO_DUE_DATE_PATTERN,
   C6_BOLETO_EXTERNAL_REFERENCE_PATTERN,
@@ -296,8 +297,8 @@ function assertOptionalChargeExtras(input: {
   }
 
   if (input.discount) extra.discount = input.discount;
-  if (input.interest) extra.interest = input.interest;
-  if (input.fine) extra.fine = input.fine;
+  if (input.interest) extra.interest = assertC6ChargeAddon(input.interest, 'interest');
+  if (input.fine) extra.fine = assertC6ChargeAddon(input.fine, 'fine');
 
   if (input.our_number != null && String(input.our_number).trim()) {
     const our = String(input.our_number).trim();
@@ -308,6 +309,31 @@ function assertOptionalChargeExtras(input: {
   }
 
   return extra;
+}
+
+function assertC6ChargeAddon(
+  input: { type?: string; value?: number; dead_line?: number },
+  field: 'interest' | 'fine',
+): { type: 'V' | 'P'; value: number; dead_line: number } {
+  const type = String(input.type || '').trim().toUpperCase();
+  if (!C6_BOLETO_CHARGE_TYPES.includes(type as (typeof C6_BOLETO_CHARGE_TYPES)[number])) {
+    throw new C6BoletoValidationError(
+      `${field}.type deve ser "V" (valor) ou "P" (percentual).`,
+      [`${field}.type`],
+    );
+  }
+  const value = Number(input.value);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new C6BoletoValidationError(`${field}.value deve ser maior que zero.`, [`${field}.value`]);
+  }
+  const deadLine = Number(input.dead_line);
+  if (!Number.isInteger(deadLine) || deadLine < 0) {
+    throw new C6BoletoValidationError(
+      `${field}.dead_line deve ser inteiro ≥ 0 (dias após o vencimento).`,
+      [`${field}.dead_line`],
+    );
+  }
+  return { type: type as 'V' | 'P', value: Number(value.toFixed(2)), dead_line: deadLine };
 }
 
 export function buildC6BankSlipCreateBody(
@@ -365,8 +391,8 @@ export function buildC6BankSlipAlterBody(input: C6BankSlipAlterRequest, now?: Da
   if (input.amount != null) body.amount = assertAmount(input.amount);
   if (input.due_date != null) body.due_date = assertDueDate(input.due_date, now);
   if (input.discount) body.discount = input.discount;
-  if (input.interest) body.interest = input.interest;
-  if (input.fine) body.fine = input.fine;
+  if (input.interest) body.interest = assertC6ChargeAddon(input.interest, 'interest');
+  if (input.fine) body.fine = assertC6ChargeAddon(input.fine, 'fine');
   if (Object.keys(body).length < 1) {
     throw new C6BoletoValidationError('Alteração de boleto exige ao menos um campo.', []);
   }

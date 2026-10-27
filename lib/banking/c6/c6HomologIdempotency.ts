@@ -135,6 +135,7 @@ export function buildC6HomologRequestFingerprint(input: {
   amount: number;
   dueDate: string;
   billingScheme: string;
+  extras?: string;
 }): string {
   const canonical = [
     String(input.companyId || '').trim(),
@@ -143,7 +144,10 @@ export function buildC6HomologRequestFingerprint(input: {
     String(input.amount),
     String(input.dueDate || '').trim(),
     String(input.billingScheme || '').trim(),
-  ].join('|');
+    String(input.extras || '').trim(),
+  ]
+    .filter((part, index) => index < 6 || part.length > 0)
+    .join('|');
   return createHash('sha256').update(canonical).digest('hex');
 }
 
