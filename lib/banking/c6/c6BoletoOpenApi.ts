@@ -78,6 +78,13 @@ export const C6_BOLETO_WRITE_SCOPE = 'bankslip.write' as const;
 /** Escopo OAuth exigido para GET /v1/bank_slips/{id} e GET .../pdf (B_05/B_06). */
 export const C6_BOLETO_READ_SCOPE = 'bankslip.read' as const;
 
+/**
+ * Accept do GET PDF. OpenAPI 1.7.2 não declara application/pdf no 200;
+ * o schema `base64_pdf_file` e o GET B_05 comprovam envelope JSON.
+ * HTTP 406 ocorreu com Accept: application/pdf.
+ */
+export const C6_BOLETO_PDF_ACCEPT = 'application/json' as const;
+
 function parseC6OAuthScopeList(raw: string | string[] | null | undefined): string[] {
   return Array.isArray(raw)
     ? raw.map((part) => String(part || '').trim()).filter(Boolean)

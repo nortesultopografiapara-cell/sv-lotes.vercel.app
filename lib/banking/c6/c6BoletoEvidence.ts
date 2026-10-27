@@ -17,6 +17,21 @@ export const C6_BOLETO_FORBIDDEN_PUBLIC_FRAGMENTS = [
   ...C6_AT01_FORBIDDEN_PUBLIC_FRAGMENTS,
 ] as const;
 
+export type C6BoletoPdfInspect = {
+  kind:
+    | 'pdf-binary'
+    | 'json-base64'
+    | 'octet-stream'
+    | 'problem-json'
+    | 'json'
+    | 'empty'
+    | 'unknown';
+  contentType: string | null;
+  bytes: number | null;
+  pdfMagicOk: boolean;
+  decodedFromBase64: boolean;
+};
+
 export type C6BoletoEvidencePublic = {
   testCase: C6BoletoEvidenceCase;
   success: boolean;
@@ -36,6 +51,7 @@ export type C6BoletoEvidencePublic = {
   requestBody: Record<string, unknown> | null;
   responseBody: Record<string, unknown> | string | null;
   responseContentType: string | null;
+  pdfInspect: C6BoletoPdfInspect | null;
   message: string;
 };
 
@@ -95,6 +111,95 @@ function classifyC6BoletoResponseKind(
   return 'json';
 }
 
+function hasC6PdfMagic(buf: Buffer): boolean {
+  return buf.length >= 4 && buf.subarray(0, 4).toString('latin1') === '%PDF';
+}
+
+function decodeC6PdfBase64(value: unknown): Buffer | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('[')) return null;
+  const cleaned = trimmed.replace(/^data:application\/pdf;base64,/i, '').replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]+=*$/.test(cleaned) || cleaned.length < 8) return null;
+  const buf = Buffer.from(cleaned, 'base64');
+  return buf.length ? buf : null;
+}
+
+export function inspectC6BoletoPdfPayload(input: {
+  bodyText?: string | null;
+  contentType?: string | null;
+  httpStatus?: number | null;
+  pdfMagic?: boolean;
+}): C6BoletoPdfInspect {
+  const raw = String(input.bodyText || '');
+  const contentType = input.contentType ? String(input.contentType).slice(0, 120) : null;
+  const type = String(contentType || '').toLowerCase();
+  const empty: C6BoletoPdfInspect = {
+    kind: 'empty',
+    contentType,
+    bytes: null,
+    pdfMagicOk: false,
+    decodedFromBase64: false,
+  };
+  if (!raw) return empty;
+  if (input.httpStatus === 406 || type.includes('problem+json')) {
+    return { ...empty, kind: 'problem-json' };
+  }
+  const marker = raw.match(/^\[(pdf|binary)-bytes:(\d+)\]$/);
+  if (marker) {
+    const bytes = Number(marker[2]);
+    const kind = type.includes('octet-stream') && !type.includes('pdf') ? 'octet-stream' : 'pdf-binary';
+    return {
+      kind,
+      contentType,
+      bytes,
+      pdfMagicOk: input.pdfMagic === true,
+      decodedFromBase64: false,
+    };
+  }
+  if (raw.startsWith('%PDF') || type.includes('application/pdf')) {
+    const buf = Buffer.from(raw, 'latin1');
+    return {
+      kind: 'pdf-binary',
+      contentType,
+      bytes: buf.length,
+      pdfMagicOk: hasC6PdfMagic(buf),
+      decodedFromBase64: false,
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ...empty, kind: 'unknown' };
+    }
+    if (Number(parsed.status) === 406) {
+      return { ...empty, kind: 'problem-json' };
+    }
+    const decoded = decodeC6PdfBase64(parsed.base64_pdf_file ?? parsed.pdf ?? parsed.file);
+    if (decoded) {
+      return {
+        kind: 'json-base64',
+        contentType,
+        bytes: decoded.length,
+        pdfMagicOk: hasC6PdfMagic(decoded),
+        decodedFromBase64: true,
+      };
+    }
+    return { ...empty, kind: 'json' };
+  } catch {
+    if (type.includes('octet-stream')) {
+      return {
+        kind: 'octet-stream',
+        contentType,
+        bytes: Buffer.byteLength(raw),
+        pdfMagicOk: raw.startsWith('%PDF'),
+        decodedFromBase64: false,
+      };
+    }
+    return { ...empty, kind: 'unknown' };
+  }
+}
+
 export function parseC6BoletoResponseBody(
   bodyText: string,
   contentType = '',
@@ -135,6 +240,8 @@ export function toC6BoletoEvidencePublic(input: {
   responseBody?: Record<string, unknown> | string | null;
   responseText?: string;
   contentType?: string;
+  pdfMagic?: boolean;
+  pdfInspect?: C6BoletoPdfInspect | null;
   message: string;
 }): C6BoletoEvidencePublic {
   const responseBody =
@@ -144,6 +251,17 @@ export function toC6BoletoEvidencePublic(input: {
   const homolog = isC6BoletoHomologCase(input.testCase)
     ? C6_BOLETO_HOMOLOG_CASES[input.testCase]
     : null;
+  const pdfInspect =
+    input.pdfInspect !== undefined
+      ? input.pdfInspect
+      : input.operation === 'pdf'
+        ? inspectC6BoletoPdfPayload({
+            bodyText: input.responseText || '',
+            contentType: input.contentType || '',
+            httpStatus: input.httpStatus ?? null,
+            pdfMagic: input.pdfMagic,
+          })
+        : null;
 
   return {
     testCase: input.testCase,
@@ -164,6 +282,7 @@ export function toC6BoletoEvidencePublic(input: {
     requestBody: input.requestBody ? sanitizeC6BoletoJson(input.requestBody) : null,
     responseBody,
     responseContentType: input.contentType ? String(input.contentType).slice(0, 120) : null,
+    pdfInspect,
     message: String(input.message || '').slice(0, 300),
   };
 }
@@ -178,6 +297,7 @@ export function evidenceFromPreparedC6Boleto(
     httpStatus?: number | null;
     responseText?: string;
     contentType?: string;
+    pdfMagic?: boolean;
     message: string;
     testedAt?: string;
   },
@@ -203,6 +323,7 @@ export type C6HomologWordEvidence = {
   openapiExpectedStatus: number | null;
   responseBody: Record<string, unknown> | string | null;
   responseContentType: string | null;
+  pdfInspect: C6BoletoPdfInspect | null;
   executed: boolean;
   blocked: boolean;
   wordColumnsReady: boolean;
@@ -227,6 +348,7 @@ export function collectC6HomologWordEvidence(
     openapiExpectedStatus: evidence.openapiExpectedStatus,
     responseBody: evidence.responseBody,
     responseContentType: evidence.responseContentType,
+    pdfInspect: evidence.pdfInspect,
     executed: evidence.executed,
     blocked: evidence.blocked,
     wordColumnsReady: Boolean(evidence.executed && evidence.httpStatus != null),
@@ -243,6 +365,11 @@ export function formatC6BoletoEvidenceReport(evidence: C6BoletoEvidencePublic): 
     `Carteira (billing_scheme): ${evidence.billingScheme || '(não enviada)'}`,
     `HTTP: ${evidence.httpStatus == null ? 'não executado' : evidence.httpStatus}`,
     `Content-Type: ${evidence.responseContentType || '(ausente)'}`,
+    `PDF: ${
+      evidence.pdfInspect
+        ? `${evidence.pdfInspect.kind} bytes=${evidence.pdfInspect.bytes ?? 'n/a'} magic=${evidence.pdfInspect.pdfMagicOk}`
+        : '(n/a)'
+    }`,
     `Status roteiro: ${evidence.roteiroExpectedStatus ?? 'n/a'}`,
     `Status OpenAPI: ${evidence.openapiExpectedStatus ?? 'n/a'}`,
     `Executado: ${evidence.executed ? 'sim' : 'não'}`,

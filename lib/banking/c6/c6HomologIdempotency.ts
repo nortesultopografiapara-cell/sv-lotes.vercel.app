@@ -178,7 +178,14 @@ export function classifyC6HomologHttpOutcome(input: {
   if (status == null) return 'UNKNOWN';
   const success = input.successStatuses?.length ? input.successStatuses : [201];
   if (success.includes(status)) return 'SUCCEEDED';
-  if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
+  if (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    status === 404 ||
+    status === 406 ||
+    status === 422
+  ) {
     return 'FAILED';
   }
   return 'UNKNOWN';

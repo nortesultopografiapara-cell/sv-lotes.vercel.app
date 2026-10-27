@@ -198,6 +198,7 @@ function testClassifyOutcome() {
   );
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 400, transport: 'ok' }), 'FAILED');
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 422, transport: 'ok' }), 'FAILED');
+  assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 406, transport: 'ok', successStatuses: [200] }), 'FAILED');
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 500, transport: 'ok' }), 'UNKNOWN');
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 409, transport: 'ok' }), 'UNKNOWN');
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: null, transport: 'TIMEOUT' }), 'UNKNOWN');

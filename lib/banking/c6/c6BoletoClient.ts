@@ -11,6 +11,7 @@ import {
   C6_BOLETO_OPERATIONS,
   C6_BOLETO_PARTNER_SOFTWARE_NAME,
   C6_BOLETO_PARTNER_SOFTWARE_VERSION,
+  C6_BOLETO_PDF_ACCEPT,
 } from '@/lib/banking/c6/c6BoletoOpenApi';
 import {
   buildC6BankSlipCancelUrl,
@@ -53,7 +54,7 @@ export type C6BoletoFetchFn = (
     body?: string;
     agent: https.Agent;
   },
-) => Promise<{ status: number; bodyText: string; contentType?: string }>;
+) => Promise<{ status: number; bodyText: string; contentType?: string; pdfMagic?: boolean }>;
 
 export type C6BoletoExecuteOptions = {
   /** Somente testes com resposta simulada. Não autoriza C6 real. */
@@ -210,7 +211,7 @@ export function prepareC6BankSlipPdf(
     url,
     host,
     path: pathFromUrl(url, host),
-    headers: withAuthHeaders({ 'Content-Type': FORM_CONTENT_TYPE, Accept: 'application/pdf' }, options?.accessToken),
+    headers: withAuthHeaders({ Accept: C6_BOLETO_PDF_ACCEPT }, options?.accessToken),
     body: null,
     jsonBody: null,
     billingScheme: null,
@@ -271,10 +272,11 @@ function assertExecuteGate(
 }
 
 const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
-  const { statusCode, body, contentType } = await new Promise<{
+  const { statusCode, body, contentType, pdfMagic } = await new Promise<{
     statusCode: number;
     body: string;
     contentType: string;
+    pdfMagic: boolean;
   }>((resolve, reject) => {
     const req = https.request(
       url,
@@ -290,9 +292,8 @@ const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
         res.on('end', () => {
           const buf = Buffer.concat(chunks);
           const type = String(res.headers['content-type'] || '');
-          const looksPdf =
-            /pdf/i.test(type) ||
-            (buf.length >= 4 && buf.subarray(0, 4).toString('latin1') === '%PDF');
+          const pdfMagic = buf.length >= 4 && buf.subarray(0, 4).toString('latin1') === '%PDF';
+          const looksPdf = /pdf/i.test(type) || pdfMagic;
           const looksBinary = /octet-stream/i.test(type);
           resolve({
             statusCode: res.statusCode || 0,
@@ -301,6 +302,7 @@ const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
                 ? `[pdf-bytes:${buf.length}]`
                 : buf.toString('utf8'),
             contentType: type,
+            pdfMagic,
           });
         });
       },
@@ -313,7 +315,7 @@ const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
     if (init.body) req.write(init.body);
     req.end();
   });
-  return { status: statusCode, bodyText: body, contentType };
+  return { status: statusCode, bodyText: body, contentType, pdfMagic };
 };
 
 async function resolveAccessToken(
@@ -391,6 +393,7 @@ async function executePrepared(
         httpStatus: res.status,
         responseText: res.bodyText,
         contentType: res.contentType,
+        pdfMagic: res.pdfMagic,
         message: ok
           ? liveHttp
             ? 'Boleto C6 Sandbox emitido.'

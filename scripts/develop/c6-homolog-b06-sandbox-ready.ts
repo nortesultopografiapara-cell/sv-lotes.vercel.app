@@ -10,8 +10,10 @@ import { buildC6BankSlipPdfUrl } from '../../lib/banking/c6/c6BoletoEndpoints';
 import {
   C6_B06_AUTHORIZED_BANK_SLIP_ID,
   C6_B06_CONFIRMATION_PHRASE,
+  C6_B06_FIRST_ATTEMPT_REF,
   C6_B06_IDEMPOTENCY_REF,
 } from '../../lib/banking/c6/c6BoletoHomologB06';
+import { C6_BOLETO_PDF_ACCEPT } from '../../lib/banking/c6/c6BoletoOpenApi';
 import { C6_HOMOLOG_B01_BANK_SLIP_ID } from '../../lib/banking/c6/c6BoletoHomologIssuedIds';
 import { C6_B01_SANDBOX_COMPANY_ID, C6_B01_SANDBOX_INTEGRATION_ID } from './c6-homolog-b01-sandbox-ready';
 
@@ -44,7 +46,9 @@ function main() {
           bankSlipId: C6_B06_AUTHORIZED_BANK_SLIP_ID,
           source: 'B_01',
           scope: 'bankslip.read',
-          accept: 'application/pdf',
+          accept: C6_BOLETO_PDF_ACCEPT,
+          contentType: null,
+          previousAttemptRef: C6_B06_FIRST_ATTEMPT_REF,
           idempotencyRef: C6_B06_SANDBOX_PREPARED_REF,
         },
       },

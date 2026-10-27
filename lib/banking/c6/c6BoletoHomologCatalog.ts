@@ -145,9 +145,9 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
     openapiExpectedStatus: 200,
     evidenceRequired: 'HTTP status, content-type e tamanho do PDF. Sem Base64 completo.',
     notes: [
-      'Roteiro pede Content-Type application/json no GET PDF; OpenAPI marca application/x-www-form-urlencoded.',
-      'Reutiliza o id do B_01 01M5YPX04ZB8H14XAPJDA8MRV8. GET PDF não emite.',
-      'Accept application/pdf. Escopo bankslip.read. Evidência grava o Content-Type efetivo do C6; não presume JSON.',
+      'HTTP 406 em B06S261027 com Accept application/pdf. Próxima tentativa: B06R261027, Accept application/json, sem Content-Type no GET sem body.',
+      'OpenAPI 1.7.2 documenta base64_pdf_file no JSON; GET /pdf 200 não declara application/pdf.',
+      'Reutiliza o id do B_01 01M5YPX04ZB8H14XAPJDA8MRV8. GET PDF não emite. Escopo bankslip.read.',
     ],
     returnedStatus: null,
     returnedBody: null,

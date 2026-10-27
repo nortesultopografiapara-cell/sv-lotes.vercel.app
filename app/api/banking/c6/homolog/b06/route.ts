@@ -15,6 +15,7 @@ import { requestC6HomologReadAccessToken } from '@/lib/banking/c6/c6BoletoHomolo
 import {
   C6_B06_AUTHORIZED_BANK_SLIP_ID,
   C6_B06_CONFIRMATION_PHRASE,
+  C6_B06_FIRST_ATTEMPT_REF,
   C6_B06_IDEMPOTENCY_REF,
   assertC6HomologB06SandboxOnly,
   c6HomologB06LiveExecuteOptions,
@@ -25,6 +26,7 @@ import { C6BoletoValidationError } from '@/lib/banking/c6/c6BoletoValidation';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import {
   C6BoletoScopeError,
+  C6_BOLETO_PDF_ACCEPT,
   assertC6BankSlipReadScope,
 } from '@/lib/banking/c6/c6BoletoOpenApi';
 import { inspectC6LoadedCertificatePublic } from '@/lib/banking/c6/c6LocalValidation';
@@ -77,6 +79,14 @@ export async function GET(request: Request) {
     }
 
     const integrationId = config.id ? String(config.id) : '';
+    const previousAtomic =
+      integrationId
+        ? await loadC6HomologAtomicRow(auth.admin, {
+            companyId: auth.tenantId,
+            integrationId,
+            externalReferenceId: C6_B06_FIRST_ATTEMPT_REF,
+          })
+        : null;
     const existingAtomic = integrationId
       ? await loadC6HomologAtomicRow(auth.admin, {
           companyId: auth.tenantId,
@@ -175,8 +185,15 @@ export async function GET(request: Request) {
         url: buildC6BankSlipPdfUrl('SANDBOX', C6_B06_AUTHORIZED_BANK_SLIP_ID),
         bankSlipId: C6_B06_AUTHORIZED_BANK_SLIP_ID,
         source: 'B_01',
-        accept: 'application/pdf',
+        accept: C6_BOLETO_PDF_ACCEPT,
+        contentType: null,
         confirmationRequiredLater: C6_B06_CONFIRMATION_PHRASE,
+      },
+      previousAttempt: {
+        external_reference_id: C6_B06_FIRST_ATTEMPT_REF,
+        status: previousAtomic?.status || null,
+        lastHttpStatus: previousAtomic?.lastHttpStatus || null,
+        mutate: false,
       },
       reference: {
         external_reference_id: C6_B06_IDEMPOTENCY_REF,

@@ -47,6 +47,7 @@ import {
 import {
   C6_B06_AUTHORIZED_BANK_SLIP_ID,
   C6_B06_CONFIRMATION_PHRASE,
+  C6_B06_FIRST_ATTEMPT_REF,
   C6_B06_IDEMPOTENCY_REF,
   authorizeC6HomologB06,
 } from '../lib/banking/c6/c6BoletoHomologB06';
@@ -503,6 +504,10 @@ function testWebhookGapAndNoSalesWiring() {
   assert.match(routeB06, /executeC6HomologB06WithIdempotency/);
   assert.match(routeB06, /CONSULTAR_B06_PDF_SANDBOX/);
   assert.match(routeB06, /C6_B06_AUTHORIZED_BANK_SLIP_ID/);
+  assert.match(routeB06, /C6_B06_FIRST_ATTEMPT_REF/);
+  assert.match(routeB06, /B06R261027|C6_B06_IDEMPOTENCY_REF/);
+  assert.match(routeB06, /C6_BOLETO_PDF_ACCEPT/);
+  assert.doesNotMatch(routeB06, /accept: 'application\/pdf'/);
   assert.match(routeB06, /requestC6HomologReadAccessToken/);
   assert.match(routeB06, /assertC6BankSlipReadScope/);
   assert.equal((routeB06.match(/bypassCache: true/g) || []).length, 1);
@@ -802,7 +807,8 @@ function testPreparedB05AndB06() {
   assert.equal(C6_B05_AUTHORIZED_BANK_SLIP_ID, C6_HOMOLOG_B01_BANK_SLIP_ID);
   assert.equal(C6_B06_AUTHORIZED_BANK_SLIP_ID, C6_HOMOLOG_B01_BANK_SLIP_ID);
   assert.equal(C6_B05_IDEMPOTENCY_REF, 'B05S261027');
-  assert.equal(C6_B06_IDEMPOTENCY_REF, 'B06S261027');
+  assert.equal(C6_B06_FIRST_ATTEMPT_REF, 'B06S261027');
+  assert.equal(C6_B06_IDEMPOTENCY_REF, 'B06R261027');
   assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B02_BANK_SLIP_ID), true);
   assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B03_BANK_SLIP_ID), true);
   const getPrepared = authorizeC6HomologB05({
@@ -838,7 +844,8 @@ function testPreparedB05AndB06() {
   });
   assert.equal(pdfPrepared.method, 'GET');
   assert.equal(pdfPrepared.url, buildC6BankSlipPdfUrl('SANDBOX', C6_HOMOLOG_B01_BANK_SLIP_ID));
-  assert.equal(pdfPrepared.headers.Accept, 'application/pdf');
+  assert.equal(pdfPrepared.headers.Accept, 'application/json');
+  assert.equal(pdfPrepared.headers['Content-Type'], undefined);
   assert.equal(C6_BOLETO_HOMOLOG_CASES.B_06.readyToExecute, false);
   console.log('OK testPreparedB05AndB06');
 }

@@ -14,6 +14,7 @@ import {
   C6_BOLETO_OPENAPI_SPEC,
   C6_BOLETO_OPENAPI_VERSION,
   C6_BOLETO_OPERATIONS,
+  C6_BOLETO_PDF_ACCEPT,
   hasC6BankSlipReadScope,
   hasC6BankSlipWriteScope,
 } from '../lib/banking/c6/c6BoletoOpenApi';
@@ -38,6 +39,7 @@ import {
 import {
   assertC6BoletoEvidencePublicSafe,
   formatC6BoletoEvidenceReport,
+  inspectC6BoletoPdfPayload,
   parseC6BoletoResponseBody,
 } from '../lib/banking/c6/c6BoletoEvidence';
 import {
@@ -275,7 +277,9 @@ function testPreparedSecondaryOperations() {
   const pdfReq = prepareC6BankSlipPdf(credsA, BANK_SLIP_ID);
   assert.equal(pdfReq.method, 'GET');
   assert.match(pdfReq.url, /\/pdf$/);
-  assert.equal(pdfReq.headers.Accept, 'application/pdf');
+  assert.equal(pdfReq.headers.Accept, C6_BOLETO_PDF_ACCEPT);
+  assert.equal(pdfReq.headers['Content-Type'], undefined);
+  assert.equal(pdfReq.body, null);
 
   const cancelReq = prepareC6BankSlipCancel(credsA, BANK_SLIP_ID);
   assert.equal(cancelReq.method, 'PUT');
@@ -309,6 +313,44 @@ function testPdfContentTypeIsNotAssumedJson() {
   const octet = parseC6BoletoResponseBody('not-json-and-not-pdf', 'application/octet-stream');
   assert.match(String(octet), /^\[pdf-bytes:/);
   console.log('OK testPdfContentTypeIsNotAssumedJson');
+}
+
+function testPdfInspectBinaryBase64AndHttp406() {
+  const binary = inspectC6BoletoPdfPayload({
+    bodyText: '%PDF-1.7 fake',
+    contentType: 'application/pdf',
+    httpStatus: 200,
+  });
+  assert.equal(binary.kind, 'pdf-binary');
+  assert.equal(binary.pdfMagicOk, true);
+  assert.equal(binary.decodedFromBase64, false);
+  assert.equal(binary.bytes, 13);
+
+  const encoded = Buffer.from('%PDF-1.4\n%%EOF\n', 'latin1').toString('base64');
+  const envelope = inspectC6BoletoPdfPayload({
+    bodyText: JSON.stringify({ id: 'x', base64_pdf_file: encoded }),
+    contentType: 'application/json',
+    httpStatus: 200,
+  });
+  assert.equal(envelope.kind, 'json-base64');
+  assert.equal(envelope.pdfMagicOk, true);
+  assert.equal(envelope.decodedFromBase64, true);
+  assert.equal(envelope.bytes, Buffer.from(encoded, 'base64').length);
+
+  const failed = inspectC6BoletoPdfPayload({
+    bodyText: JSON.stringify({
+      type: '',
+      title: '',
+      status: 406,
+      detail: 'null',
+    }),
+    contentType: 'application/problem+json',
+    httpStatus: 406,
+  });
+  assert.equal(failed.kind, 'problem-json');
+  assert.equal(failed.pdfMagicOk, false);
+  assert.equal(failed.bytes, null);
+  console.log('OK testPdfInspectBinaryBase64AndHttp406');
 }
 
 function testBankSlipWriteScope() {
@@ -486,6 +528,41 @@ async function testSimulatedSecondaryOps() {
   assert.equal(pdfRes.ok, true);
   assert.match(String(pdfRes.evidence.responseBody), /pdf/);
   assert.match(String(pdfRes.evidence.responseContentType), /pdf/i);
+  assert.equal(pdfRes.evidence.success, true);
+  assert.equal(pdfRes.evidence.pdfInspect?.kind, 'pdf-binary');
+  assert.equal(pdfRes.evidence.pdfInspect?.pdfMagicOk, true);
+
+  const encoded = Buffer.from('%PDF-1.4\n%%EOF\n', 'latin1').toString('base64');
+  const jsonPdf = await executeC6BankSlipPdf(credsA, BANK_SLIP_ID, {
+    accessToken: TOKEN,
+    allowSimulatedHttp: true,
+    fetchFn: async () => ({
+      status: 200,
+      bodyText: JSON.stringify({ id: BANK_SLIP_ID, base64_pdf_file: encoded }),
+      contentType: 'application/json',
+    }),
+    testCase: 'B_06',
+  });
+  assert.equal(jsonPdf.ok, true);
+  assert.equal(jsonPdf.evidence.success, true);
+  assert.equal(jsonPdf.evidence.pdfInspect?.kind, 'json-base64');
+  assert.equal(jsonPdf.evidence.pdfInspect?.pdfMagicOk, true);
+  assert.equal(JSON.stringify(jsonPdf.evidence).includes(encoded), false);
+
+  const pdf406 = await executeC6BankSlipPdf(credsA, BANK_SLIP_ID, {
+    accessToken: TOKEN,
+    allowSimulatedHttp: true,
+    fetchFn: async () => ({
+      status: 406,
+      bodyText: JSON.stringify({ type: '', title: '', status: 406, detail: 'null' }),
+      contentType: 'application/problem+json',
+    }),
+    testCase: 'B_06',
+  });
+  assert.equal(pdf406.ok, false);
+  assert.equal(pdf406.httpStatus, 406);
+  assert.equal(pdf406.evidence.success, false);
+  assert.equal(pdf406.evidence.pdfInspect?.kind, 'problem-json');
 
   const cancelRes = await executeC6BankSlipCancel(credsA, BANK_SLIP_ID, {
     accessToken: TOKEN,
@@ -549,6 +626,7 @@ async function main() {
   testPreparedSecondaryOperations();
   testProtectedIssuedIdsCannotAlterOrCancel();
   testPdfContentTypeIsNotAssumedJson();
+  testPdfInspectBinaryBase64AndHttp406();
   testBankSlipWriteScope();
   testEmitRemainsBlocked();
   await testExecuteBlockedWithoutSimulation();

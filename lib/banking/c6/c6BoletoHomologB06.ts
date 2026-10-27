@@ -42,7 +42,10 @@ import {
 } from '@/lib/banking/c6/c6BoletoHomologIssuedIds';
 
 export const C6_B06_CONFIRMATION_PHRASE = 'CONSULTAR_B06_PDF_SANDBOX';
-export const C6_B06_IDEMPOTENCY_REF = 'B06S261027';
+/** Primeira tentativa Sandbox. HTTP 406 gravado como UNKNOWN. Não sobrescrever. */
+export const C6_B06_FIRST_ATTEMPT_REF = 'B06S261027';
+/** Próxima tentativa autorizada, vinculada à 406 anterior. */
+export const C6_B06_IDEMPOTENCY_REF = 'B06R261027';
 export const C6_B06_AUTHORIZED_BANK_SLIP_ID = C6_HOMOLOG_B01_BANK_SLIP_ID;
 export const C6_B06_SOURCE_AMOUNT = 123.45;
 export const C6_B06_SOURCE_DUE = '2026-11-15';
@@ -176,7 +179,7 @@ export async function executeC6HomologB06WithIdempotency(
       amount: C6_B06_SOURCE_AMOUNT,
       dueDate: C6_B06_SOURCE_DUE,
       billingScheme: '21',
-      extras: `pdf:${C6_B06_AUTHORIZED_BANK_SLIP_ID}`,
+      extras: `pdf:${C6_B06_AUTHORIZED_BANK_SLIP_ID}:accept-json`,
     },
     now: options.now || input.now,
     live: Boolean(options.fetchFn) || live,
