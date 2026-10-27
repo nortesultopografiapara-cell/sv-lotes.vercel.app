@@ -54,6 +54,15 @@ import {
   executeC6HomologB06WithIdempotency,
 } from '../lib/banking/c6/c6BoletoHomologB06';
 import {
+  C6_B07_CONFIRMATION_PHRASE,
+  C6_B07_IDEMPOTENCY_REF,
+  authorizeC6HomologB07,
+} from '../lib/banking/c6/c6BoletoHomologB07';
+import { C6_WEBHOOK_FINANCE_MUTATION } from '../lib/banking/c6/c6WebhookReceiver';
+import { C6_WEBHOOKS_URL } from '../lib/banking/c6/c6WebhookEndpoints';
+import { C6_NOTIFICATIONS_SERVICE } from '../lib/banking/c6/c6NotificationsOpenApi';
+import { prepareC6WebhookRegister } from '../lib/banking/c6/c6BoletoClient';
+import {
   C6_HOMOLOG_B01_BANK_SLIP_ID,
   C6_HOMOLOG_B02_BANK_SLIP_ID,
   C6_HOMOLOG_B03_BANK_SLIP_ID,
@@ -401,6 +410,9 @@ async function testTimeoutInternalCase() {
 function testWebhookGapAndNoSalesWiring() {
   assert.equal(C6_BOLETO_HOMOLOG_CASES.B_07.readyToExecute, false);
   assert.match(C6_BOLETO_HOMOLOG_CASES.B_07.notes.join(' '), /notificações/);
+  assert.match(C6_BOLETO_HOMOLOG_CASES.B_07.notes.join(' '), /financeMutation=false/);
+  assert.match(C6_BOLETO_HOMOLOG_CASES.B_07.notes.join(' '), /B07S261027/);
+  assert.equal(C6_WEBHOOK_FINANCE_MUTATION, false);
   const sale = read('components/sales/SaleChargesPanel.tsx');
   const central = read('components/charges/ChargesPageClient.tsx');
   assert.doesNotMatch(sale, /homolog\/b01/);
@@ -415,9 +427,12 @@ function testWebhookGapAndNoSalesWiring() {
   assert.doesNotMatch(central, /homolog\/b05/);
   assert.doesNotMatch(sale, /homolog\/b06/);
   assert.doesNotMatch(central, /homolog\/b06/);
+  assert.doesNotMatch(sale, /homolog\/b07/);
+  assert.doesNotMatch(central, /homolog\/b07/);
   const middleware = read('middleware.ts');
   assert.match(middleware, /isC6HomologApi/);
   assert.match(middleware, /\/api\/banking\/c6\/homolog/);
+  assert.match(middleware, /\/api\/banking\/c6\/webhooks/);
   assert.doesNotMatch(
     middleware.slice(middleware.indexOf('const publicRoutes'), middleware.indexOf('const isCompanyExportApi')),
     /homolog/,
@@ -521,6 +536,24 @@ function testWebhookGapAndNoSalesWiring() {
   assert.doesNotMatch(routeB06, /fetchFn:/);
   assert.doesNotMatch(routeB06, /accessToken:/);
   assert.doesNotMatch(routeB06, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
+  const routeB07 = read('app/api/banking/c6/homolog/b07/route.ts');
+  assert.match(routeB07, /export async function GET/);
+  assert.match(routeB07, /executeC6HomologB07WithIdempotency/);
+  assert.match(routeB07, /CADASTRAR_B07_WEBHOOK_SANDBOX/);
+  assert.match(routeB07, /B07S261027/);
+  assert.match(routeB07, /financeMutation/);
+  assert.match(routeB07, /buildC6WebhookRegisterUrl/);
+  assert.doesNotMatch(routeB07, /executeC6BankSlipCreate/);
+  assert.doesNotMatch(routeB07, /fetchFn:/);
+  assert.doesNotMatch(routeB07, /accessToken:/);
+  assert.doesNotMatch(routeB07, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
+  assert.doesNotMatch(routeB07, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
+  const receiver = read('app/api/banking/c6/webhooks/[integrationId]/route.ts');
+  assert.match(receiver, /financeMutation/);
+  assert.doesNotMatch(receiver, /finance_receipts/);
+  assert.doesNotMatch(receiver, /cash_movements/);
+  assert.doesNotMatch(receiver, /broker_commissions/);
+  assert.doesNotMatch(receiver, /processInterWebhookCallbackItem/);
   console.log('OK testWebhookGapAndNoSalesWiring');
 }
 
@@ -862,6 +895,51 @@ function testPreparedB05AndB06() {
   console.log('OK testPreparedB05AndB06');
 }
 
+function testPreparedB07Webhook() {
+  assert.equal(C6_B07_IDEMPOTENCY_REF, 'B07S261027');
+  assert.equal(C6_BOLETO_EXTERNAL_REFERENCE_PATTERN.test(C6_B07_IDEMPOTENCY_REF), true);
+  assert.equal(C6_B07_CONFIRMATION_PHRASE, 'CADASTRAR_B07_WEBHOOK_SANDBOX');
+  assert.equal(C6_NOTIFICATIONS_SERVICE, 'BANK_SLIP');
+  assert.equal(C6_WEBHOOK_FINANCE_MUTATION, false);
+  const callbackUrl = `https://preview.example/api/banking/c6/webhooks/${C6_B01_SANDBOX_INTEGRATION_ID}?token=test`;
+  const prepared = authorizeC6HomologB07({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B07_CONFIRMATION_PHRASE,
+    credentials: blockedHomologCreds(),
+    callbackUrl,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+  });
+  assert.equal(prepared.method, 'POST');
+  assert.equal(prepared.operation, 'webhook');
+  assert.equal(prepared.url, C6_WEBHOOKS_URL.SANDBOX);
+  assert.equal(prepared.jsonBody?.service, 'BANK_SLIP');
+  assert.match(String(prepared.jsonBody?.url || ''), /token=\[redacted\]/);
+  assert.doesNotMatch(JSON.stringify(prepared.jsonBody), /token=test/);
+  assert.throws(
+    () =>
+      authorizeC6HomologB07({
+        role: 'SUPER_ADMIN',
+        confirmation: 'WRONG',
+        credentials: blockedHomologCreds(),
+        callbackUrl,
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+      }),
+    (err: unknown) => err instanceof Error && /CADASTRAR_B07_WEBHOOK_SANDBOX/.test(err.message),
+  );
+  assert.throws(
+    () =>
+      prepareC6WebhookRegister(blockedHomologCreds(), {
+        url: 'http://insecure.example/hook',
+        service: 'BANK_SLIP',
+      }),
+    C6BoletoValidationError,
+  );
+  assert.equal(C6_BOLETO_HOMOLOG_CASES.B_07.readyToExecute, false);
+  console.log('OK testPreparedB07Webhook');
+}
+
 async function seedB06History(
   store: ReturnType<typeof createMemoryC6HomologIdempotencyStore>,
   ref: string,
@@ -1176,6 +1254,7 @@ async function main() {
   testPreparedB03SandboxPayload();
   testPreparedB04SandboxPayload();
   testPreparedB05AndB06();
+  testPreparedB07Webhook();
   await testB06ThirdAttemptPreservesHistory();
   await testB05ReadOauthReusesCache();
   await testB02EmitOauthReusesCacheAndDoesNotRetry502();

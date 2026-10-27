@@ -21,6 +21,17 @@ import {
   getC6BankSlipsHost,
 } from '@/lib/banking/c6/c6BoletoEndpoints';
 import {
+  buildC6WebhookConsultUrl,
+  buildC6WebhookRegisterUrl,
+  getC6WebhooksHost,
+  redactC6WebhookUrl,
+} from '@/lib/banking/c6/c6WebhookEndpoints';
+import {
+  C6_NOTIFICATIONS_REGISTER_METHOD,
+  C6_NOTIFICATIONS_SERVICE,
+  type C6WebhookRegisterBody,
+} from '@/lib/banking/c6/c6NotificationsOpenApi';
+import {
   evidenceFromPreparedC6Boleto,
   inspectC6BoletoPdfPayload,
   isC6BoletoPdfPayloadValid,
@@ -267,6 +278,74 @@ export function prepareC6BankSlipCancel(
   };
 }
 
+export function prepareC6WebhookRegister(
+  creds: Pick<C6AuthCredentials, 'companyId' | 'environment'>,
+  input: C6WebhookRegisterBody,
+  options?: { accessToken?: string },
+): C6BoletoPreparedHttp {
+  if (!String(creds.companyId || '').trim()) {
+    throw new C6BoletoCompanyIsolationError('companyId C6 obrigatório para isolamento multiempresa.');
+  }
+  const callbackUrl = String(input.url || '').trim();
+  if (!callbackUrl.startsWith('https://')) {
+    throw new C6BoletoValidationError('Webhook C6 exige URL HTTPS.', ['url']);
+  }
+  const service = String(input.service || '').trim();
+  if (service !== C6_NOTIFICATIONS_SERVICE) {
+    throw new C6BoletoValidationError('B_07 cadastra somente service BANK_SLIP.', ['service']);
+  }
+  const body: C6WebhookRegisterBody = { url: callbackUrl, service: C6_NOTIFICATIONS_SERVICE };
+  const url = buildC6WebhookRegisterUrl(creds.environment);
+  const host = getC6WebhooksHost(creds.environment);
+  return {
+    companyId: String(creds.companyId || '').trim(),
+    environment: creds.environment,
+    operation: 'webhook',
+    method: C6_NOTIFICATIONS_REGISTER_METHOD,
+    url,
+    host,
+    path: pathFromUrl(url, host),
+    headers: withAuthHeaders(
+      { 'Content-Type': JSON_CONTENT_TYPE, Accept: JSON_CONTENT_TYPE },
+      options?.accessToken,
+    ),
+    body: JSON.stringify(body),
+    jsonBody: {
+      url: redactC6WebhookUrl(callbackUrl),
+      service: body.service,
+    },
+    billingScheme: null,
+  };
+}
+
+export function prepareC6WebhookConsult(
+  creds: Pick<C6AuthCredentials, 'companyId' | 'environment'>,
+  options?: { accessToken?: string },
+): C6BoletoPreparedHttp {
+  if (!String(creds.companyId || '').trim()) {
+    throw new C6BoletoCompanyIsolationError('companyId C6 obrigatório para isolamento multiempresa.');
+  }
+  const url = buildC6WebhookConsultUrl(creds.environment);
+  const host = getC6WebhooksHost(creds.environment);
+  return {
+    companyId: String(creds.companyId || '').trim(),
+    environment: creds.environment,
+    operation: 'webhook',
+    method: 'GET',
+    url,
+    host,
+    path: pathFromUrl(url, host),
+    headers: sanitizeC6BoletoGetHeaders(
+      withAuthHeaders({ Accept: JSON_CONTENT_TYPE }, options?.accessToken),
+      'GET',
+      null,
+    ),
+    body: null,
+    jsonBody: null,
+    billingScheme: null,
+  };
+}
+
 function isC6SandboxLiveExecute(
   environment: BankEnvironment,
   options?: C6BoletoExecuteOptions,
@@ -501,6 +580,15 @@ export async function executeC6BankSlipCancel(
 ): Promise<C6BoletoExecuteResult> {
   const prepared = prepareC6BankSlipCancel(creds, bankSlipId);
   return executePrepared(creds, prepared, options, options?.testCase || 'B_08');
+}
+
+export async function executeC6WebhookRegister(
+  creds: C6AuthCredentials,
+  input: C6WebhookRegisterBody,
+  options?: C6BoletoExecuteOptions,
+): Promise<C6BoletoExecuteResult> {
+  const prepared = prepareC6WebhookRegister(creds, input, { accessToken: options?.accessToken });
+  return executePrepared(creds, prepared, options, options?.testCase || 'B_07');
 }
 
 export function capturePreparedC6BoletoEvidence(

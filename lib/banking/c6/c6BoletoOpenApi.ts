@@ -134,6 +134,7 @@ export const C6_BOLETO_OPERATIONS = {
   get: { method: 'GET', path: '/v1/bank_slips/{id}', successStatus: 200 },
   pdf: { method: 'GET', path: '/v1/bank_slips/{id}/pdf', successStatus: 200 },
   cancel: { method: 'PUT', path: '/v1/bank_slips/{id}/cancel', successStatus: 204 },
+  webhook: { method: 'POST', path: '/v1/webhooks/', successStatus: 200 },
 } as const;
 
 export type C6BoletoOperation = keyof typeof C6_BOLETO_OPERATIONS;

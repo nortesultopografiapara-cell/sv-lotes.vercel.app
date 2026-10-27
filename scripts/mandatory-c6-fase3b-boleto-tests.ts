@@ -144,6 +144,8 @@ function testOpenApiContract() {
   assert.equal(C6_BOLETO_OPERATIONS.get.successStatus, 200);
   assert.equal(C6_BOLETO_OPERATIONS.pdf.successStatus, 200);
   assert.equal(C6_BOLETO_OPERATIONS.cancel.successStatus, 204);
+  assert.equal(C6_BOLETO_OPERATIONS.webhook.successStatus, 200);
+  assert.equal(Object.prototype.hasOwnProperty.call(spec.paths, '/webhooks/'), false);
   assert.deepEqual(
     Object.keys(spec.components.schemas.bank_slip_alter_request.properties),
     [...C6_BOLETO_ALTER_ALLOWED_FIELDS],

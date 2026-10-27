@@ -74,8 +74,16 @@ function sanitizeJsonValue(value: unknown, key = ''): unknown {
     return maskTaxId(value);
   }
   if (lower.includes('email')) return '[email-redacted]';
-  if (lower.includes('authorization') || lower.includes('access_token') || lower.includes('secret')) {
+  if (
+    lower.includes('authorization') ||
+    lower.includes('access_token') ||
+    lower.includes('secret') ||
+    lower.includes('token')
+  ) {
     return '[redacted]';
+  }
+  if (typeof value === 'string' && /[?&]token=/i.test(value)) {
+    return String(value).replace(/([?&]token=)[^&]*/gi, '$1[redacted]');
   }
   if (lower.includes('base64') || lower.includes('pdf')) {
     const len = String(value || '').length;

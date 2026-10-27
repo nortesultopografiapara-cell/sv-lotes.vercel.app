@@ -59,6 +59,9 @@ export {
   prepareC6BankSlipCreate,
   prepareC6BankSlipGet,
   prepareC6BankSlipPdf,
+  prepareC6WebhookConsult,
+  prepareC6WebhookRegister,
+  executeC6WebhookRegister,
 } from '@/lib/banking/c6/c6BoletoClient';
 export {
   assertC6BoletoEvidencePublicSafe,

@@ -17,7 +17,8 @@ export function c6HomologBlockedIfSensitive(payload: unknown): NextResponse | nu
     json.includes('BEGIN CERTIFICATE') ||
     json.includes('BEGIN PRIVATE KEY') ||
     json.includes('client_secret') ||
-    json.includes('clientSecret')
+    json.includes('clientSecret') ||
+    /[?&]token=(?!\[redacted\])/i.test(json)
   ) {
     return NextResponse.json({ error: 'Resposta bloqueada por segurança.' }, { status: 500 });
   }
