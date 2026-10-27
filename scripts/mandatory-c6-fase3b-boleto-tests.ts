@@ -206,6 +206,39 @@ function testB01ValidationSuccessAndFailures() {
   );
   assert.equal(C6_BOLETO_CHARGE_TYPES.includes('V'), true);
   assert.equal(C6_BOLETO_CHARGE_TYPES.includes('P'), true);
+  const withDiscount = buildC6BankSlipCreateBody(
+    b01Input({
+      external_reference_id: 'B03A000001',
+      discount: { discount_type: 'V', first: { value: 15, dead_line: 5 } },
+    }),
+    now,
+  );
+  assert.deepEqual(withDiscount.discount, {
+    discount_type: 'V',
+    first: { value: 15, dead_line: 5 },
+  });
+  assert.throws(
+    () =>
+      buildC6BankSlipCreateBody(
+        b01Input({ discount: { discount_type: 'X' as 'V', first: { value: 15, dead_line: 5 } } }),
+        now,
+      ),
+    C6BoletoValidationError,
+  );
+  assert.throws(
+    () =>
+      buildC6BankSlipCreateBody(
+        b01Input({
+          discount: {
+            discount_type: 'V',
+            first: { value: 15, dead_line: 5 },
+            second: { value: 10, dead_line: 5 },
+          },
+        }),
+        now,
+      ),
+    C6BoletoValidationError,
+  );
   console.log('OK testB01ValidationSuccessAndFailures');
 }
 

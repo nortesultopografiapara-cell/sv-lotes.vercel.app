@@ -88,7 +88,11 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
     roteiroExpectedStatus: 201,
     openapiExpectedStatus: 201,
     evidenceRequired: 'HTTP status e body sanitizado, incluindo discount retornado.',
-    notes: ['Não executar nesta etapa.'],
+    notes: [
+      'OpenAPI 1.7.2: discount.discount_type V|P; first/second/third com value e dead_line (dias antes do vencimento, decrescente).',
+      'Referência preparada B03S261027. Valor 300, desconto V R$ 15, dead_line 5 (limite 2026-11-20), vencimento 2026-11-25.',
+      'Não reutiliza B01S261027 nem B02S261027. Não executar POST nesta etapa.',
+    ],
     returnedStatus: null,
     returnedBody: null,
     readyToExecute: false,

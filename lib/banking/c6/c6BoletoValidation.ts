@@ -20,6 +20,8 @@ import type {
   C6BankSlipAlterRequest,
   C6BankSlipCreateRequest,
   C6BoletoCreateInput,
+  C6BoletoDiscount,
+  C6BoletoDiscountDetails,
 } from '@/lib/banking/c6/c6BoletoTypes';
 
 const BR_UFS = new Set([
@@ -296,7 +298,7 @@ function assertOptionalChargeExtras(input: {
     extra.instructions = instructions;
   }
 
-  if (input.discount) extra.discount = input.discount;
+  if (input.discount) extra.discount = assertC6Discount(input.discount);
   if (input.interest) extra.interest = assertC6ChargeAddon(input.interest, 'interest');
   if (input.fine) extra.fine = assertC6ChargeAddon(input.fine, 'fine');
 
@@ -334,6 +336,62 @@ function assertC6ChargeAddon(
     );
   }
   return { type: type as 'V' | 'P', value: Number(value.toFixed(2)), dead_line: deadLine };
+}
+
+function assertC6DiscountDetails(input: unknown, field: string): C6BoletoDiscountDetails {
+  const row = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const value = Number(row.value);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new C6BoletoValidationError(`${field}.value deve ser maior que zero.`, [`${field}.value`]);
+  }
+  const deadLine = Number(row.dead_line);
+  if (!Number.isInteger(deadLine) || deadLine < 0) {
+    throw new C6BoletoValidationError(
+      `${field}.dead_line deve ser inteiro ≥ 0 (dias antes do vencimento).`,
+      [`${field}.dead_line`],
+    );
+  }
+  return { value: Number(value.toFixed(2)), dead_line: deadLine };
+}
+
+/** OpenAPI 1.7.2: discount_type V|P; first/second/third com value e dead_line decrescente. */
+export function assertC6Discount(input: C6BoletoDiscount): C6BoletoDiscount {
+  const type = String(input.discount_type || '').trim().toUpperCase();
+  if (type !== 'V' && type !== 'P') {
+    throw new C6BoletoValidationError(
+      'discount.discount_type deve ser "V" (valor) ou "P" (percentual).',
+      ['discount.discount_type'],
+    );
+  }
+  if (!input.first) {
+    throw new C6BoletoValidationError('discount.first é obrigatório quando há desconto.', ['discount.first']);
+  }
+  const first = assertC6DiscountDetails(input.first, 'discount.first');
+  const out: C6BoletoDiscount = { discount_type: type as 'V' | 'P', first };
+  if (input.second) {
+    const second = assertC6DiscountDetails(input.second, 'discount.second');
+    if (second.dead_line >= first.dead_line) {
+      throw new C6BoletoValidationError(
+        'discount.second.dead_line deve ser menor que discount.first.dead_line.',
+        ['discount.second.dead_line'],
+      );
+    }
+    out.second = second;
+  }
+  if (input.third) {
+    if (!out.second) {
+      throw new C6BoletoValidationError('discount.third exige discount.second.', ['discount.third']);
+    }
+    const third = assertC6DiscountDetails(input.third, 'discount.third');
+    if (third.dead_line >= out.second.dead_line) {
+      throw new C6BoletoValidationError(
+        'discount.third.dead_line deve ser menor que discount.second.dead_line.',
+        ['discount.third.dead_line'],
+      );
+    }
+    out.third = third;
+  }
+  return out;
 }
 
 export function buildC6BankSlipCreateBody(
@@ -390,7 +448,7 @@ export function buildC6BankSlipAlterBody(input: C6BankSlipAlterRequest, now?: Da
   const body: C6BankSlipAlterRequest = {};
   if (input.amount != null) body.amount = assertAmount(input.amount);
   if (input.due_date != null) body.due_date = assertDueDate(input.due_date, now);
-  if (input.discount) body.discount = input.discount;
+  if (input.discount) body.discount = assertC6Discount(input.discount);
   if (input.interest) body.interest = assertC6ChargeAddon(input.interest, 'interest');
   if (input.fine) body.fine = assertC6ChargeAddon(input.fine, 'fine');
   if (Object.keys(body).length < 1) {

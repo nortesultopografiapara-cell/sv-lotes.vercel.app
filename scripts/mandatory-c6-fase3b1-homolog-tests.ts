@@ -24,6 +24,10 @@ import {
   requestC6HomologB02EmitAccessToken,
 } from '../lib/banking/c6/c6BoletoHomologB02';
 import {
+  C6_B03_CONFIRMATION_PHRASE,
+  authorizeC6HomologB03,
+} from '../lib/banking/c6/c6BoletoHomologB03';
+import {
   mapC6AuthHttpError,
   type C6AuthCredentials,
   type C6AuthFetchFn,
@@ -58,6 +62,10 @@ import {
   C6_B02_SANDBOX_PREPARED_REF,
   buildC6HomologB02SandboxPayload,
 } from './develop/c6-homolog-b02-sandbox-ready';
+import {
+  C6_B03_SANDBOX_PREPARED_REF,
+  buildC6HomologB03SandboxPayload,
+} from './develop/c6-homolog-b03-sandbox-ready';
 import { C6_BOLETO_EXTERNAL_REFERENCE_PATTERN } from '../lib/banking/c6/c6BoletoOpenApi';
 
 const root = process.cwd();
@@ -358,6 +366,8 @@ function testWebhookGapAndNoSalesWiring() {
   assert.doesNotMatch(central, /homolog\/b01/);
   assert.doesNotMatch(sale, /homolog\/b02/);
   assert.doesNotMatch(central, /homolog\/b02/);
+  assert.doesNotMatch(sale, /homolog\/b03/);
+  assert.doesNotMatch(central, /homolog\/b03/);
   const middleware = read('middleware.ts');
   assert.match(middleware, /isC6HomologApi/);
   assert.match(middleware, /\/api\/banking\/c6\/homolog/);
@@ -403,6 +413,20 @@ function testWebhookGapAndNoSalesWiring() {
   assert.doesNotMatch(routeB02, /accessToken:/);
   assert.doesNotMatch(routeB02, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
   assert.doesNotMatch(routeB02, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
+  const routeB03 = read('app/api/banking/c6/homolog/b03/route.ts');
+  assert.match(routeB03, /export async function GET/);
+  assert.match(routeB03, /executeC6HomologB03WithIdempotency/);
+  assert.match(routeB03, /EMITIR_B03_SANDBOX/);
+  assert.match(routeB03, /B03S261027/);
+  assert.match(routeB03, /C6_B01_FORBIDDEN_REF/);
+  assert.match(routeB03, /C6_B02_FORBIDDEN_REF/);
+  assert.match(routeB03, /não reutiliza B_01\/B_02/);
+  assert.match(routeB03, /requestC6HomologB02EmitAccessToken/);
+  assert.equal((routeB03.match(/bypassCache: true/g) || []).length, 1);
+  assert.doesNotMatch(routeB03, /fetchFn:/);
+  assert.doesNotMatch(routeB03, /accessToken:/);
+  assert.doesNotMatch(routeB03, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
+  assert.doesNotMatch(routeB03, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
   console.log('OK testWebhookGapAndNoSalesWiring');
 }
 
@@ -515,6 +539,85 @@ function testPreparedB02SandboxPayload() {
     C6BoletoValidationError,
   );
   console.log('OK testPreparedB02SandboxPayload');
+}
+
+function testPreparedB03SandboxPayload() {
+  assert.equal(C6_BOLETO_EXTERNAL_REFERENCE_PATTERN.test(C6_B03_SANDBOX_PREPARED_REF), true);
+  assert.equal(C6_B03_SANDBOX_PREPARED_REF, 'B03S261027');
+  assert.notEqual(C6_B03_SANDBOX_PREPARED_REF, C6_B01_SANDBOX_PREPARED_REF);
+  assert.notEqual(C6_B03_SANDBOX_PREPARED_REF, C6_B02_SANDBOX_PREPARED_REF);
+  const prepared = buildC6HomologB03SandboxPayload(C6_B01_SANDBOX_COMPANY_ID);
+  const body = buildC6BankSlipCreateBody(prepared, now);
+  assert.equal(body.external_reference_id, 'B03S261027');
+  assert.equal(body.amount, 300);
+  assert.equal(body.due_date, '2026-11-25');
+  assert.equal(body.billing_scheme, '21');
+  assert.deepEqual(body.discount, {
+    discount_type: 'V',
+    first: { value: 15, dead_line: 5 },
+  });
+  assert.equal(C6_BOLETO_HOMOLOG_CASES.B_03.readyToExecute, false);
+  const authorized = authorizeC6HomologB03({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B03_CONFIRMATION_PHRASE,
+    credentials: {
+      companyId: C6_B01_SANDBOX_COMPANY_ID,
+      integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+      environment: 'SANDBOX',
+      clientId: 'blocked',
+      clientSecret: 'blocked',
+      certificatePem: 'blocked',
+      privateKeyPem: 'blocked',
+    },
+    payload: prepared,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+    now,
+  });
+  assert.equal((authorized.jsonBody?.discount as { discount_type?: string } | undefined)?.discount_type, 'V');
+  assert.throws(
+    () =>
+      authorizeC6HomologB03({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B03_CONFIRMATION_PHRASE,
+        credentials: {
+          companyId: C6_B01_SANDBOX_COMPANY_ID,
+          integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+          environment: 'SANDBOX',
+          clientId: 'blocked',
+          clientSecret: 'blocked',
+          certificatePem: 'blocked',
+          privateKeyPem: 'blocked',
+        },
+        payload: { ...prepared, external_reference_id: C6_B01_SANDBOX_PREPARED_REF },
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  assert.throws(
+    () =>
+      authorizeC6HomologB03({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B03_CONFIRMATION_PHRASE,
+        credentials: {
+          companyId: C6_B01_SANDBOX_COMPANY_ID,
+          integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+          environment: 'SANDBOX',
+          clientId: 'blocked',
+          clientSecret: 'blocked',
+          certificatePem: 'blocked',
+          privateKeyPem: 'blocked',
+        },
+        payload: { ...prepared, external_reference_id: C6_B02_SANDBOX_PREPARED_REF },
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  console.log('OK testPreparedB03SandboxPayload');
 }
 
 async function testB02EmitOauthReusesCacheAndDoesNotRetry502() {
@@ -681,6 +784,7 @@ async function main() {
   testWebhookGapAndNoSalesWiring();
   testPreparedB01SandboxPayload();
   testPreparedB02SandboxPayload();
+  testPreparedB03SandboxPayload();
   await testB02EmitOauthReusesCacheAndDoesNotRetry502();
   console.log('ALL mandatory-c6-fase3b1-homolog-tests passed');
 }
