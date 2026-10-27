@@ -41,11 +41,13 @@ import {
   C6_HOMOLOG_B03_BANK_SLIP_ID,
 } from '@/lib/banking/c6/c6BoletoHomologIssuedIds';
 
-export const C6_B06_CONFIRMATION_PHRASE = 'CONSULTAR_B06_PDF_SANDBOX';
+export const C6_B06_CONFIRMATION_PHRASE = 'CONSULTAR_B06_TERCEIRA_TENTATIVA_SANDBOX';
 /** Primeira tentativa Sandbox. HTTP 406 gravado como UNKNOWN. Não sobrescrever. */
 export const C6_B06_FIRST_ATTEMPT_REF = 'B06S261027';
-/** Próxima tentativa autorizada, vinculada à 406 anterior. */
-export const C6_B06_IDEMPOTENCY_REF = 'B06R261027';
+/** Segunda tentativa. HTTP 400 gravado como FAILED. Não sobrescrever. */
+export const C6_B06_SECOND_ATTEMPT_REF = 'B06R261027';
+/** Terceira tentativa autorizada: Accept application/pdf, sem Content-Type. */
+export const C6_B06_IDEMPOTENCY_REF = 'B06T261027';
 export const C6_B06_AUTHORIZED_BANK_SLIP_ID = C6_HOMOLOG_B01_BANK_SLIP_ID;
 export const C6_B06_SOURCE_AMOUNT = 123.45;
 export const C6_B06_SOURCE_DUE = '2026-11-15';
@@ -179,7 +181,7 @@ export async function executeC6HomologB06WithIdempotency(
       amount: C6_B06_SOURCE_AMOUNT,
       dueDate: C6_B06_SOURCE_DUE,
       billingScheme: '21',
-      extras: `pdf:${C6_B06_AUTHORIZED_BANK_SLIP_ID}:accept-json`,
+      extras: `pdf:${C6_B06_AUTHORIZED_BANK_SLIP_ID}:accept-pdf-no-ct`,
     },
     now: options.now || input.now,
     live: Boolean(options.fetchFn) || live,

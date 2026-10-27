@@ -65,6 +65,7 @@ export {
   collectC6HomologWordEvidence,
   formatC6BoletoEvidenceReport,
   inspectC6BoletoPdfPayload,
+  isC6BoletoPdfPayloadValid,
   toC6BoletoEvidencePublic,
 } from '@/lib/banking/c6/c6BoletoEvidence';
 export {

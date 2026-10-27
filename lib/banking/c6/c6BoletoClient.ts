@@ -22,6 +22,8 @@ import {
 } from '@/lib/banking/c6/c6BoletoEndpoints';
 import {
   evidenceFromPreparedC6Boleto,
+  inspectC6BoletoPdfPayload,
+  isC6BoletoPdfPayloadValid,
   type C6BoletoEvidencePublic,
 } from '@/lib/banking/c6/c6BoletoEvidence';
 import {
@@ -109,6 +111,20 @@ function withAuthHeaders(
   const headers = { ...partnerHeaders(), ...extra };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return headers;
+}
+
+/** GET sem body não envia Content-Type — Node https também não deve inferir um. */
+export function sanitizeC6BoletoGetHeaders(
+  headers: Record<string, string>,
+  method: string,
+  body?: string | null,
+): Record<string, string> {
+  const out = { ...headers };
+  if (String(method || '').toUpperCase() !== 'GET' || body) return out;
+  for (const key of Object.keys(out)) {
+    if (key.toLowerCase() === 'content-type') delete out[key];
+  }
+  return out;
 }
 
 export function prepareC6BankSlipCreate(
@@ -211,7 +227,11 @@ export function prepareC6BankSlipPdf(
     url,
     host,
     path: pathFromUrl(url, host),
-    headers: withAuthHeaders({ Accept: C6_BOLETO_PDF_ACCEPT }, options?.accessToken),
+    headers: sanitizeC6BoletoGetHeaders(
+      withAuthHeaders({ Accept: C6_BOLETO_PDF_ACCEPT }, options?.accessToken),
+      C6_BOLETO_OPERATIONS.pdf.method,
+      null,
+    ),
     body: null,
     jsonBody: null,
     billingScheme: null,
@@ -351,7 +371,14 @@ async function executePrepared(
   assertExecuteGate(creds.environment, options);
 
   const accessToken = await resolveAccessToken(creds, options);
-  const headers = { ...prepared.headers, Authorization: `Bearer ${accessToken}` };
+  const headers =
+    prepared.operation === 'pdf'
+      ? sanitizeC6BoletoGetHeaders(
+          { ...prepared.headers, Authorization: `Bearer ${accessToken}` },
+          prepared.method,
+          prepared.body,
+        )
+      : { ...prepared.headers, Authorization: `Bearer ${accessToken}` };
   const fetchFn = options?.fetchFn || defaultBoletoFetch;
 
   if (!options?.fetchFn) {
@@ -381,8 +408,25 @@ async function executePrepared(
     });
 
     const expected = C6_BOLETO_OPERATIONS[prepared.operation].successStatus;
-    const ok = res.status === expected;
+    const pdfInspect =
+      prepared.operation === 'pdf'
+        ? inspectC6BoletoPdfPayload({
+            bodyText: res.bodyText,
+            contentType: res.contentType,
+            httpStatus: res.status,
+            pdfMagic: res.pdfMagic,
+          })
+        : null;
+    const pdfOk = prepared.operation !== 'pdf' || isC6BoletoPdfPayloadValid(pdfInspect);
+    const ok = res.status === expected && pdfOk;
     const liveHttp = isC6SandboxLiveExecute(creds.environment, options) && !options?.fetchFn;
+    const message = !pdfOk && res.status === expected
+      ? 'HTTP 200 sem PDF válido (%PDF-).'
+      : ok
+        ? liveHttp
+          ? 'Boleto C6 Sandbox emitido.'
+          : 'Resposta simulada do boleto C6. Status efetivo registrado sem forçar divergências do roteiro.'
+        : `C6 retornou HTTP ${res.status}. Status efetivo registrado.`;
     const evidence = evidenceFromPreparedC6Boleto(
       { ...prepared, headers: { ...headers, Authorization: 'Bearer [redacted]' } },
       {
@@ -394,11 +438,7 @@ async function executePrepared(
         responseText: res.bodyText,
         contentType: res.contentType,
         pdfMagic: res.pdfMagic,
-        message: ok
-          ? liveHttp
-            ? 'Boleto C6 Sandbox emitido.'
-            : 'Resposta simulada do boleto C6. Status efetivo registrado sem forçar divergências do roteiro.'
-          : `C6 retornou HTTP ${res.status}. Status efetivo registrado.`,
+        message,
       },
     );
 

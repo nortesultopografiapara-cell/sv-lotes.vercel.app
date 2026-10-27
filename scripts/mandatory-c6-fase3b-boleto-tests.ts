@@ -34,12 +34,14 @@ import {
   prepareC6BankSlipCreate,
   prepareC6BankSlipGet,
   prepareC6BankSlipPdf,
+  sanitizeC6BoletoGetHeaders,
   type C6BoletoFetchFn,
 } from '../lib/banking/c6/c6BoletoClient';
 import {
   assertC6BoletoEvidencePublicSafe,
   formatC6BoletoEvidenceReport,
   inspectC6BoletoPdfPayload,
+  isC6BoletoPdfPayloadValid,
   parseC6BoletoResponseBody,
 } from '../lib/banking/c6/c6BoletoEvidence';
 import {
@@ -277,9 +279,25 @@ function testPreparedSecondaryOperations() {
   const pdfReq = prepareC6BankSlipPdf(credsA, BANK_SLIP_ID);
   assert.equal(pdfReq.method, 'GET');
   assert.match(pdfReq.url, /\/pdf$/);
-  assert.equal(pdfReq.headers.Accept, C6_BOLETO_PDF_ACCEPT);
+  assert.equal(C6_BOLETO_PDF_ACCEPT, 'application/pdf');
+  assert.equal(pdfReq.headers.Accept, 'application/pdf');
   assert.equal(pdfReq.headers['Content-Type'], undefined);
+  assert.equal(
+    Object.keys(pdfReq.headers).some((key) => key.toLowerCase() === 'content-type'),
+    false,
+  );
   assert.equal(pdfReq.body, null);
+  const stripped = sanitizeC6BoletoGetHeaders(
+    {
+      Accept: 'application/pdf',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: 'Bearer x',
+    },
+    'GET',
+    null,
+  );
+  assert.equal(stripped['Content-Type'], undefined);
+  assert.equal(stripped.Accept, 'application/pdf');
 
   const cancelReq = prepareC6BankSlipCancel(credsA, BANK_SLIP_ID);
   assert.equal(cancelReq.method, 'PUT');
@@ -350,6 +368,20 @@ function testPdfInspectBinaryBase64AndHttp406() {
   assert.equal(failed.kind, 'problem-json');
   assert.equal(failed.pdfMagicOk, false);
   assert.equal(failed.bytes, null);
+  assert.equal(isC6BoletoPdfPayloadValid(binary), true);
+  assert.equal(isC6BoletoPdfPayloadValid(failed), false);
+  const http400 = inspectC6BoletoPdfPayload({
+    bodyText: JSON.stringify({
+      type: 'https://developers.c6bank.com.br/v1/error/invalid_request',
+      title: 'Requisição inválida.',
+      status: 400,
+      detail: 'Request Accept header must be application/pdf',
+    }),
+    contentType: 'application/problem+json',
+    httpStatus: 400,
+  });
+  assert.equal(http400.kind, 'problem-json');
+  assert.equal(isC6BoletoPdfPayloadValid(http400), false);
   console.log('OK testPdfInspectBinaryBase64AndHttp406');
 }
 
@@ -522,7 +554,15 @@ async function testSimulatedSecondaryOps() {
   const pdfRes = await executeC6BankSlipPdf(credsA, BANK_SLIP_ID, {
     accessToken: TOKEN,
     allowSimulatedHttp: true,
-    fetchFn: async () => ({ status: 200, bodyText: '%PDF-1.7 fake', contentType: 'application/pdf' }),
+    fetchFn: async (_url, init) => {
+      assert.equal(init.headers.Accept, 'application/pdf');
+      assert.equal(init.headers['Content-Type'], undefined);
+      assert.equal(
+        Object.keys(init.headers).some((key) => key.toLowerCase() === 'content-type'),
+        false,
+      );
+      return { status: 200, bodyText: '%PDF-1.7 fake', contentType: 'application/pdf', pdfMagic: true };
+    },
     testCase: 'B_06',
   });
   assert.equal(pdfRes.ok, true);
@@ -563,6 +603,41 @@ async function testSimulatedSecondaryOps() {
   assert.equal(pdf406.httpStatus, 406);
   assert.equal(pdf406.evidence.success, false);
   assert.equal(pdf406.evidence.pdfInspect?.kind, 'problem-json');
+
+  const pdf400 = await executeC6BankSlipPdf(credsA, BANK_SLIP_ID, {
+    accessToken: TOKEN,
+    allowSimulatedHttp: true,
+    fetchFn: async () => ({
+      status: 400,
+      bodyText: JSON.stringify({
+        type: 'https://developers.c6bank.com.br/v1/error/invalid_request',
+        title: 'Requisição inválida.',
+        status: 400,
+        detail: 'Request Accept header must be application/pdf',
+      }),
+      contentType: 'application/problem+json',
+    }),
+    testCase: 'B_06',
+  });
+  assert.equal(pdf400.ok, false);
+  assert.equal(pdf400.httpStatus, 400);
+  assert.equal(pdf400.evidence.success, false);
+
+  const pdfInvalid = await executeC6BankSlipPdf(credsA, BANK_SLIP_ID, {
+    accessToken: TOKEN,
+    allowSimulatedHttp: true,
+    fetchFn: async () => ({
+      status: 200,
+      bodyText: 'not-a-pdf',
+      contentType: 'application/pdf',
+      pdfMagic: false,
+    }),
+    testCase: 'B_06',
+  });
+  assert.equal(pdfInvalid.httpStatus, 200);
+  assert.equal(pdfInvalid.ok, false);
+  assert.equal(pdfInvalid.evidence.success, false);
+  assert.match(pdfInvalid.evidence.message, /PDF válido/);
 
   const cancelRes = await executeC6BankSlipCancel(credsA, BANK_SLIP_ID, {
     accessToken: TOKEN,

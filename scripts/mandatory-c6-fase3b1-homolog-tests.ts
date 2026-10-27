@@ -49,7 +49,9 @@ import {
   C6_B06_CONFIRMATION_PHRASE,
   C6_B06_FIRST_ATTEMPT_REF,
   C6_B06_IDEMPOTENCY_REF,
+  C6_B06_SECOND_ATTEMPT_REF,
   authorizeC6HomologB06,
+  executeC6HomologB06WithIdempotency,
 } from '../lib/banking/c6/c6BoletoHomologB06';
 import {
   C6_HOMOLOG_B01_BANK_SLIP_ID,
@@ -102,6 +104,10 @@ import {
   buildC6HomologB03SandboxPayload,
 } from './develop/c6-homolog-b03-sandbox-ready';
 import { C6_BOLETO_EXTERNAL_REFERENCE_PATTERN } from '../lib/banking/c6/c6BoletoOpenApi';
+import {
+  C6HomologIdempotencyError,
+  createMemoryC6HomologIdempotencyStore,
+} from '../lib/banking/c6/c6HomologIdempotency';
 
 const root = process.cwd();
 const now = new Date('2026-10-26T15:00:00-03:00');
@@ -502,10 +508,11 @@ function testWebhookGapAndNoSalesWiring() {
   const routeB06 = read('app/api/banking/c6/homolog/b06/route.ts');
   assert.match(routeB06, /export async function GET/);
   assert.match(routeB06, /executeC6HomologB06WithIdempotency/);
-  assert.match(routeB06, /CONSULTAR_B06_PDF_SANDBOX/);
+  assert.match(routeB06, /CONSULTAR_B06_TERCEIRA_TENTATIVA_SANDBOX/);
   assert.match(routeB06, /C6_B06_AUTHORIZED_BANK_SLIP_ID/);
   assert.match(routeB06, /C6_B06_FIRST_ATTEMPT_REF/);
-  assert.match(routeB06, /B06R261027|C6_B06_IDEMPOTENCY_REF/);
+  assert.match(routeB06, /C6_B06_SECOND_ATTEMPT_REF/);
+  assert.match(routeB06, /B06T261027|C6_B06_IDEMPOTENCY_REF/);
   assert.match(routeB06, /C6_BOLETO_PDF_ACCEPT/);
   assert.doesNotMatch(routeB06, /accept: 'application\/pdf'/);
   assert.match(routeB06, /requestC6HomologReadAccessToken/);
@@ -808,7 +815,8 @@ function testPreparedB05AndB06() {
   assert.equal(C6_B06_AUTHORIZED_BANK_SLIP_ID, C6_HOMOLOG_B01_BANK_SLIP_ID);
   assert.equal(C6_B05_IDEMPOTENCY_REF, 'B05S261027');
   assert.equal(C6_B06_FIRST_ATTEMPT_REF, 'B06S261027');
-  assert.equal(C6_B06_IDEMPOTENCY_REF, 'B06R261027');
+  assert.equal(C6_B06_SECOND_ATTEMPT_REF, 'B06R261027');
+  assert.equal(C6_B06_IDEMPOTENCY_REF, 'B06T261027');
   assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B02_BANK_SLIP_ID), true);
   assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B03_BANK_SLIP_ID), true);
   const getPrepared = authorizeC6HomologB05({
@@ -844,10 +852,123 @@ function testPreparedB05AndB06() {
   });
   assert.equal(pdfPrepared.method, 'GET');
   assert.equal(pdfPrepared.url, buildC6BankSlipPdfUrl('SANDBOX', C6_HOMOLOG_B01_BANK_SLIP_ID));
-  assert.equal(pdfPrepared.headers.Accept, 'application/json');
+  assert.equal(pdfPrepared.headers.Accept, 'application/pdf');
   assert.equal(pdfPrepared.headers['Content-Type'], undefined);
+  assert.equal(
+    Object.keys(pdfPrepared.headers).some((key) => key.toLowerCase() === 'content-type'),
+    false,
+  );
   assert.equal(C6_BOLETO_HOMOLOG_CASES.B_06.readyToExecute, false);
   console.log('OK testPreparedB05AndB06');
+}
+
+async function seedB06History(
+  store: ReturnType<typeof createMemoryC6HomologIdempotencyStore>,
+  ref: string,
+  status: 'FAILED' | 'UNKNOWN',
+  httpStatus: number,
+) {
+  const reserved = await store.reserve({
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    externalReferenceId: ref,
+    environment: 'SANDBOX',
+    scenario: 'B_06',
+    requestFingerprint: 'ab'.repeat(32),
+    now,
+  });
+  assert.equal(reserved.acquired, true);
+  const processing = await store.markProcessing({
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    externalReferenceId: ref,
+    attemptCount: 1,
+    now,
+  });
+  assert.equal(processing.acquired, true);
+  const done = await store.complete({
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    externalReferenceId: ref,
+    status,
+    attemptCount: 1,
+    httpStatus,
+    errorCode: `HTTP_${httpStatus}`,
+    errorMessage: 'historical',
+    now,
+  });
+  assert.equal(done.acquired, true);
+}
+
+async function testB06ThirdAttemptPreservesHistory() {
+  const store = createMemoryC6HomologIdempotencyStore([
+    {
+      companyId: C6_B01_SANDBOX_COMPANY_ID,
+      integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+      provider: 'C6',
+      environment: 'SANDBOX',
+    },
+  ]);
+  await seedB06History(store, C6_B06_FIRST_ATTEMPT_REF, 'UNKNOWN', 406);
+  await seedB06History(store, C6_B06_SECOND_ATTEMPT_REF, 'FAILED', 400);
+  const creds: C6AuthCredentials = {
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    environment: 'SANDBOX',
+    clientId: 'c6-client-id',
+    clientSecret: 'c6-client-secret',
+    certificatePem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
+    privateKeyPem: '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----',
+  };
+  const input = {
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B06_CONFIRMATION_PHRASE,
+    credentials: creds,
+    bankSlipId: C6_B06_AUTHORIZED_BANK_SLIP_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+    store,
+    now,
+  };
+  const ok = await executeC6HomologB06WithIdempotency(input, {
+    accessToken: TOKEN,
+    persistReservation: true,
+    fetchFn: async (_url, init) => {
+      assert.equal(init.headers.Accept, 'application/pdf');
+      assert.equal(init.headers['Content-Type'], undefined);
+      return { status: 200, bodyText: '%PDF-1.7 fake', contentType: 'application/pdf', pdfMagic: true };
+    },
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.idempotency?.externalReferenceId, 'B06T261027');
+  assert.equal(ok.idempotency?.status, 'SUCCEEDED');
+  const first = await store.get({
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    externalReferenceId: C6_B06_FIRST_ATTEMPT_REF,
+  });
+  const second = await store.get({
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    externalReferenceId: C6_B06_SECOND_ATTEMPT_REF,
+  });
+  assert.equal(first?.status, 'UNKNOWN');
+  assert.equal(first?.lastHttpStatus, 406);
+  assert.equal(second?.status, 'FAILED');
+  assert.equal(second?.lastHttpStatus, 400);
+  await assert.rejects(
+    () =>
+      executeC6HomologB06WithIdempotency(
+        { ...input, existingAtomic: ok.idempotency },
+        {
+          accessToken: TOKEN,
+          persistReservation: true,
+          fetchFn: async () => ({ status: 200, bodyText: '%PDF-1.7 fake', contentType: 'application/pdf', pdfMagic: true }),
+        },
+      ),
+    (err: unknown) => err instanceof C6HomologIdempotencyError && err.reason === 'already_succeeded',
+  );
+  console.log('OK testB06ThirdAttemptPreservesHistory');
 }
 
 async function testB05ReadOauthReusesCache() {
@@ -1055,6 +1176,7 @@ async function main() {
   testPreparedB03SandboxPayload();
   testPreparedB04SandboxPayload();
   testPreparedB05AndB06();
+  await testB06ThirdAttemptPreservesHistory();
   await testB05ReadOauthReusesCache();
   await testB02EmitOauthReusesCacheAndDoesNotRetry502();
   console.log('ALL mandatory-c6-fase3b1-homolog-tests passed');

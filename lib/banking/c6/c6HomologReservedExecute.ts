@@ -118,15 +118,20 @@ export async function executeC6HomologReservedCall(input: {
         : result.httpStatus == null && !result.ok
           ? 'NETWORK'
           : 'ok';
-    const outcome = classifyC6HomologHttpOutcome({
+    let outcome = classifyC6HomologHttpOutcome({
       httpStatus: result.httpStatus,
       transport,
       successStatuses: input.successStatuses,
     });
+    let errorCode = outcome === 'SUCCEEDED' ? null : `HTTP_${result.httpStatus ?? 'NONE'}`;
+    if (result.evidence.operation === 'pdf' && outcome === 'SUCCEEDED' && !result.ok) {
+      outcome = 'FAILED';
+      errorCode = 'PDF_INVALID';
+    }
     const row = await finish(
       outcome,
       result.httpStatus,
-      outcome === 'SUCCEEDED' ? null : `HTTP_${result.httpStatus ?? 'NONE'}`,
+      errorCode,
       result.evidence.message,
       extractC6BankSlipIdFromEvidence(result.evidence) || input.fallbackBankSlipId || null,
     );

@@ -125,6 +125,14 @@ function decodeC6PdfBase64(value: unknown): Buffer | null {
   return buf.length ? buf : null;
 }
 
+export function isC6BoletoPdfPayloadValid(inspect: C6BoletoPdfInspect | null | undefined): boolean {
+  if (!inspect) return false;
+  if (inspect.kind !== 'pdf-binary' && inspect.kind !== 'json-base64') return false;
+  if (!inspect.pdfMagicOk) return false;
+  if (inspect.bytes == null || inspect.bytes < 5) return false;
+  return true;
+}
+
 export function inspectC6BoletoPdfPayload(input: {
   bodyText?: string | null;
   contentType?: string | null;

@@ -17,6 +17,7 @@ import {
   C6_B06_CONFIRMATION_PHRASE,
   C6_B06_FIRST_ATTEMPT_REF,
   C6_B06_IDEMPOTENCY_REF,
+  C6_B06_SECOND_ATTEMPT_REF,
   assertC6HomologB06SandboxOnly,
   c6HomologB06LiveExecuteOptions,
   executeC6HomologB06WithIdempotency,
@@ -79,21 +80,25 @@ export async function GET(request: Request) {
     }
 
     const integrationId = config.id ? String(config.id) : '';
-    const previousAtomic =
-      integrationId
-        ? await loadC6HomologAtomicRow(auth.admin, {
+    const [firstAttempt, secondAttempt, existingAtomic] = integrationId
+      ? await Promise.all([
+          loadC6HomologAtomicRow(auth.admin, {
             companyId: auth.tenantId,
             integrationId,
             externalReferenceId: C6_B06_FIRST_ATTEMPT_REF,
-          })
-        : null;
-    const existingAtomic = integrationId
-      ? await loadC6HomologAtomicRow(auth.admin, {
-          companyId: auth.tenantId,
-          integrationId,
-          externalReferenceId: C6_B06_IDEMPOTENCY_REF,
-        })
-      : null;
+          }),
+          loadC6HomologAtomicRow(auth.admin, {
+            companyId: auth.tenantId,
+            integrationId,
+            externalReferenceId: C6_B06_SECOND_ATTEMPT_REF,
+          }),
+          loadC6HomologAtomicRow(auth.admin, {
+            companyId: auth.tenantId,
+            integrationId,
+            externalReferenceId: C6_B06_IDEMPOTENCY_REF,
+          }),
+        ])
+      : [null, null, null];
 
     if (!encryption.encryptionKeyConfigured) {
       return NextResponse.json(
@@ -191,10 +196,24 @@ export async function GET(request: Request) {
       },
       previousAttempt: {
         external_reference_id: C6_B06_FIRST_ATTEMPT_REF,
-        status: previousAtomic?.status || null,
-        lastHttpStatus: previousAtomic?.lastHttpStatus || null,
+        status: firstAttempt?.status || null,
+        lastHttpStatus: firstAttempt?.lastHttpStatus || null,
         mutate: false,
       },
+      previousAttempts: [
+        {
+          external_reference_id: C6_B06_FIRST_ATTEMPT_REF,
+          status: firstAttempt?.status || null,
+          lastHttpStatus: firstAttempt?.lastHttpStatus || null,
+          mutate: false,
+        },
+        {
+          external_reference_id: C6_B06_SECOND_ATTEMPT_REF,
+          status: secondAttempt?.status || null,
+          lastHttpStatus: secondAttempt?.lastHttpStatus || null,
+          mutate: false,
+        },
+      ],
       reference: {
         external_reference_id: C6_B06_IDEMPOTENCY_REF,
         available: !existingAtomic,
@@ -215,7 +234,7 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/banking/c6/homolog/b06
- * Executa GET PDF do B_01 se flag + SUPER_ADMIN + CONSULTAR_B06_PDF_SANDBOX.
+ * Executa GET PDF do B_01 se flag + SUPER_ADMIN + CONSULTAR_B06_TERCEIRA_TENTATIVA_SANDBOX.
  * Não emite.
  */
 export async function POST(request: Request) {

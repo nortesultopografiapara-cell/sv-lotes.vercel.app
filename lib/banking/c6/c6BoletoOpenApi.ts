@@ -79,11 +79,10 @@ export const C6_BOLETO_WRITE_SCOPE = 'bankslip.write' as const;
 export const C6_BOLETO_READ_SCOPE = 'bankslip.read' as const;
 
 /**
- * Accept do GET PDF. OpenAPI 1.7.2 não declara application/pdf no 200;
- * o schema `base64_pdf_file` e o GET B_05 comprovam envelope JSON.
- * HTTP 406 ocorreu com Accept: application/pdf.
+ * Accept do GET PDF. O Sandbox C6 recusou application/json (HTTP 400) e
+ * exigiu application/pdf. O 406 anterior ocorreu com Content-Type em GET sem body.
  */
-export const C6_BOLETO_PDF_ACCEPT = 'application/json' as const;
+export const C6_BOLETO_PDF_ACCEPT = 'application/pdf' as const;
 
 function parseC6OAuthScopeList(raw: string | string[] | null | undefined): string[] {
   return Array.isArray(raw)

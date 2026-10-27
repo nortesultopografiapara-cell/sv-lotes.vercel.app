@@ -145,8 +145,9 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
     openapiExpectedStatus: 200,
     evidenceRequired: 'HTTP status, content-type e tamanho do PDF. Sem Base64 completo.',
     notes: [
-      'HTTP 406 em B06S261027 com Accept application/pdf. Próxima tentativa: B06R261027, Accept application/json, sem Content-Type no GET sem body.',
-      'OpenAPI 1.7.2 documenta base64_pdf_file no JSON; GET /pdf 200 não declara application/pdf.',
+      'B06S261027 UNKNOWN HTTP 406 com Accept application/pdf e Content-Type form-urlencoded. Não sobrescrever.',
+      'B06R261027 FAILED HTTP 400: C6 exigiu Accept application/pdf e recusou application/json. Não sobrescrever.',
+      'Terceira tentativa B06T261027: Accept application/pdf, sem Content-Type no GET sem body. Validar %PDF-; HTTP 200 sem PDF válido não é SUCCEEDED.',
       'Reutiliza o id do B_01 01M5YPX04ZB8H14XAPJDA8MRV8. GET PDF não emite. Escopo bankslip.read.',
     ],
     returnedStatus: null,
