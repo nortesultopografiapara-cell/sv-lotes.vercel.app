@@ -4,7 +4,13 @@
  */
 
 import { isPlatformAdmin } from '@/lib/rls';
-import type { C6AuthCredentials } from '@/lib/banking/c6/c6AuthClient';
+import {
+  requestC6AccessToken,
+  type C6AuthCredentials,
+  type C6AuthFetchFn,
+  type C6AuthResult,
+} from '@/lib/banking/c6/c6AuthClient';
+import { assertC6BankSlipWriteScope } from '@/lib/banking/c6/c6BoletoOpenApi';
 import {
   capturePreparedC6BoletoEvidence,
   executeC6BankSlipCreate,
@@ -212,6 +218,41 @@ export function authorizeC6HomologB02(input: C6HomologB02Input): C6BoletoPrepare
 
 export function isC6HomologB02LiveAuthorized(): boolean {
   return isC6BoletoSandboxLiveAuthorized('SANDBOX');
+}
+
+/**
+ * OAuth da emissão B_02: reutiliza token em memória se ainda válido e com
+ * bankslip.write. Só chama POST /v1/auth/ se o cache não servir.
+ * Não faz retry em AUTH_UNAVAILABLE (502/503/504).
+ * Pré-voo GET continua com bypassCache para evidência AT_01 ao vivo.
+ */
+export async function requestC6HomologB02EmitAccessToken(
+  creds: C6AuthCredentials,
+  options?: {
+    fetchFn?: C6AuthFetchFn;
+    nowMs?: number;
+  },
+): Promise<C6AuthResult> {
+  const cachedOrLive = await requestC6AccessToken(creds, {
+    allowProduction: false,
+    bypassCache: false,
+    fetchFn: options?.fetchFn,
+    nowMs: options?.nowMs,
+  });
+  if (cachedOrLive.ok && cachedOrLive.fromCache) {
+    try {
+      assertC6BankSlipWriteScope(cachedOrLive.scopeRaw || cachedOrLive.scope);
+      return cachedOrLive;
+    } catch {
+      return requestC6AccessToken(creds, {
+        allowProduction: false,
+        bypassCache: true,
+        fetchFn: options?.fetchFn,
+        nowMs: options?.nowMs,
+      });
+    }
+  }
+  return cachedOrLive;
 }
 
 export function c6HomologB02LiveExecuteOptions(

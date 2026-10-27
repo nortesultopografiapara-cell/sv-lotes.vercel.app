@@ -21,7 +21,18 @@ import {
 import {
   C6_B02_CONFIRMATION_PHRASE,
   authorizeC6HomologB02,
+  requestC6HomologB02EmitAccessToken,
 } from '../lib/banking/c6/c6BoletoHomologB02';
+import {
+  mapC6AuthHttpError,
+  type C6AuthCredentials,
+  type C6AuthFetchFn,
+} from '../lib/banking/c6/c6AuthClient';
+import {
+  clearAllC6TokenCacheForTests,
+  setCachedC6Token,
+} from '../lib/banking/c6/c6TokenCache';
+import { assertC6BankSlipWriteScope, C6BoletoScopeError } from '../lib/banking/c6/c6BoletoOpenApi';
 import {
   assertC6HomologRefAvailable,
   c6HomologIdempotencyKey,
@@ -32,7 +43,6 @@ import { parseC6OAuthBodyFields } from '../lib/banking/c6/c6At01Evidence';
 import { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '../lib/banking/c6/c6EmitGuard';
 import { C6BoletoValidationError, buildC6BankSlipCreateBody } from '../lib/banking/c6/c6BoletoValidation';
 import { C6BoletoTransportError, executeC6BankSlipCreate } from '../lib/banking/c6/c6BoletoClient';
-import type { C6AuthCredentials } from '../lib/banking/c6/c6AuthClient';
 import type { C6BoletoCreateInput } from '../lib/banking/c6/c6BoletoTypes';
 import {
   assertC6BoletoEvidencePublicSafe,
@@ -387,6 +397,8 @@ function testWebhookGapAndNoSalesWiring() {
   assert.match(routeB02, /B02S261027/);
   assert.match(routeB02, /C6_B01_FORBIDDEN_REF/);
   assert.match(routeB02, /não reutiliza B_01/);
+  assert.match(routeB02, /requestC6HomologB02EmitAccessToken/);
+  assert.equal((routeB02.match(/bypassCache: true/g) || []).length, 1);
   assert.doesNotMatch(routeB02, /fetchFn:/);
   assert.doesNotMatch(routeB02, /accessToken:/);
   assert.doesNotMatch(routeB02, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
@@ -505,6 +517,158 @@ function testPreparedB02SandboxPayload() {
   console.log('OK testPreparedB02SandboxPayload');
 }
 
+async function testB02EmitOauthReusesCacheAndDoesNotRetry502() {
+  assert.equal(mapC6AuthHttpError(502), 'AUTH_UNAVAILABLE');
+  const emitCreds: C6AuthCredentials = {
+    ...creds,
+    companyId: 'company-b02-oauth',
+    integrationId: 'int-b02-oauth',
+  };
+  const writeScope = 'bankslip.write pix.read';
+
+  clearAllC6TokenCacheForTests();
+  setCachedC6Token(
+    emitCreds.companyId,
+    'SANDBOX',
+    {
+      accessToken: 'cached-b02-token',
+      expiresAtMs: Date.now() + 600_000,
+      tokenType: 'Bearer',
+      scope: writeScope,
+    },
+    emitCreds.integrationId,
+  );
+  let liveCalls = 0;
+  const blockedLive: C6AuthFetchFn = async () => {
+    liveCalls += 1;
+    throw new Error('OAuth live não deveria ser chamado com cache válido.');
+  };
+  const reused = await requestC6HomologB02EmitAccessToken(emitCreds, { fetchFn: blockedLive });
+  assert.equal(reused.ok, true);
+  if (reused.ok) {
+    assert.equal(reused.fromCache, true);
+    assert.equal(reused.accessToken, 'cached-b02-token');
+    assert.deepEqual(assertC6BankSlipWriteScope(reused.scopeRaw || reused.scope), [
+      'bankslip.write',
+      'pix.read',
+    ]);
+  }
+  assert.equal(liveCalls, 0);
+
+  liveCalls = 0;
+  const isolatedFetch: C6AuthFetchFn = async () => {
+    liveCalls += 1;
+    return {
+      status: 200,
+      bodyText: JSON.stringify({
+        access_token: 'isolated-b02-token',
+        token_type: 'Bearer',
+        expires_in: 600,
+        scope: writeScope,
+      }),
+    };
+  };
+  const otherCompany = await requestC6HomologB02EmitAccessToken(
+    { ...emitCreds, companyId: 'company-b02-other' },
+    { fetchFn: isolatedFetch },
+  );
+  assert.equal(otherCompany.ok, true);
+  if (otherCompany.ok) {
+    assert.equal(otherCompany.fromCache, false);
+    assert.equal(otherCompany.accessToken, 'isolated-b02-token');
+  }
+  assert.equal(liveCalls, 1);
+
+  liveCalls = 0;
+  const otherIntegration = await requestC6HomologB02EmitAccessToken(
+    { ...emitCreds, integrationId: 'int-b02-other' },
+    { fetchFn: isolatedFetch },
+  );
+  assert.equal(otherIntegration.ok, true);
+  if (otherIntegration.ok) {
+    assert.equal(otherIntegration.fromCache, false);
+  }
+  assert.equal(liveCalls, 1);
+
+  liveCalls = 0;
+  const productionBlocked = await requestC6HomologB02EmitAccessToken(
+    { ...emitCreds, environment: 'PRODUCTION' },
+    { fetchFn: isolatedFetch },
+  );
+  assert.equal(productionBlocked.ok, false);
+  if (!productionBlocked.ok) {
+    assert.equal(productionBlocked.code, 'PRODUCTION_AUTH_BLOCKED');
+  }
+  assert.equal(liveCalls, 0);
+
+  liveCalls = 0;
+  const stillCached = await requestC6HomologB02EmitAccessToken(emitCreds, { fetchFn: blockedLive });
+  assert.equal(stillCached.ok, true);
+  if (stillCached.ok) {
+    assert.equal(stillCached.fromCache, true);
+    assert.equal(stillCached.accessToken, 'cached-b02-token');
+  }
+  assert.equal(liveCalls, 0);
+
+  clearAllC6TokenCacheForTests();
+  setCachedC6Token(
+    emitCreds.companyId,
+    'SANDBOX',
+    {
+      accessToken: 'cached-without-write',
+      expiresAtMs: Date.now() + 600_000,
+      tokenType: 'Bearer',
+      scope: 'pix.read',
+    },
+    emitCreds.integrationId,
+  );
+  liveCalls = 0;
+  const liveWithWrite: C6AuthFetchFn = async () => {
+    liveCalls += 1;
+    return {
+      status: 200,
+      bodyText: JSON.stringify({
+        access_token: 'fresh-b02-token',
+        token_type: 'Bearer',
+        expires_in: 600,
+        scope: writeScope,
+      }),
+    };
+  };
+  const refreshed = await requestC6HomologB02EmitAccessToken(emitCreds, { fetchFn: liveWithWrite });
+  assert.equal(refreshed.ok, true);
+  if (refreshed.ok) {
+    assert.equal(refreshed.fromCache, false);
+    assert.equal(refreshed.accessToken, 'fresh-b02-token');
+    assert.deepEqual(assertC6BankSlipWriteScope(refreshed.scopeRaw || refreshed.scope), [
+      'bankslip.write',
+      'pix.read',
+    ]);
+  }
+  assert.equal(liveCalls, 1);
+
+  clearAllC6TokenCacheForTests();
+  liveCalls = 0;
+  const unavailable: C6AuthFetchFn = async () => {
+    liveCalls += 1;
+    return {
+      status: 502,
+      bodyText: JSON.stringify({ error: 'bad_gateway', access_token: 'nope' }),
+      durationMs: 88,
+    };
+  };
+  const failed = await requestC6HomologB02EmitAccessToken(emitCreds, { fetchFn: unavailable });
+  assert.equal(failed.ok, false);
+  if (!failed.ok) {
+    assert.equal(failed.code, 'AUTH_UNAVAILABLE');
+    assert.equal(failed.httpStatus, 502);
+    assert.match(failed.message, /não foram classificadas como inválidas/);
+  }
+  assert.equal(liveCalls, 1);
+  assert.throws(() => assertC6BankSlipWriteScope('pix.read'), C6BoletoScopeError);
+  console.log('OK testB02EmitOauthReusesCacheAndDoesNotRetry502');
+}
+
 async function main() {
   testOfficialCatalog();
   testRoteiroAndMatrixPresent();
@@ -517,6 +681,7 @@ async function main() {
   testWebhookGapAndNoSalesWiring();
   testPreparedB01SandboxPayload();
   testPreparedB02SandboxPayload();
+  await testB02EmitOauthReusesCacheAndDoesNotRetry502();
   console.log('ALL mandatory-c6-fase3b1-homolog-tests passed');
 }
 

@@ -20,6 +20,7 @@ import {
   c6HomologB02LiveExecuteOptions,
   executeC6HomologB02WithIdempotency,
   isC6HomologB02LiveAuthorized,
+  requestC6HomologB02EmitAccessToken,
 } from '@/lib/banking/c6/c6BoletoHomologB02';
 import { C6BoletoValidationError } from '@/lib/banking/c6/c6BoletoValidation';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
@@ -334,21 +335,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const oauth = await requestC6AccessToken(
-      {
-        companyId: auth.tenantId,
-        integrationId: secrets.integrationId,
-        environment: 'SANDBOX',
-        clientId: secrets.clientId,
-        clientSecret: secrets.clientSecret,
-        certificatePem: secrets.certificatePem,
-        privateKeyPem: secrets.privateKeyPem,
-      },
-      { allowProduction: false, bypassCache: true },
-    );
+    const oauth = await requestC6HomologB02EmitAccessToken({
+      companyId: auth.tenantId,
+      integrationId: secrets.integrationId,
+      environment: 'SANDBOX',
+      clientId: secrets.clientId,
+      clientSecret: secrets.clientSecret,
+      certificatePem: secrets.certificatePem,
+      privateKeyPem: secrets.privateKeyPem,
+    });
     if (!oauth.ok) {
       return NextResponse.json(
-        { error: oauth.message, code: oauth.code, executed: false },
+        {
+          error: oauth.message,
+          code: oauth.code,
+          executed: false,
+          oauth: {
+            ok: false,
+            host: oauth.diagnostic?.remoteHost || null,
+            httpStatus: oauth.httpStatus ?? null,
+            fromCache: false,
+            tlsCompleted: oauth.diagnostic?.tlsCompleted ?? null,
+            durationMs: oauth.diagnostic?.durationMs ?? null,
+          },
+        },
         { status: 400 },
       );
     }
