@@ -13,6 +13,7 @@ import {
   FileWarning,
   FileX,
   Handshake,
+  Info,
   Loader2,
   ScrollText,
   ShieldAlert,
@@ -38,6 +39,7 @@ import {
   canConfirmReleaseLot,
   isDeferredSaleOperation,
   isLotReleaseSaleOperation,
+  RELEASE_PREVIEW_BANK_STATUS_NOTICE,
   SALE_OPERATION_UI_GROUPS,
   SALE_OPERATION_UI_OPTIONS,
   showsTerminationSettlement,
@@ -788,6 +790,12 @@ export function ReleaseLotConfirmModal({
                       Cobranças Inter canceláveis: {preview?.openInterCharges}.
                     </p>
                   )}
+                  <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg p-3 text-xs flex gap-2">
+                    <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      {preview?.bankStatusNotice || RELEASE_PREVIEW_BANK_STATUS_NOTICE}
+                    </div>
+                  </div>
                 </section>
 
                 {(preview?.asaasBlockedCharges || 0) > 0 && (

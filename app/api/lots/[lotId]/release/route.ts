@@ -81,7 +81,17 @@ export async function GET(
     if ('error' in auth) return auth.error;
 
     const preview = await getReleaseLotPreview(auth.admin, lotId, auth.userId);
-    return NextResponse.json({ success: true, preview });
+    try {
+      JSON.stringify(preview);
+      return NextResponse.json({ success: true, preview });
+    } catch (serErr) {
+      console.error('[lots/release GET] serialize', serErr);
+      const { settlementPreview: _omit, ...rest } = preview;
+      return NextResponse.json({
+        success: true,
+        preview: { ...rest, settlementPreview: null },
+      });
+    }
   } catch (err) {
     if (err instanceof ReleaseLotError) {
       console.error('[lots/release GET]', err.code, err.stage, err.message);

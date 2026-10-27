@@ -25,6 +25,8 @@ import {
   canConfirmReleaseLot,
   RELEASE_LOT_MOTIVE_GROUPS,
   RELEASE_LOT_MOTIVE_OPTIONS,
+  RELEASE_PREVIEW_BANK_STATUS_NOTICE,
+  RELEASE_PREVIEW_BANK_STATUS_SOURCE,
   SALE_OPERATION_UI_GROUPS,
   SALE_OPERATION_UI_OPTIONS,
   saleOperationUiOption,
@@ -281,6 +283,7 @@ function testBlocksColumnMapping() {
   assert(svc.includes('resolveBlockQuadraLabel'), 'mapeia quadra');
   assert(svc.includes('resolveBlockLotLabel'), 'mapeia lote');
   assert(svc.includes('LOT_CONTEXT_LOAD_FAILED'), 'código LOT_CONTEXT_LOAD_FAILED');
+  assert(svc.includes('isMissingColumnError'), 'fallback se coluna lot_number ausente');
   assert(svc.includes("'load_lot'"), 'stage load_lot');
   assert(
     svc.includes('Não foi possível carregar os dados do lote.'),
@@ -297,7 +300,28 @@ function testServiceOrchestrationSource() {
   assert(svc.includes('getCompanyChargeStatus'), 'consulta status Asaas antes de cancelar');
   assert(svc.includes('resolveAsaasChargesForRelease'), 'resolve com sync remoto');
   assert(svc.includes('classifyRemoteAsaasStatusForRelease'), 'classifica status remoto');
-  assert(svc.includes('executeCancel: false'), 'preview só sync sem DELETE cego');
+  const previewFn = svc.slice(
+    svc.indexOf('export async function getReleaseLotPreview'),
+    svc.indexOf('type AsaasReleaseProcessResult'),
+  );
+  assert(
+    previewFn.includes('Preview usa status local'),
+    'GET preview usa status local',
+  );
+  assert(
+    !previewFn.includes('resolveAsaasChargesForRelease'),
+    'GET preview sem sync Asaas remoto',
+  );
+  assert(
+    !previewFn.includes('resolveInterChargesForRelease'),
+    'GET preview sem sync Inter remoto',
+  );
+  assert(!previewFn.includes('getCompanyChargeStatus'), 'GET preview sem GET Asaas');
+  assert(!previewFn.includes('fetchInterCobranca'), 'GET preview sem GET Inter');
+  assert(!previewFn.includes('cancelCompanyCharge'), 'GET preview sem cancelar Asaas');
+  assert(!previewFn.includes('cancelInterCobranca'), 'GET preview sem cancelar Inter');
+  assert(!previewFn.includes('.update('), 'GET preview sem UPDATE');
+  assert(!previewFn.includes('.insert('), 'GET preview sem INSERT');
   assert(svc.includes('executeCancel: true'), 'execute cancela após sync');
   assert(svc.includes("status: RECEIPT_CANCELLED_STATUS"), 'cancela parcelas unpaid');
   assert(svc.includes("status: SALE_CANCELLED_STATUS"), 'encerra venda CANCELLED');
@@ -327,6 +351,9 @@ function testServiceOrchestrationSource() {
 function testApiRoute() {
   const route = read('app/api/lots/[lotId]/release/route.ts');
   assert(route.includes('getReleaseLotPreview'), 'GET preview');
+  assert(route.includes('JSON.stringify(preview)'), 'GET valida serialização da prévia');
+  assert(route.includes("success: true, preview"), 'GET sucesso JSON');
+  assert(route.includes('Erro ao carregar prévia da liberação.'), 'GET erro JSON');
   assert(route.includes('executeReleaseLot'), 'POST execute');
   assert(route.includes('getRequestAuthUser'), 'auth');
   assert(route.includes('createAdminSupabase'), 'admin supabase');
@@ -368,6 +395,11 @@ function testGisWiring() {
   assert(modal.includes('O que acontecerá'), 'quadro de consequências');
   assert(modal.includes('Cobranças Asaas canceláveis'), 'card Asaas');
   assert(modal.includes('Cobranças bancárias canceláveis'), 'card total bancário');
+  assert(modal.includes('RELEASE_PREVIEW_BANK_STATUS_NOTICE'), 'aviso status bancário local');
+  assert(
+    modal.includes('bankStatusNotice'),
+    'prévia expõe aviso de status local',
+  );
   assert(modal.includes('Documentos preservados'), 'card documentos');
   assert(modal.includes('Parcelas pagas'), 'card pagas');
   assert(modal.includes('Parcelas pendentes'), 'card pendentes');
@@ -996,6 +1028,78 @@ function testZeroPaidReleaseDoesNotFailLoad() {
   console.log('OK testZeroPaidReleaseDoesNotFailLoad');
 }
 
+function testPreviewLocalBankStatusAndScenarios() {
+  assert(
+    RELEASE_PREVIEW_BANK_STATUS_SOURCE === 'local',
+    'fonte bancária da prévia é local',
+  );
+  assert(
+    /dados locais/i.test(RELEASE_PREVIEW_BANK_STATUS_NOTICE),
+    'aviso declara dados locais',
+  );
+  assert(
+    /confirmação da liberação consulta os bancos/i.test(RELEASE_PREVIEW_BANK_STATUS_NOTICE),
+    'aviso diferencia prévia de confirmação',
+  );
+
+  const shared = read('lib/finance/releaseLotShared.ts');
+  assert(shared.includes("bankStatusSource: 'local'"), 'tipo da prévia marca local');
+  assert(shared.includes('RELEASE_PREVIEW_BANK_STATUS_NOTICE'), 'constante de aviso');
+
+  const empty = summarizeReleaseReceipts([]);
+  assert(empty.paidReceipts === 0 && empty.unpaidToCancel === 0, 'venda sem parcelas');
+
+  const many = summarizeReleaseReceipts(
+    Array.from({ length: 180 }, (_, i) => ({
+      status: 'pendente',
+      amount: 500,
+      installment_number: i + 1,
+    })),
+  );
+  assert(many.pendingReceipts === 180, 'venda com muitas parcelas');
+  assert(many.paidReceipts === 0, '180 pendentes sem pago');
+
+  const paid = summarizeReleaseReceipts([
+    { status: 'pago', amount: 2500, paid_at: '2026-10-01', installment_number: 0 },
+    { status: 'pendente', amount: 500, installment_number: 1 },
+  ]);
+  assert(paid.paidReceipts === 1, 'venda com pagamento preserva pago');
+  assert(paid.unpaidToCancel === 1, 'pendente segue cancelável');
+  assert(paid.hasPreservedPayments === true, 'flag pagamentos preservados');
+
+  const asaas = summarizeReleaseCharges([
+    { status: 'PENDING' },
+    { status: 'OVERDUE' },
+    { status: 'RECEIVED' },
+    { status: 'DELETED' },
+  ]);
+  assert(asaas.openAsaasCharges === 2, 'Asaas abertas locais');
+  assert(asaas.paidAsaasCharges === 1, 'Asaas paga local');
+  assert(asaas.alreadyCanceledAsaasCharges === 1, 'Asaas cancelada local');
+  assert(isLocalAsaasCancelCandidateStatus('PENDING'), 'PENDING é candidata local Asaas');
+
+  const inter = summarizeReleaseInterCharges([
+    { status: 'REGISTERED' },
+    { status: 'OVERDUE' },
+    { status: 'PAID' },
+    { status: 'CANCELLED' },
+  ]);
+  assert(inter.openInterCharges === 2, 'Inter abertas locais');
+  assert(inter.paidInterCharges === 1, 'Inter paga local');
+  assert(inter.alreadyCanceledInterCharges === 1, 'Inter cancelada local');
+  assert(isLocalInterCancelCandidateStatus('REGISTERED'), 'REGISTERED é candidata local Inter');
+
+  const svc = read('lib/finance/releaseLotService.ts');
+  assert(svc.includes('contractSigned'), 'prévia carrega contrato/assinatura');
+  assert(svc.includes('signature_status'), 'lê signature_status');
+  assert(svc.includes('CROSS_TENANT'), 'bloqueia acesso entre empresas');
+  assert(svc.includes('LOT_CONTEXT_LOAD_FAILED'), 'erro de carga do lote');
+  assert(svc.includes('LOAD_SALE_FAILED'), 'erro de carga da venda');
+  assert(svc.includes('LOAD_RECEIPTS_FAILED'), 'erro de carga das parcelas');
+  assert(svc.includes('SETTLEMENT_PREVIEW_FAILED'), 'acerto isolado não derruba GET');
+  console.log('OK testPreviewLocalBankStatusAndScenarios');
+}
+
 function main() {
   testMotiveValidation();
   testReceiptClassification();
@@ -1014,6 +1118,7 @@ function main() {
   testPaidNeverDeletedGuards();
   testReleaseLotConfirmButtonUx();
   testZeroPaidReleaseDoesNotFailLoad();
+  testPreviewLocalBankStatusAndScenarios();
   console.log('\nALL mandatory-release-lot-tests PASSED');
 }
 
