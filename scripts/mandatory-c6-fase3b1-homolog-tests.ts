@@ -30,7 +30,17 @@ import { C6BoletoValidationError } from '../lib/banking/c6/c6BoletoValidation';
 import { C6BoletoTransportError, executeC6BankSlipCreate } from '../lib/banking/c6/c6BoletoClient';
 import type { C6AuthCredentials } from '../lib/banking/c6/c6AuthClient';
 import type { C6BoletoCreateInput } from '../lib/banking/c6/c6BoletoTypes';
-import { assertC6BoletoEvidencePublicSafe } from '../lib/banking/c6/c6BoletoEvidence';
+import {
+  assertC6BoletoEvidencePublicSafe,
+  collectC6HomologWordEvidence,
+} from '../lib/banking/c6/c6BoletoEvidence';
+import {
+  C6_B01_SANDBOX_COMPANY_ID,
+  C6_B01_SANDBOX_INTEGRATION_ID,
+  C6_B01_SANDBOX_PREPARED_REF,
+  buildC6HomologB01SandboxPayload,
+} from './develop/c6-homolog-b01-sandbox-ready';
+import { C6_BOLETO_EXTERNAL_REFERENCE_PATTERN } from '../lib/banking/c6/c6BoletoOpenApi';
 
 const root = process.cwd();
 const now = new Date('2026-10-26T15:00:00-03:00');
@@ -257,6 +267,14 @@ function testB01BlockedEvidence() {
   assert.equal(evidence.openapiExpectedStatus, 201);
   assert.match(evidence.message, new RegExp(C6_EMIT_NOT_HOMOLOGATED_MESSAGE));
   assertC6BoletoEvidencePublicSafe(evidence);
+  const word = collectC6HomologWordEvidence(evidence);
+  assert.equal(word.testCase, 'B_01');
+  assert.equal(word.httpStatus, null);
+  assert.equal(word.responseBody, null);
+  assert.equal(word.roteiroExpectedStatus, 201);
+  assert.equal(word.executed, false);
+  assert.equal(word.blocked, true);
+  assert.equal(word.wordColumnsReady, false);
   console.log('OK testB01BlockedEvidence');
 }
 
@@ -326,15 +344,55 @@ function testWebhookGapAndNoSalesWiring() {
   assert.match(route, /loadC6HomologIdempotency/);
   assert.match(route, /loadC6HomologAtomicRow/);
   assert.match(route, /assertC6HomologB01SandboxOnly/);
+  assert.match(route, /executeC6HomologB01WithIdempotency/);
+  assert.match(route, /createSupabaseC6HomologIdempotencyAdapter/);
+  assert.match(route, /persistReservation: true/);
+  assert.match(route, /collectC6HomologWordEvidence/);
   assert.doesNotMatch(route, /executeC6BankSlipCreate/);
   assert.doesNotMatch(route, /executeC6HomologB01Simulated/);
-  assert.doesNotMatch(route, /executeC6HomologB01WithIdempotency/);
+  assert.doesNotMatch(route, /fetchFn:/);
+  assert.doesNotMatch(route, /accessToken:/);
+  assert.doesNotMatch(route, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
   assert.doesNotMatch(route, /reserveC6HomologIdempotency/);
   assert.doesNotMatch(route, /reserve_c6_homolog_idempotency/);
   assert.match(route, /hasClientLiveOverride/);
   assert.match(route, /Parâmetros de emissão ao vivo não são aceitos/);
   assert.match(route, /status: 409/);
   console.log('OK testWebhookGapAndNoSalesWiring');
+}
+
+function testPreparedB01SandboxPayload() {
+  assert.equal(C6_BOLETO_EXTERNAL_REFERENCE_PATTERN.test(C6_B01_SANDBOX_PREPARED_REF), true);
+  assert.equal(C6_B01_SANDBOX_PREPARED_REF, 'B01S261027');
+  const prepared = buildC6HomologB01SandboxPayload(C6_B01_SANDBOX_COMPANY_ID);
+  assert.equal(prepared.companyId, C6_B01_SANDBOX_COMPANY_ID);
+  assert.equal(prepared.environment, 'SANDBOX');
+  assert.equal(prepared.billing_scheme, '21');
+  assert.equal(prepared.amount, 123.45);
+  assert.equal(prepared.due_date, '2026-11-15');
+  assert.equal(prepared.external_reference_id, C6_B01_SANDBOX_PREPARED_REF);
+  const { evidence } = captureC6HomologB01Blocked({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B01_CONFIRMATION_PHRASE,
+    credentials: {
+      companyId: C6_B01_SANDBOX_COMPANY_ID,
+      integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+      environment: 'SANDBOX',
+      clientId: 'blocked',
+      clientSecret: 'blocked',
+      certificatePem: 'blocked',
+      privateKeyPem: 'blocked',
+    },
+    payload: prepared,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+    now,
+  });
+  assert.equal(evidence.blocked, true);
+  assert.equal(evidence.executed, false);
+  assert.equal(evidence.httpStatus, null);
+  assert.equal(collectC6HomologWordEvidence(evidence).wordColumnsReady, false);
+  console.log('OK testPreparedB01SandboxPayload');
 }
 
 async function main() {
@@ -347,6 +405,7 @@ async function main() {
   await testB01SimulatedOnly();
   await testTimeoutInternalCase();
   testWebhookGapAndNoSalesWiring();
+  testPreparedB01SandboxPayload();
   console.log('ALL mandatory-c6-fase3b1-homolog-tests passed');
 }
 

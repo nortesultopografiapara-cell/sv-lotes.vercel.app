@@ -178,6 +178,42 @@ export function evidenceFromPreparedC6Boleto(
   });
 }
 
+export type C6HomologWordEvidence = {
+  testCase: C6BoletoEvidenceCase;
+  title: string;
+  httpStatus: number | null;
+  roteiroExpectedStatus: number | null;
+  openapiExpectedStatus: number | null;
+  responseBody: Record<string, unknown> | string | null;
+  executed: boolean;
+  blocked: boolean;
+  wordColumnsReady: boolean;
+};
+
+/**
+ * Campos do Word de homologação C6 (Status retornado + Body sanitizado).
+ * wordColumnsReady só fica true após HTTP real autorizado; bloqueio não preenche o roteiro.
+ */
+export function collectC6HomologWordEvidence(
+  evidence: C6BoletoEvidencePublic,
+): C6HomologWordEvidence {
+  assertC6BoletoEvidencePublicSafe(evidence);
+  const catalog = isC6BoletoHomologCase(evidence.testCase)
+    ? C6_BOLETO_HOMOLOG_CASES[evidence.testCase]
+    : null;
+  return {
+    testCase: evidence.testCase,
+    title: catalog?.title || evidence.testCase,
+    httpStatus: evidence.httpStatus,
+    roteiroExpectedStatus: evidence.roteiroExpectedStatus,
+    openapiExpectedStatus: evidence.openapiExpectedStatus,
+    responseBody: evidence.responseBody,
+    executed: evidence.executed,
+    blocked: evidence.blocked,
+    wordColumnsReady: Boolean(evidence.executed && evidence.httpStatus != null),
+  };
+}
+
 export function formatC6BoletoEvidenceReport(evidence: C6BoletoEvidencePublic): string {
   const lines = [
     `${evidence.testCase} — Boleto C6 Bank (sanitizado)`,

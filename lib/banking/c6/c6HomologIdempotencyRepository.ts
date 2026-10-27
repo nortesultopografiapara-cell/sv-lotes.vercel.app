@@ -1,7 +1,8 @@
 /**
  * Adapter Supabase das RPCs de idempotência C6.
- * Tabela ausente (migration ainda não aplicada) → leitura vazia, sem throw de schema.
- * A rota 409 só lê. Reserva/gravação fica no executor autorizado futuro.
+ * Tabela ausente (PGRST205) → leitura vazia, sem throw de schema.
+ * A rota B_01 persiste reserva via este adapter e conclui FAILED; nunca envia HTTP ao C6
+ * até autorização específica de emissão Sandbox.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';

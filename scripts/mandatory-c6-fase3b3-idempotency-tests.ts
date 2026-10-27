@@ -143,11 +143,19 @@ function testMigrationSql() {
   assert.match(sql, /STALE_IN_FLIGHT/);
   assert.match(sql, /interval '20 seconds'/);
   assert.match(sql, /SET search_path = public, pg_temp/);
+  assert.match(sql, /c6_homolog_idempotency_company_status_idx/);
+  assert.match(sql, /c6_homolog_idempotency_integration_idx/);
+  assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(sql, /c6_homolog_idempotency_tenant_select/);
+  assert.match(sql, /c6_homolog_idempotency_environment_check/);
+  assert.match(sql, /c6_homolog_idempotency_status_check/);
+  assert.match(sql, /c6_homolog_idempotency_fingerprint_check/);
+  assert.match(sql, /GRANT SELECT, INSERT, UPDATE ON TABLE public\.c6_homolog_idempotency TO service_role/);
   assert.match(sql, /REVOKE ALL ON TABLE public\.c6_homolog_idempotency FROM authenticated/);
   assert.match(sql, /attempt_count = p_attempt_count/);
   assert.match(
     sql,
-    /mark_c6_homolog_idempotency_processing\(\s*p_company_id uuid,\s*p_integration_id uuid,\s*p_external_reference_id text,\s*p_attempt_count integer/s,
+    /mark_c6_homolog_idempotency_processing\(\s*p_company_id uuid,\s*p_integration_id uuid,\s*p_external_reference_id text,\s*p_attempt_count integer/,
   );
   assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.mark_c6_homolog_idempotency_processing\(uuid, uuid, text, integer\) TO service_role/);
   assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.reconcile_c6_homolog_idempotency\(uuid, uuid, text, text, text\) TO service_role/);
@@ -166,6 +174,12 @@ function testMigrationSql() {
   assert.match(sql, new RegExp(`FUNCTION public\\.${C6_HOMOLOG_RECONCILE_RPC}`));
   assert.match(sql, /GRANT EXECUTE[\s\S]*service_role/);
   assert.doesNotMatch(sql, /aezktedncttwpqeunjej/);
+  const developTests = read('scripts/develop/c6-homolog-idempotency-develop-tests.sql');
+  assert.match(developTests, /f26f2331-1885-4ac6-8d0e-4131cc8a8014/);
+  assert.match(developTests, /e4d0e3c1-29c3-47a1-a04d-156e45fa4b25/);
+  assert.match(developTests, /\bROLLBACK\s*;/);
+  assert.match(developTests, /FAIL grants/);
+  assert.doesNotMatch(developTests, /aezktedncttwpqeunjej/);
   assert.doesNotMatch(sql, /BEGIN RSA PRIVATE KEY/);
   console.log('OK testMigrationSql');
 }
@@ -474,7 +488,12 @@ async function testBlockedPathDoesNotEmit() {
   const route = read('app/api/banking/c6/homolog/b01/route.ts');
   assert.match(route, /status: 409/);
   assert.match(route, /loadC6HomologAtomicRow/);
-  assert.doesNotMatch(route, /executeC6HomologB01WithIdempotency/);
+  assert.match(route, /executeC6HomologB01WithIdempotency/);
+  assert.match(route, /createSupabaseC6HomologIdempotencyAdapter/);
+  assert.match(route, /persistReservation: true/);
+  assert.match(route, /collectC6HomologWordEvidence/);
+  assert.doesNotMatch(route, /fetchFn:/);
+  assert.doesNotMatch(route, /accessToken:/);
   assert.doesNotMatch(route, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
   assert.doesNotMatch(route, /baas-api-sandbox\.c6bank\.info\/v1\/bank_slips/);
   const sale = read('components/sales/SaleChargesPanel.tsx');

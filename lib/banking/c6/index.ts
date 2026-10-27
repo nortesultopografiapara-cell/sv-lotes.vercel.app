@@ -62,6 +62,7 @@ export {
 } from '@/lib/banking/c6/c6BoletoClient';
 export {
   assertC6BoletoEvidencePublicSafe,
+  collectC6HomologWordEvidence,
   formatC6BoletoEvidenceReport,
   toC6BoletoEvidencePublic,
 } from '@/lib/banking/c6/c6BoletoEvidence';

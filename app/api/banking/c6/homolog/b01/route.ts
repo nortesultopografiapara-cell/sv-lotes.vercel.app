@@ -2,18 +2,28 @@ import { NextResponse } from 'next/server';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
 import { isPlatformAdmin } from '@/lib/rls';
 import { getCompanyC6BankConfig } from '@/lib/banking/c6/c6ConfigRepository';
-import { assertC6BoletoEvidencePublicSafe } from '@/lib/banking/c6/c6BoletoEvidence';
+import {
+  assertC6BoletoEvidencePublicSafe,
+  collectC6HomologWordEvidence,
+} from '@/lib/banking/c6/c6BoletoEvidence';
 import {
   C6_B01_CONFIRMATION_PHRASE,
   C6HomologAuthorizationError,
   assertC6HomologB01SandboxOnly,
   captureC6HomologB01Blocked,
+  executeC6HomologB01WithIdempotency,
 } from '@/lib/banking/c6/c6BoletoHomologB01';
 import { C6BoletoValidationError } from '@/lib/banking/c6/c6BoletoValidation';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { loadC6HomologIdempotency } from '@/lib/banking/c6/c6BoletoIdempotency';
-import { loadC6HomologAtomicRow } from '@/lib/banking/c6/c6HomologIdempotencyRepository';
-import { C6HomologIdempotencyError } from '@/lib/banking/c6/c6HomologIdempotency';
+import {
+  createSupabaseC6HomologIdempotencyAdapter,
+  loadC6HomologAtomicRow,
+} from '@/lib/banking/c6/c6HomologIdempotencyRepository';
+import {
+  C6HomologIdempotencyError,
+  type C6HomologIdempotencyRow,
+} from '@/lib/banking/c6/c6HomologIdempotency';
 import type { C6BoletoCreateInput } from '@/lib/banking/c6/c6BoletoTypes';
 
 export const runtime = 'nodejs';
@@ -32,7 +42,8 @@ function hasClientLiveOverride(body: Record<string, unknown>): boolean {
 /**
  * POST /api/banking/c6/homolog/b01
  * Prepara B_01 (Sandbox). Sempre 409. Nunca emite. Fora de vendas/Central.
- * Lê a tabela de idempotência se existir; nunca chama reserve/complete RPC.
+ * Conecta o executor à reserva persistente (FAILED / EMIT_NOT_HOMOLOGATED).
+ * Não passa fetchFn nem accessToken — HTTP ao C6 permanece bloqueado.
  */
 export async function POST(request: Request) {
   const auth = await authorizeBankingRoute(request);
@@ -100,7 +111,7 @@ export async function POST(request: Request) {
       payer: body.payer,
     } as C6BoletoCreateInput;
 
-    const { evidence } = captureC6HomologB01Blocked({
+    const executorInput = {
       role: auth.role,
       confirmation: String(body.confirmation || ''),
       sessionCompanyId: auth.tenantId,
@@ -110,17 +121,49 @@ export async function POST(request: Request) {
       credentials: {
         companyId: auth.tenantId,
         integrationId,
-        environment: 'SANDBOX',
+        environment: 'SANDBOX' as const,
         clientId: 'blocked',
         clientSecret: 'blocked',
         certificatePem: 'blocked',
         privateKeyPem: 'blocked',
       },
       payload,
-    });
+    };
 
+    const { evidence } = captureC6HomologB01Blocked(executorInput);
     assertC6BoletoEvidencePublicSafe(evidence);
-    const json = JSON.stringify(evidence);
+
+    const store = createSupabaseC6HomologIdempotencyAdapter(auth.admin);
+    let persisted: C6HomologIdempotencyRow | null = existingAtomic;
+    try {
+      await executeC6HomologB01WithIdempotency(
+        { ...executorInput, store },
+        { persistReservation: true },
+      );
+    } catch (err) {
+      if (err instanceof C6HomologIdempotencyError) {
+        persisted = err.row || persisted;
+      } else if (err instanceof C6EmissionNotHomologatedError) {
+        // esperado: reserva persistida como FAILED, sem HTTP ao C6
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/PGRST205|PGRST202|42P01|Could not find the (table|function)/i.test(message)) {
+          throw err;
+        }
+      }
+    }
+
+    if (integrationId && ref) {
+      persisted =
+        (await loadC6HomologAtomicRow(auth.admin, {
+          companyId: auth.tenantId,
+          integrationId,
+          externalReferenceId: ref,
+        })) || persisted;
+    }
+
+    const wordEvidence = collectC6HomologWordEvidence(evidence);
+    const json = JSON.stringify({ evidence, wordEvidence, persisted });
     if (
       json.includes('access_token') ||
       json.includes('BEGIN CERTIFICATE') ||
@@ -135,9 +178,12 @@ export async function POST(request: Request) {
       {
         blocked: true,
         executed: false,
+        persistReservation: true,
         testCase: 'B_01',
         confirmationRequired: C6_B01_CONFIRMATION_PHRASE,
         evidence,
+        wordEvidence,
+        persistedIdempotency: persisted,
       },
       { status: 409 },
     );
