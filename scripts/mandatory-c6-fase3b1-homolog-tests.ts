@@ -28,6 +28,36 @@ import {
   authorizeC6HomologB03,
 } from '../lib/banking/c6/c6BoletoHomologB03';
 import {
+  C6_B04_ALTER_CONFIRMATION_PHRASE,
+  C6_B04_ALTER_REF,
+  C6_B04_SOURCE_CONFIRMATION_PHRASE,
+  C6_B04_SOURCE_REF,
+  authorizeC6HomologB04Alter,
+  authorizeC6HomologB04Source,
+  buildC6HomologB04AlterPatch,
+  buildC6HomologB04SourcePayload,
+} from '../lib/banking/c6/c6BoletoHomologB04';
+import {
+  C6_B05_AUTHORIZED_BANK_SLIP_ID,
+  C6_B05_CONFIRMATION_PHRASE,
+  C6_B05_IDEMPOTENCY_REF,
+  authorizeC6HomologB05,
+  requestC6HomologReadAccessToken,
+} from '../lib/banking/c6/c6BoletoHomologB05';
+import {
+  C6_B06_AUTHORIZED_BANK_SLIP_ID,
+  C6_B06_CONFIRMATION_PHRASE,
+  C6_B06_IDEMPOTENCY_REF,
+  authorizeC6HomologB06,
+} from '../lib/banking/c6/c6BoletoHomologB06';
+import {
+  C6_HOMOLOG_B01_BANK_SLIP_ID,
+  C6_HOMOLOG_B02_BANK_SLIP_ID,
+  C6_HOMOLOG_B03_BANK_SLIP_ID,
+  isC6HomologProtectedBankSlipId,
+} from '../lib/banking/c6/c6BoletoHomologIssuedIds';
+import { C6_BANK_SLIPS_URL, buildC6BankSlipPdfUrl } from '../lib/banking/c6/c6BoletoEndpoints';
+import {
   mapC6AuthHttpError,
   type C6AuthCredentials,
   type C6AuthFetchFn,
@@ -36,7 +66,11 @@ import {
   clearAllC6TokenCacheForTests,
   setCachedC6Token,
 } from '../lib/banking/c6/c6TokenCache';
-import { assertC6BankSlipWriteScope, C6BoletoScopeError } from '../lib/banking/c6/c6BoletoOpenApi';
+import {
+  assertC6BankSlipReadScope,
+  assertC6BankSlipWriteScope,
+  C6BoletoScopeError,
+} from '../lib/banking/c6/c6BoletoOpenApi';
 import {
   assertC6HomologRefAvailable,
   c6HomologIdempotencyKey,
@@ -368,6 +402,12 @@ function testWebhookGapAndNoSalesWiring() {
   assert.doesNotMatch(central, /homolog\/b02/);
   assert.doesNotMatch(sale, /homolog\/b03/);
   assert.doesNotMatch(central, /homolog\/b03/);
+  assert.doesNotMatch(sale, /homolog\/b04/);
+  assert.doesNotMatch(central, /homolog\/b04/);
+  assert.doesNotMatch(sale, /homolog\/b05/);
+  assert.doesNotMatch(central, /homolog\/b05/);
+  assert.doesNotMatch(sale, /homolog\/b06/);
+  assert.doesNotMatch(central, /homolog\/b06/);
   const middleware = read('middleware.ts');
   assert.match(middleware, /isC6HomologApi/);
   assert.match(middleware, /\/api\/banking\/c6\/homolog/);
@@ -427,6 +467,48 @@ function testWebhookGapAndNoSalesWiring() {
   assert.doesNotMatch(routeB03, /accessToken:/);
   assert.doesNotMatch(routeB03, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
   assert.doesNotMatch(routeB03, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
+  const routeB04 = read('app/api/banking/c6/homolog/b04/route.ts');
+  assert.match(routeB04, /export async function GET/);
+  assert.match(routeB04, /export async function POST/);
+  assert.match(routeB04, /export async function PUT/);
+  assert.match(routeB04, /executeC6HomologB04SourceWithIdempotency/);
+  assert.match(routeB04, /executeC6HomologB04AlterWithIdempotency/);
+  assert.match(routeB04, /EMITIR_B04_ORIGEM_SANDBOX/);
+  assert.match(routeB04, /ALTERAR_B04_SANDBOX/);
+  assert.match(routeB04, /B04S261027/);
+  assert.match(routeB04, /C6_B01_FORBIDDEN_REF/);
+  assert.match(routeB04, /C6_B02_FORBIDDEN_REF/);
+  assert.match(routeB04, /C6_B03_FORBIDDEN_REF/);
+  assert.match(routeB04, /não reutiliza B_01\/B_02\/B_03/);
+  assert.match(routeB04, /requestC6HomologB02EmitAccessToken/);
+  assert.equal((routeB04.match(/bypassCache: true/g) || []).length, 1);
+  assert.doesNotMatch(routeB04, /fetchFn:/);
+  assert.doesNotMatch(routeB04, /accessToken:/);
+  assert.doesNotMatch(routeB04, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
+  assert.doesNotMatch(routeB04, /BANKING_CREDENTIALS_ENCRYPTION_KEY/);
+  const routeB05 = read('app/api/banking/c6/homolog/b05/route.ts');
+  assert.match(routeB05, /export async function GET/);
+  assert.match(routeB05, /executeC6HomologB05WithIdempotency/);
+  assert.match(routeB05, /CONSULTAR_B05_SANDBOX/);
+  assert.match(routeB05, /C6_B05_AUTHORIZED_BANK_SLIP_ID/);
+  assert.match(read('lib/banking/c6/c6BoletoHomologIssuedIds.ts'), /01M5YPX04ZB8H14XAPJDA8MRV8/);
+  assert.match(routeB05, /requestC6HomologReadAccessToken/);
+  assert.match(routeB05, /assertC6BankSlipReadScope/);
+  assert.equal((routeB05.match(/bypassCache: true/g) || []).length, 1);
+  assert.doesNotMatch(routeB05, /fetchFn:/);
+  assert.doesNotMatch(routeB05, /accessToken:/);
+  assert.doesNotMatch(routeB05, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
+  const routeB06 = read('app/api/banking/c6/homolog/b06/route.ts');
+  assert.match(routeB06, /export async function GET/);
+  assert.match(routeB06, /executeC6HomologB06WithIdempotency/);
+  assert.match(routeB06, /CONSULTAR_B06_PDF_SANDBOX/);
+  assert.match(routeB06, /C6_B06_AUTHORIZED_BANK_SLIP_ID/);
+  assert.match(routeB06, /requestC6HomologReadAccessToken/);
+  assert.match(routeB06, /assertC6BankSlipReadScope/);
+  assert.equal((routeB06.match(/bypassCache: true/g) || []).length, 1);
+  assert.doesNotMatch(routeB06, /fetchFn:/);
+  assert.doesNotMatch(routeB06, /accessToken:/);
+  assert.doesNotMatch(routeB06, /C6_BOLETO_SANDBOX_LIVE_ENABLED/);
   console.log('OK testWebhookGapAndNoSalesWiring');
 }
 
@@ -620,6 +702,185 @@ function testPreparedB03SandboxPayload() {
   console.log('OK testPreparedB03SandboxPayload');
 }
 
+function blockedHomologCreds(): C6AuthCredentials {
+  return {
+    companyId: C6_B01_SANDBOX_COMPANY_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    environment: 'SANDBOX',
+    clientId: 'blocked',
+    clientSecret: 'blocked',
+    certificatePem: 'blocked',
+    privateKeyPem: 'blocked',
+  };
+}
+
+function testPreparedB04SandboxPayload() {
+  assert.equal(C6_BOLETO_EXTERNAL_REFERENCE_PATTERN.test(C6_B04_SOURCE_REF), true);
+  assert.equal(C6_BOLETO_EXTERNAL_REFERENCE_PATTERN.test(C6_B04_ALTER_REF), true);
+  assert.equal(C6_B04_SOURCE_REF, 'B04S261027');
+  assert.equal(C6_B04_ALTER_REF, 'B04A261027');
+  assert.notEqual(C6_B04_SOURCE_REF, C6_B01_SANDBOX_PREPARED_REF);
+  assert.notEqual(C6_B04_SOURCE_REF, C6_B02_SANDBOX_PREPARED_REF);
+  assert.notEqual(C6_B04_SOURCE_REF, C6_B03_SANDBOX_PREPARED_REF);
+  const prepared = buildC6HomologB04SourcePayload(C6_B01_SANDBOX_COMPANY_ID);
+  const body = buildC6BankSlipCreateBody(prepared, now);
+  assert.equal(body.external_reference_id, 'B04S261027');
+  assert.equal(body.amount, 150);
+  assert.equal(body.due_date, '2026-12-01');
+  assert.equal(body.billing_scheme, '21');
+  assert.equal(C6_BOLETO_HOMOLOG_CASES.B_04.readyToExecute, false);
+  const authorized = authorizeC6HomologB04Source({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B04_SOURCE_CONFIRMATION_PHRASE,
+    credentials: blockedHomologCreds(),
+    payload: prepared,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+    now,
+  });
+  assert.equal(authorized.jsonBody?.amount, 150);
+  assert.throws(
+    () =>
+      authorizeC6HomologB04Source({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B04_SOURCE_CONFIRMATION_PHRASE,
+        credentials: blockedHomologCreds(),
+        payload: { ...prepared, external_reference_id: C6_B01_SANDBOX_PREPARED_REF },
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  const exclusiveId = '01B04EXCLUSIVETESTSLIP0001';
+  const alter = authorizeC6HomologB04Alter({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B04_ALTER_CONFIRMATION_PHRASE,
+    credentials: blockedHomologCreds(),
+    bankSlipId: exclusiveId,
+    patch: buildC6HomologB04AlterPatch(),
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+    now,
+  });
+  assert.equal(alter.method, 'PUT');
+  assert.equal(alter.url, `${C6_BANK_SLIPS_URL.SANDBOX}${exclusiveId}`);
+  assert.equal(alter.jsonBody?.due_date, '2026-12-10');
+  assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B01_BANK_SLIP_ID), true);
+  assert.throws(
+    () =>
+      authorizeC6HomologB04Alter({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B04_ALTER_CONFIRMATION_PHRASE,
+        credentials: blockedHomologCreds(),
+        bankSlipId: C6_HOMOLOG_B01_BANK_SLIP_ID,
+        patch: buildC6HomologB04AlterPatch(),
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  assert.throws(
+    () =>
+      authorizeC6HomologB04Alter({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B04_ALTER_CONFIRMATION_PHRASE,
+        credentials: blockedHomologCreds(),
+        bankSlipId: exclusiveId,
+        patch: { amount: 175 },
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+        now,
+      }),
+    C6BoletoValidationError,
+  );
+  console.log('OK testPreparedB04SandboxPayload');
+}
+
+function testPreparedB05AndB06() {
+  assert.equal(C6_B05_AUTHORIZED_BANK_SLIP_ID, C6_HOMOLOG_B01_BANK_SLIP_ID);
+  assert.equal(C6_B06_AUTHORIZED_BANK_SLIP_ID, C6_HOMOLOG_B01_BANK_SLIP_ID);
+  assert.equal(C6_B05_IDEMPOTENCY_REF, 'B05S261027');
+  assert.equal(C6_B06_IDEMPOTENCY_REF, 'B06S261027');
+  assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B02_BANK_SLIP_ID), true);
+  assert.equal(isC6HomologProtectedBankSlipId(C6_HOMOLOG_B03_BANK_SLIP_ID), true);
+  const getPrepared = authorizeC6HomologB05({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B05_CONFIRMATION_PHRASE,
+    credentials: blockedHomologCreds(),
+    bankSlipId: C6_B05_AUTHORIZED_BANK_SLIP_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+  });
+  assert.equal(getPrepared.method, 'GET');
+  assert.equal(getPrepared.url, `${C6_BANK_SLIPS_URL.SANDBOX}${C6_HOMOLOG_B01_BANK_SLIP_ID}`);
+  assert.equal(C6_BOLETO_HOMOLOG_CASES.B_05.readyToExecute, false);
+  assert.throws(
+    () =>
+      authorizeC6HomologB05({
+        role: 'SUPER_ADMIN',
+        confirmation: C6_B05_CONFIRMATION_PHRASE,
+        credentials: blockedHomologCreds(),
+        bankSlipId: C6_HOMOLOG_B02_BANK_SLIP_ID,
+        integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+        sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+      }),
+    C6BoletoValidationError,
+  );
+  const pdfPrepared = authorizeC6HomologB06({
+    role: 'SUPER_ADMIN',
+    confirmation: C6_B06_CONFIRMATION_PHRASE,
+    credentials: blockedHomologCreds(),
+    bankSlipId: C6_B06_AUTHORIZED_BANK_SLIP_ID,
+    integrationId: C6_B01_SANDBOX_INTEGRATION_ID,
+    sessionCompanyId: C6_B01_SANDBOX_COMPANY_ID,
+  });
+  assert.equal(pdfPrepared.method, 'GET');
+  assert.equal(pdfPrepared.url, buildC6BankSlipPdfUrl('SANDBOX', C6_HOMOLOG_B01_BANK_SLIP_ID));
+  assert.equal(pdfPrepared.headers.Accept, 'application/pdf');
+  assert.equal(C6_BOLETO_HOMOLOG_CASES.B_06.readyToExecute, false);
+  console.log('OK testPreparedB05AndB06');
+}
+
+async function testB05ReadOauthReusesCache() {
+  const readCreds: C6AuthCredentials = {
+    ...creds,
+    companyId: 'company-b05-oauth',
+    integrationId: 'int-b05-oauth',
+  };
+  clearAllC6TokenCacheForTests();
+  setCachedC6Token(
+    readCreds.companyId,
+    'SANDBOX',
+    {
+      accessToken: 'cached-b05-token',
+      expiresAtMs: Date.now() + 600_000,
+      tokenType: 'Bearer',
+      scope: 'bankslip.read bankslip.write',
+    },
+    readCreds.integrationId,
+  );
+  let liveCalls = 0;
+  const blockedLive: C6AuthFetchFn = async () => {
+    liveCalls += 1;
+    throw new Error('OAuth live não deveria ser chamado com cache válido.');
+  };
+  const reused = await requestC6HomologReadAccessToken(readCreds, { fetchFn: blockedLive });
+  assert.equal(reused.ok, true);
+  if (reused.ok) {
+    assert.equal(reused.fromCache, true);
+    assert.equal(reused.accessToken, 'cached-b05-token');
+    assert.deepEqual(assertC6BankSlipReadScope(reused.scopeRaw || reused.scope), [
+      'bankslip.read',
+      'bankslip.write',
+    ]);
+  }
+  assert.equal(liveCalls, 0);
+  assert.throws(() => assertC6BankSlipReadScope('bankslip.write'), C6BoletoScopeError);
+  console.log('OK testB05ReadOauthReusesCache');
+}
+
 async function testB02EmitOauthReusesCacheAndDoesNotRetry502() {
   assert.equal(mapC6AuthHttpError(502), 'AUTH_UNAVAILABLE');
   const emitCreds: C6AuthCredentials = {
@@ -785,6 +1046,9 @@ async function main() {
   testPreparedB01SandboxPayload();
   testPreparedB02SandboxPayload();
   testPreparedB03SandboxPayload();
+  testPreparedB04SandboxPayload();
+  testPreparedB05AndB06();
+  await testB05ReadOauthReusesCache();
   await testB02EmitOauthReusesCacheAndDoesNotRetry502();
   console.log('ALL mandatory-c6-fase3b1-homolog-tests passed');
 }

@@ -170,11 +170,14 @@ export function sanitizeC6HomologErrorMessage(message: string | null | undefined
 export function classifyC6HomologHttpOutcome(input: {
   httpStatus: number | null;
   transport?: 'ok' | 'TIMEOUT' | 'NETWORK' | 'UNEXPECTED';
+  /** Default 201 (emissão). B_04/B_05/B_06 passam [200]. */
+  successStatuses?: readonly number[];
 }): C6HomologCompleteInput['status'] {
   if (input.transport === 'TIMEOUT' || input.transport === 'NETWORK') return 'UNKNOWN';
   const status = input.httpStatus;
   if (status == null) return 'UNKNOWN';
-  if (status === 201) return 'SUCCEEDED';
+  const success = input.successStatuses?.length ? input.successStatuses : [201];
+  if (success.includes(status)) return 'SUCCEEDED';
   if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
     return 'FAILED';
   }

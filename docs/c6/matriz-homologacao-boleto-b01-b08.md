@@ -20,7 +20,7 @@ Colunas **Status retornado** e **Body retornado** permanecem vazias: nenhum test
 ## Divergências registradas (não resolvidas por suposição)
 
 1. **B_08:** roteiro 200 vs OpenAPI 204. Na execução autorizada, gravar o status real.
-2. **B_04:** roteiro menciona alteração de pagador; OpenAPI `bank_slip_alter_request` permite só `amount`, `due_date`, `discount`, `interest`, `fine`.
+2. **B_04:** roteiro menciona alteração de pagador; OpenAPI `bank_slip_alter_request` permite só `amount`, `due_date`, `discount`, `interest`, `fine`. Preparado boleto exclusivo `B04S261027` e PUT só de `due_date` para `2026-12-10`. Não altera B_01/B_02/B_03.
 3. **B_06:** roteiro pede `Content-Type: application/json`; OpenAPI lista `application/x-www-form-urlencoded` no GET PDF.
 4. **B_07:** falta o OpenAPI oficial da API de notificações. Não implementar `/webhooks/` sem esse contrato.
 5. **AT_01 (contexto do token):** roteiro exemplifica `expires_in: 300`. O cache usa o valor **retornado** pelo C6; fallback de cache (não exibido no AT_01) é 600 s.

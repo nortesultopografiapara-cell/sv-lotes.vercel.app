@@ -187,6 +187,15 @@ function testMigrationSql() {
 
 function testClassifyOutcome() {
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 201, transport: 'ok' }), 'SUCCEEDED');
+  assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 200, transport: 'ok' }), 'UNKNOWN');
+  assert.equal(
+    classifyC6HomologHttpOutcome({ httpStatus: 200, transport: 'ok', successStatuses: [200] }),
+    'SUCCEEDED',
+  );
+  assert.equal(
+    classifyC6HomologHttpOutcome({ httpStatus: 201, transport: 'ok', successStatuses: [200] }),
+    'UNKNOWN',
+  );
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 400, transport: 'ok' }), 'FAILED');
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 422, transport: 'ok' }), 'FAILED');
   assert.equal(classifyC6HomologHttpOutcome({ httpStatus: 500, transport: 'ok' }), 'UNKNOWN');

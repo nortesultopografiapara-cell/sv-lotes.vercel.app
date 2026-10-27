@@ -109,6 +109,8 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
     evidenceRequired: 'HTTP status e body sanitizado do boleto alterado.',
     notes: [
       'Roteiro cita alteração de dados do pagador; OpenAPI 1.7.2 (bank_slip_alter_request) não inclui payer.',
+      'Campos permitidos no PUT: amount, due_date, discount, interest, fine. B_04 autorizado altera só due_date 2026-12-01 → 2026-12-10.',
+      'Não altera B_01/B_02/B_03. Boleto exclusivo B04S261027 (origem) / B04A261027 (alteração).',
     ],
     returnedStatus: null,
     returnedBody: null,
@@ -124,7 +126,10 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
     roteiroExpectedStatus: 200,
     openapiExpectedStatus: 200,
     evidenceRequired: 'HTTP status e body sanitizado (status, amount, due_date). Payer mascarado.',
-    notes: ['Pode reutilizar o id do B_01 já emitido. GET não emite.'],
+    notes: [
+      'Reutiliza o id do B_01 01M5YPX04ZB8H14XAPJDA8MRV8. GET não emite.',
+      'Escopo bankslip.read. URL Sandbox GET /v1/bank_slips/{id}.',
+    ],
     returnedStatus: null,
     returnedBody: null,
     readyToExecute: false,
@@ -141,7 +146,8 @@ export const C6_BOLETO_HOMOLOG_CASES: Record<C6BoletoHomologCase, C6HomologCatal
     evidenceRequired: 'HTTP status, content-type e tamanho do PDF. Sem Base64 completo.',
     notes: [
       'Roteiro pede Content-Type application/json no GET PDF; OpenAPI marca application/x-www-form-urlencoded.',
-      'Pode reutilizar o id do B_01 já emitido. GET PDF não emite.',
+      'Reutiliza o id do B_01 01M5YPX04ZB8H14XAPJDA8MRV8. GET PDF não emite.',
+      'Accept application/pdf. Escopo bankslip.read. Evidência grava o Content-Type efetivo do C6; não presume JSON.',
     ],
     returnedStatus: null,
     returnedBody: null,

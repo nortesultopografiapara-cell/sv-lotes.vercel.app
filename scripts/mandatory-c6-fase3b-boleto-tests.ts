@@ -7,12 +7,14 @@ import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
 import {
+  C6_BOLETO_ALTER_ALLOWED_FIELDS,
   C6_BOLETO_BILLING_SCHEME,
   C6_BOLETO_CHARGE_TYPES,
   C6_BOLETO_CREATE_REQUIRED_FIELDS,
   C6_BOLETO_OPENAPI_SPEC,
   C6_BOLETO_OPENAPI_VERSION,
   C6_BOLETO_OPERATIONS,
+  hasC6BankSlipReadScope,
   hasC6BankSlipWriteScope,
 } from '../lib/banking/c6/c6BoletoOpenApi';
 import {
@@ -36,7 +38,13 @@ import {
 import {
   assertC6BoletoEvidencePublicSafe,
   formatC6BoletoEvidenceReport,
+  parseC6BoletoResponseBody,
 } from '../lib/banking/c6/c6BoletoEvidence';
+import {
+  C6_HOMOLOG_B01_BANK_SLIP_ID,
+  C6_HOMOLOG_B02_BANK_SLIP_ID,
+  C6_HOMOLOG_B03_BANK_SLIP_ID,
+} from '../lib/banking/c6/c6BoletoHomologIssuedIds';
 import {
   C6_BOLETO_SANDBOX_LIVE_ENV_KEY,
   C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
@@ -104,6 +112,7 @@ function testOpenApiContract() {
     components: {
       schemas: {
         bank_slip_create_request: { required: string[]; properties: Record<string, unknown> };
+        bank_slip_alter_request: { properties: Record<string, unknown> };
         billing_scheme: { description: string };
       };
     };
@@ -127,7 +136,18 @@ function testOpenApiContract() {
     true,
   );
   assert.equal(C6_BOLETO_OPERATIONS.emit.successStatus, 201);
+  assert.equal(C6_BOLETO_OPERATIONS.alter.successStatus, 200);
+  assert.equal(C6_BOLETO_OPERATIONS.get.successStatus, 200);
+  assert.equal(C6_BOLETO_OPERATIONS.pdf.successStatus, 200);
   assert.equal(C6_BOLETO_OPERATIONS.cancel.successStatus, 204);
+  assert.deepEqual(
+    Object.keys(spec.components.schemas.bank_slip_alter_request.properties),
+    [...C6_BOLETO_ALTER_ALLOWED_FIELDS],
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(spec.components.schemas.bank_slip_alter_request.properties, 'payer'),
+    false,
+  );
   console.log('OK testOpenApiContract');
 }
 
@@ -263,12 +283,45 @@ function testPreparedSecondaryOperations() {
   console.log('OK testPreparedSecondaryOperations');
 }
 
+function testProtectedIssuedIdsCannotAlterOrCancel() {
+  assert.throws(
+    () => prepareC6BankSlipAlter(credsA, C6_HOMOLOG_B01_BANK_SLIP_ID, { due_date: '2026-12-10' }, { now }),
+    C6BoletoValidationError,
+  );
+  assert.throws(
+    () => prepareC6BankSlipCancel(credsA, C6_HOMOLOG_B02_BANK_SLIP_ID),
+    C6BoletoValidationError,
+  );
+  assert.throws(
+    () => prepareC6BankSlipCancel(credsA, C6_HOMOLOG_B03_BANK_SLIP_ID),
+    C6BoletoValidationError,
+  );
+  console.log('OK testProtectedIssuedIdsCannotAlterOrCancel');
+}
+
+function testPdfContentTypeIsNotAssumedJson() {
+  const pdf = parseC6BoletoResponseBody('%PDF-1.7 fake', 'application/pdf');
+  assert.equal(pdf, '[pdf-bytes:13]');
+  const already = parseC6BoletoResponseBody('[pdf-bytes:2048]', 'application/pdf');
+  assert.equal(already, '[pdf-bytes:2048]');
+  const json = parseC6BoletoResponseBody('{"id":"x"}', 'application/json');
+  assert.equal((json as { id?: string } | null)?.id, 'x');
+  const octet = parseC6BoletoResponseBody('not-json-and-not-pdf', 'application/octet-stream');
+  assert.match(String(octet), /^\[pdf-bytes:/);
+  console.log('OK testPdfContentTypeIsNotAssumedJson');
+}
+
 function testBankSlipWriteScope() {
   assert.equal(hasC6BankSlipWriteScope('bankslip.write'), true);
   assert.equal(hasC6BankSlipWriteScope('baas.auth bankslip.write'), true);
   assert.equal(hasC6BankSlipWriteScope(['baas.bankslip.write']), true);
   assert.equal(hasC6BankSlipWriteScope('baas.auth'), false);
   assert.equal(hasC6BankSlipWriteScope(null), false);
+  assert.equal(hasC6BankSlipReadScope('bankslip.read'), true);
+  assert.equal(hasC6BankSlipReadScope('baas.auth bankslip.read bankslip.write'), true);
+  assert.equal(hasC6BankSlipReadScope(['baas.bankslip.read']), true);
+  assert.equal(hasC6BankSlipReadScope('bankslip.write'), false);
+  assert.equal(hasC6BankSlipReadScope(null), false);
   console.log('OK testBankSlipWriteScope');
 }
 
@@ -432,6 +485,7 @@ async function testSimulatedSecondaryOps() {
   });
   assert.equal(pdfRes.ok, true);
   assert.match(String(pdfRes.evidence.responseBody), /pdf/);
+  assert.match(String(pdfRes.evidence.responseContentType), /pdf/i);
 
   const cancelRes = await executeC6BankSlipCancel(credsA, BANK_SLIP_ID, {
     accessToken: TOKEN,
@@ -493,6 +547,8 @@ async function main() {
   testWalletAndUrls();
   testB01ValidationSuccessAndFailures();
   testPreparedSecondaryOperations();
+  testProtectedIssuedIdsCannotAlterOrCancel();
+  testPdfContentTypeIsNotAssumedJson();
   testBankSlipWriteScope();
   testEmitRemainsBlocked();
   await testExecuteBlockedWithoutSimulation();

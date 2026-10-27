@@ -43,6 +43,7 @@ import {
   C6BoletoCompanyIsolationError,
   C6BoletoValidationError,
 } from '@/lib/banking/c6/c6BoletoValidation';
+import { isC6HomologProtectedBankSlipId } from '@/lib/banking/c6/c6BoletoHomologIssuedIds';
 
 export type C6BoletoFetchFn = (
   url: string,
@@ -169,6 +170,12 @@ export function prepareC6BankSlipAlter(
   options?: { now?: Date; accessToken?: string },
 ): C6BoletoPreparedHttp {
   const id = assertC6BankSlipId(bankSlipId);
+  if (isC6HomologProtectedBankSlipId(id)) {
+    throw new C6BoletoValidationError(
+      'Boletos B_01, B_02 e B_03 estão protegidos contra alteração e cancelamento.',
+      ['id'],
+    );
+  }
   const body = buildC6BankSlipAlterBody(patch, options?.now);
   const url = buildC6BankSlipResourceUrl(creds.environment, id);
   const host = getC6BankSlipsHost(creds.environment);
@@ -216,6 +223,12 @@ export function prepareC6BankSlipCancel(
   options?: { accessToken?: string },
 ): C6BoletoPreparedHttp {
   const id = assertC6BankSlipId(bankSlipId);
+  if (isC6HomologProtectedBankSlipId(id)) {
+    throw new C6BoletoValidationError(
+      'Boletos B_01, B_02 e B_03 estão protegidos contra alteração e cancelamento.',
+      ['id'],
+    );
+  }
   const url = buildC6BankSlipCancelUrl(creds.environment, id);
   const host = getC6BankSlipsHost(creds.environment);
   return {
@@ -277,9 +290,16 @@ const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
         res.on('end', () => {
           const buf = Buffer.concat(chunks);
           const type = String(res.headers['content-type'] || '');
+          const looksPdf =
+            /pdf/i.test(type) ||
+            (buf.length >= 4 && buf.subarray(0, 4).toString('latin1') === '%PDF');
+          const looksBinary = /octet-stream/i.test(type);
           resolve({
             statusCode: res.statusCode || 0,
-            body: /pdf/i.test(type) ? `[pdf-bytes:${buf.length}]` : buf.toString('utf8'),
+            body:
+              looksPdf || looksBinary
+                ? `[pdf-bytes:${buf.length}]`
+                : buf.toString('utf8'),
             contentType: type,
           });
         });

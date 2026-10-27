@@ -21,6 +21,15 @@ export const C6_BOLETO_CREATE_REQUIRED_FIELDS = [
   'payer',
 ] as const;
 
+/** OpenAPI 1.7.2 bank_slip_alter_request. Sem payer. Ao menos um campo na prática. */
+export const C6_BOLETO_ALTER_ALLOWED_FIELDS = [
+  'amount',
+  'due_date',
+  'discount',
+  'interest',
+  'fine',
+] as const;
+
 export const C6_BOLETO_PAYER_REQUIRED_FIELDS = ['name', 'tax_id', 'address'] as const;
 
 export const C6_BOLETO_ADDRESS_REQUIRED_FIELDS = [
@@ -66,15 +75,27 @@ export const C6_BOLETO_PARTNER_SOFTWARE_VERSION = '1.0.0' as const;
 /** Escopo OAuth exigido para POST /v1/bank_slips/. Sem este token a emissão B_01 aborta. */
 export const C6_BOLETO_WRITE_SCOPE = 'bankslip.write' as const;
 
-export function hasC6BankSlipWriteScope(raw: string | string[] | null | undefined): boolean {
-  const scopes = Array.isArray(raw)
+/** Escopo OAuth exigido para GET /v1/bank_slips/{id} e GET .../pdf (B_05/B_06). */
+export const C6_BOLETO_READ_SCOPE = 'bankslip.read' as const;
+
+function parseC6OAuthScopeList(raw: string | string[] | null | undefined): string[] {
+  return Array.isArray(raw)
     ? raw.map((part) => String(part || '').trim()).filter(Boolean)
     : String(raw || '')
         .split(/[\s,]+/)
         .map((part) => part.trim())
         .filter(Boolean);
-  return scopes.some(
+}
+
+export function hasC6BankSlipWriteScope(raw: string | string[] | null | undefined): boolean {
+  return parseC6OAuthScopeList(raw).some(
     (scope) => scope === C6_BOLETO_WRITE_SCOPE || scope.endsWith('.bankslip.write'),
+  );
+}
+
+export function hasC6BankSlipReadScope(raw: string | string[] | null | undefined): boolean {
+  return parseC6OAuthScopeList(raw).some(
+    (scope) => scope === C6_BOLETO_READ_SCOPE || scope.endsWith('.bankslip.read'),
   );
 }
 
@@ -86,14 +107,17 @@ export class C6BoletoScopeError extends Error {
 }
 
 export function assertC6BankSlipWriteScope(raw: string | string[] | null | undefined): string[] {
-  const scopes = Array.isArray(raw)
-    ? raw.map((part) => String(part || '').trim()).filter(Boolean)
-    : String(raw || '')
-        .split(/[\s,]+/)
-        .map((part) => part.trim())
-        .filter(Boolean);
+  const scopes = parseC6OAuthScopeList(raw);
   if (!hasC6BankSlipWriteScope(scopes)) {
     throw new C6BoletoScopeError();
+  }
+  return scopes;
+}
+
+export function assertC6BankSlipReadScope(raw: string | string[] | null | undefined): string[] {
+  const scopes = parseC6OAuthScopeList(raw);
+  if (!hasC6BankSlipReadScope(scopes)) {
+    throw new C6BoletoScopeError('Escopo bankslip.read ausente. Consulta B_05/B_06 interrompida.');
   }
   return scopes;
 }

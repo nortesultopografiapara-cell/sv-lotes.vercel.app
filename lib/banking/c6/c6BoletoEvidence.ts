@@ -35,6 +35,7 @@ export type C6BoletoEvidencePublic = {
   testedAt: string;
   requestBody: Record<string, unknown> | null;
   responseBody: Record<string, unknown> | string | null;
+  responseContentType: string | null;
   message: string;
 };
 
@@ -81,13 +82,28 @@ export function sanitizeC6BoletoJson(value: unknown): Record<string, unknown> | 
   return sanitizeJsonValue(value) as Record<string, unknown>;
 }
 
+function classifyC6BoletoResponseKind(
+  bodyText: string,
+  contentType: string,
+): 'pdf' | 'json' | 'binary' {
+  const raw = String(bodyText || '');
+  const type = String(contentType || '').toLowerCase();
+  if (/^\[(pdf|binary)-bytes:\d+/.test(raw)) return 'pdf';
+  if (type.includes('pdf') || raw.startsWith('%PDF')) return 'pdf';
+  if (type.includes('json')) return 'json';
+  if (type.includes('octet-stream')) return 'binary';
+  return 'json';
+}
+
 export function parseC6BoletoResponseBody(
   bodyText: string,
   contentType = '',
 ): Record<string, unknown> | string | null {
   const raw = String(bodyText || '');
   if (!raw) return null;
-  if (/pdf/i.test(contentType) || raw.startsWith('%PDF')) {
+  const kind = classifyC6BoletoResponseKind(raw, contentType);
+  if (kind === 'pdf' || kind === 'binary') {
+    if (/^\[(pdf|binary)-bytes:\d+/.test(raw)) return raw;
     return `[pdf-bytes:${raw.length}]`;
   }
   try {
@@ -147,6 +163,7 @@ export function toC6BoletoEvidencePublic(input: {
     testedAt: input.testedAt || new Date().toISOString(),
     requestBody: input.requestBody ? sanitizeC6BoletoJson(input.requestBody) : null,
     responseBody,
+    responseContentType: input.contentType ? String(input.contentType).slice(0, 120) : null,
     message: String(input.message || '').slice(0, 300),
   };
 }
@@ -185,6 +202,7 @@ export type C6HomologWordEvidence = {
   roteiroExpectedStatus: number | null;
   openapiExpectedStatus: number | null;
   responseBody: Record<string, unknown> | string | null;
+  responseContentType: string | null;
   executed: boolean;
   blocked: boolean;
   wordColumnsReady: boolean;
@@ -208,6 +226,7 @@ export function collectC6HomologWordEvidence(
     roteiroExpectedStatus: evidence.roteiroExpectedStatus,
     openapiExpectedStatus: evidence.openapiExpectedStatus,
     responseBody: evidence.responseBody,
+    responseContentType: evidence.responseContentType,
     executed: evidence.executed,
     blocked: evidence.blocked,
     wordColumnsReady: Boolean(evidence.executed && evidence.httpStatus != null),
@@ -223,6 +242,7 @@ export function formatC6BoletoEvidenceReport(evidence: C6BoletoEvidencePublic): 
     `Empresa: ${evidence.companyId || '(ausente)'}`,
     `Carteira (billing_scheme): ${evidence.billingScheme || '(não enviada)'}`,
     `HTTP: ${evidence.httpStatus == null ? 'não executado' : evidence.httpStatus}`,
+    `Content-Type: ${evidence.responseContentType || '(ausente)'}`,
     `Status roteiro: ${evidence.roteiroExpectedStatus ?? 'n/a'}`,
     `Status OpenAPI: ${evidence.openapiExpectedStatus ?? 'n/a'}`,
     `Executado: ${evidence.executed ? 'sim' : 'não'}`,
