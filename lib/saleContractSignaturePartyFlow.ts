@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { onlyDigits } from '@/lib/inputMasks';
 import {
+  buyerDocumentDigits,
   isBuyerLegalEntity,
   isValidCpfCheckDigits,
   readBuyerRepresentatives,
@@ -118,6 +119,32 @@ export type SendPartiesResult = {
 const SPOUSE_PARTY_NOT_CREATED_MESSAGE =
   'O contrato possui cônjuge anuente, mas o participante eletrônico do cônjuge não foi criado. Verifique os dados e tente novamente.';
 
+const CUSTOMER_SIGNATURE_SELECTS = [
+  'id, name, cpf_cnpj, phone, email',
+  'id, name, cpf_cnpj, phone, email, contact_email',
+  'id, name, cpf_cnpj, document, phone, email, contact_email',
+];
+
+/** Lê o cliente sem exigir a coluna legada `cpf`, ausente em `customers`. */
+export async function loadCustomerForSignature(
+  supabaseAdmin: SupabaseClient,
+  customerId: string,
+): Promise<Record<string, unknown> | null> {
+  for (const columns of CUSTOMER_SIGNATURE_SELECTS) {
+    const { data, error } = await supabaseAdmin
+      .from('customers')
+      .select(columns)
+      .eq('id', customerId)
+      .maybeSingle();
+    if (!error && data) return data as Record<string, unknown>;
+  }
+  console.warn('[signature-parties] customer_load_failed', {
+    customerId: customerId.slice(0, 8),
+    stage: 'customer_select',
+  });
+  return null;
+}
+
 export async function loadSaleAndCompanyForSignature(
   supabaseAdmin: SupabaseClient,
   contractRow: Record<string, unknown>,
@@ -217,24 +244,7 @@ export async function loadSaleAndCompanyForSignature(
 
   let customer: Record<string, unknown> | null = null;
   if (customerId) {
-    const first = await supabaseAdmin
-      .from('customers')
-      .select(
-        'id, name, cpf, cpf_cnpj, document, phone, whatsapp, mobile, celular, contact_phone, telefone, email, contact_email',
-      )
-      .eq('id', customerId)
-      .maybeSingle();
-    if (!first.error && first.data) {
-      customer = first.data as Record<string, unknown>;
-    } else {
-      // Colunas opcionais (whatsapp/mobile…) podem falhar em schemas antigos.
-      const retry = await supabaseAdmin
-        .from('customers')
-        .select('id, name, cpf, cpf_cnpj, document, phone, email, contact_email')
-        .eq('id', customerId)
-        .maybeSingle();
-      customer = (retry.data as Record<string, unknown>) || null;
-    }
+    customer = await loadCustomerForSignature(supabaseAdmin, customerId);
   }
 
   const resolved = resolveSaleContractModelFromContext({
@@ -619,9 +629,9 @@ export async function createSignaturePartiesAfterSend(
     String(customer?.name || '').trim() ||
     String(params.contractRow.signed_by_name || '').trim() ||
     null;
-  const buyerCpf = onlyDigits(
-    String(customer?.cpf || customer?.cpf_cnpj || customer?.document || ''),
-  );
+  const buyerCpf =
+    buyerDocumentDigits(customer) ||
+    onlyDigits(String(customer?.cpf_cnpj || customer?.document || customer?.cpf || ''));
   const buyerPhone =
     pickCustomerPhoneForSignature(customer) || null;
   const buyerEmail =
@@ -1410,8 +1420,61 @@ export async function ensureLegalEntityBuyerProcessEvidence(
     return signature;
   }
 
-  const evidence = buyerProcessEvidenceFromLegalRepresentatives(parties);
+  let evidence = buyerProcessEvidenceFromLegalRepresentatives(parties);
+  if (!evidence) {
+    const buyer = parties.find((p) => String(p.role).toUpperCase() === 'BUYER');
+    const { data: contract } = await supabaseAdmin
+      .from('contracts')
+      .select('customer_id, signed_by_name')
+      .eq('id', signature.contract_id)
+      .maybeSingle();
+    const customerId = String(contract?.customer_id || '').trim();
+    const customer = customerId
+      ? await loadCustomerForSignature(supabaseAdmin, customerId)
+      : null;
+    const fallbackDocument = buyerDocumentDigits(customer);
+    const fallbackName =
+      String(buyer?.signer_name || '').trim() ||
+      String(customer?.name || '').trim() ||
+      String(contract?.signed_by_name || '').trim();
+    evidence = buyerProcessEvidenceFromLegalRepresentatives(parties, {
+      signerName: fallbackName,
+      signerDocument: fallbackDocument,
+    });
+    const reps = parties.filter(
+      (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+    );
+    console.warn('[vendor-sign] buyer_evidence', {
+      signatureId: String(signature.id || '').slice(0, 8),
+      stage: evidence ? 'recovered_from_customer' : 'buyer_evidence_missing',
+      role: 'LEGAL_REPRESENTATIVE',
+      repCount: reps.length,
+      repsSigned: reps.filter(
+        (p) => String(p.status).toUpperCase() === 'SIGNED',
+      ).length,
+      buyerDocLength: onlyDigits(String(buyer?.signer_cpf || '')).length,
+      customerDocLength: fallbackDocument.length,
+      buyerNamePresent: Boolean(fallbackName),
+    });
+  }
   if (!evidence) return signature;
+
+  const buyerParty = parties.find((p) => String(p.role).toUpperCase() === 'BUYER');
+  if (
+    buyerParty &&
+    String(buyerParty.status || '').toUpperCase() !== 'SIGNED' &&
+    onlyDigits(String(buyerParty.signer_cpf || '')).length !== 14
+  ) {
+    await supabaseAdmin
+      .from('contract_signature_parties')
+      .update({
+        signer_name: buyerParty.signer_name || evidence.signerName,
+        signer_cpf: evidence.signerDocument,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', buyerParty.id)
+      .neq('status', 'SIGNED');
+  }
 
   const now = new Date().toISOString();
   const patch = {

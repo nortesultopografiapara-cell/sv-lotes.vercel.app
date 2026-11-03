@@ -1284,8 +1284,13 @@ export async function signSaleContractByVendor(
   const clientSignerName = String(signatureRow.signer_name || '').trim();
   const clientSignedAt = String(signatureRow.signed_at || '').trim();
   if (!clientSignerName || !clientSignedAt) {
+    const hasLegalRep = allPartiesListed.some(
+      (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+    );
     throw new SaleContractSignatureError(
-      'Assinatura do comprador incompleta. Aguarde o comprador assinar primeiro.',
+      hasLegalRep
+        ? 'Não foi possível identificar a razão social e o CNPJ da compradora. A assinatura do representante legal foi mantida.'
+        : 'Assinatura do comprador incompleta. Aguarde o comprador assinar primeiro.',
     );
   }
   const vendorSignedAt = new Date().toISOString();

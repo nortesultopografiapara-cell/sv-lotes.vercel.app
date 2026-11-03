@@ -400,6 +400,39 @@ function testSignatureAggregate() {
     ]) === null,
     'pessoa física não usa a evidência de representante',
   );
+  const recovered = buyerProcessEvidenceFromLegalRepresentatives(
+    [
+      { role: 'BUYER', status: 'PENDING', signer_name: '', signer_cpf: '' },
+      {
+        role: 'LEGAL_REPRESENTATIVE',
+        status: 'SIGNED',
+        signer_name: 'SEVERINO JOSE DE FRANÇA',
+        signer_cpf: CPF,
+        signed_at: '2026-11-03T18:00:00.000Z',
+      },
+    ],
+    {
+      signerName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+      signerDocument: CNPJ,
+    },
+  );
+  assert(recovered?.signerDocument === CNPJ, 'contrato antigo recupera o CNPJ do cadastro');
+  assert(recovered?.signerName.includes('TOPOGRAFIA'), 'contrato antigo recupera a razão social');
+  assert(
+    buyerProcessEvidenceFromLegalRepresentatives(
+      [
+        { role: 'BUYER', status: 'PENDING', signer_cpf: CPF },
+        {
+          role: 'LEGAL_REPRESENTATIVE',
+          status: 'SIGNED',
+          signer_name: 'SEVERINO',
+          signed_at: '2026-11-03T18:00:00.000Z',
+        },
+      ],
+      { signerName: 'EMPRESA', signerDocument: CPF },
+    ) === null,
+    'CPF do representante não substitui o CNPJ',
+  );
 
   const progress = countSignedParties([
     buyer,

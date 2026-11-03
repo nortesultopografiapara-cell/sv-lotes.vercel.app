@@ -81,6 +81,10 @@ export function SaleContractVendorSignModal({
   const emailRequired = multi
     ? Boolean(String(selectedTarget?.email || '').trim())
     : true;
+  const firstTargetId = vendorTargets[0]?.partyId || '';
+  const firstTargetName = vendorTargets[0]?.name || '';
+  const firstTargetDocument = vendorTargets[0]?.document || '';
+  const firstTargetEmail = vendorTargets[0]?.email || '';
 
   useEffect(() => {
     setMounted(true);
@@ -88,12 +92,12 @@ export function SaleContractVendorSignModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (multi && vendorTargets[0]) {
-      setSelectedPartyId(vendorTargets[0].partyId);
-      setVendorName(vendorTargets[0].name);
-      setVendorDocument(vendorTargets[0].document);
-      setVendorEmail(vendorTargets[0].email || '');
-    } else {
+    if (multi && firstTargetId) {
+      setSelectedPartyId(firstTargetId);
+      setVendorName(firstTargetName);
+      setVendorDocument(firstTargetDocument);
+      setVendorEmail(firstTargetEmail);
+    } else if (!multi) {
       setVendorName(defaultName);
       setVendorDocument(defaultDocument);
       setVendorEmail(defaultEmail);
@@ -101,7 +105,17 @@ export function SaleContractVendorSignModal({
     setAccepted(false);
     setFormError(null);
     setSubmitting(false);
-  }, [isOpen, defaultName, defaultDocument, defaultEmail, multi, vendorTargets]);
+  }, [
+    isOpen,
+    defaultName,
+    defaultDocument,
+    defaultEmail,
+    multi,
+    firstTargetId,
+    firstTargetName,
+    firstTargetDocument,
+    firstTargetEmail,
+  ]);
 
   useEffect(() => {
     if (!multi || !selectedTarget) return;

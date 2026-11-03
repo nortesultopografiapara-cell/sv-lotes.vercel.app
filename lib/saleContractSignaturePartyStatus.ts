@@ -329,6 +329,10 @@ export function buyerProcessEvidenceFromLegalRepresentatives(
     signer_cpf?: string | null;
     signed_at?: string | null;
   }> | null | undefined,
+  fallback?: {
+    signerName?: string | null;
+    signerDocument?: string | null;
+  },
 ): LegalEntityBuyerProcessEvidence | null {
   const list = parties || [];
   const reps = list.filter(
@@ -343,8 +347,10 @@ export function buyerProcessEvidenceFromLegalRepresentatives(
   if (!complete) return null;
 
   const buyer = list.find((p) => String(p.role).toUpperCase() === 'BUYER');
-  const signerName = String(buyer?.signer_name || '').trim();
-  const signerDocument = String(buyer?.signer_cpf || '').replace(/\D/g, '');
+  const signerName = String(buyer?.signer_name || fallback?.signerName || '').trim();
+  const partyDocument = String(buyer?.signer_cpf || '').replace(/\D/g, '');
+  const fallbackDocument = String(fallback?.signerDocument || '').replace(/\D/g, '');
+  const signerDocument = partyDocument.length === 14 ? partyDocument : fallbackDocument;
   if (!signerName || signerDocument.length !== 14) return null;
 
   const signedAt = reps
