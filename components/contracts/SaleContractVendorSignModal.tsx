@@ -191,10 +191,12 @@ export function SaleContractVendorSignModal({
       if (!res.ok || !json?.ok) {
         setPrincipal(null);
         setFormError(
-          json?.error === SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE ||
-            json?.code === 'already_signed'
-            ? SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE
-            : SELLER_SIGNATURE_LOAD_FAILED_MESSAGE,
+          json?.code === 'missing_primary'
+            ? String(json.error || SELLER_SIGNATURE_LOAD_FAILED_MESSAGE)
+            : json?.error === SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE ||
+                json?.code === 'already_signed'
+              ? SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE
+              : SELLER_SIGNATURE_LOAD_FAILED_MESSAGE,
         );
         setStep('load_failed');
         return 'failed';

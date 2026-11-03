@@ -7,10 +7,18 @@ import {
   createPrimaryAdminReauthDeps,
   persistPrimaryAdminVerifyAudit,
 } from '@/lib/primaryAdminReauthServer';
+import {
+  assignCompanyPrimaryAdmin,
+  evaluatePrimaryAdminCandidate,
+} from '@/lib/companyPrimaryAdmin';
 import { loadSaleContractContext } from '@/lib/contractRegeneration';
 import { listSignatureParties } from '@/lib/saleContractSignatureParties';
 import { signSaleContractByVendor } from '@/lib/saleContractSignatureService';
-import type { PrimaryAdminReauthDeps, PrimaryAdminVerifyResult } from '@/lib/primaryAdminReauth';
+import type {
+  PrimaryAdminReauthDeps,
+  PrimaryAdminUserRow,
+  PrimaryAdminVerifyResult,
+} from '@/lib/primaryAdminReauth';
 import {
   SELLER_SIGNATURE_AUDIT_MODULE,
   buildSellerSignatureAuditDescription,
@@ -94,6 +102,20 @@ export async function loadVendorSignParties(
   }));
 }
 
+async function listActiveCompanyAdmins(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<PrimaryAdminUserRow[]> {
+  const { data, error } = await admin
+    .from('users')
+    .select('id, tenant_id, role, status, email, full_name')
+    .eq('tenant_id', companyId);
+  if (error || !Array.isArray(data)) return [];
+  return (data as PrimaryAdminUserRow[]).filter((user) =>
+    evaluatePrimaryAdminCandidate(user, companyId).ok && String(user.email || '').trim(),
+  );
+}
+
 export function createVendorSignPreviewDeps(
   admin: SupabaseClient,
 ): Pick<
@@ -117,6 +139,7 @@ export function createVendorSignPreviewDeps(
     loadSignature: (contractId, signatureId) =>
       loadVendorSignSignature(admin, contractId, signatureId),
     loadParties: (signatureId) => loadVendorSignParties(admin, signatureId),
+    listActiveCompanyAdmins: (companyId) => listActiveCompanyAdmins(admin, companyId),
   };
 }
 
@@ -132,6 +155,9 @@ export function createVendorSignAuthDeps(
     loadSignature: (contractId, signatureId) =>
       loadVendorSignSignature(admin, contractId, signatureId),
     loadParties: (signatureId) => loadVendorSignParties(admin, signatureId),
+    listActiveCompanyAdmins: (companyId) => listActiveCompanyAdmins(admin, companyId),
+    rememberSolePrimaryAdmin: (companyId, userId) =>
+      assignCompanyPrimaryAdmin(admin, { companyId, userId }).then(() => undefined),
     signAsVendor: async (input) => {
       const result = await signSaleContractByVendor(admin, input.contractId, input.signatureId, {
         vendorName: input.vendorName,

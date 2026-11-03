@@ -1075,6 +1075,124 @@ async function testPublicSignFailClosed() {
   console.log('OK 3 fail-closed sessão admin');
 }
 
+async function testUnassignedCompanyAdminStillRequiresPassword() {
+  const legalRep: VendorSignPartySnapshot = {
+    id: 'rep-1',
+    role: 'LEGAL_REPRESENTATIVE',
+    status: 'SIGNED',
+    signer_name: 'SEVERINO JOSE DE FRANÇA',
+    signer_cpf: '52998224725',
+  };
+  const parties = [...pendingVendorParties(), legalRep];
+  const wired = makeDeps({ parties });
+  let stored: string | null = null;
+  const remembered: string[] = [];
+  wired.deps.loadCompanyPrimaryAdminUserId = async () => stored;
+  wired.deps.listActiveCompanyAdmins = async () => [users()[PRINCIPAL]];
+  wired.deps.rememberSolePrimaryAdmin = async (_companyId, userId) => {
+    remembered.push(userId);
+    stored = userId;
+  };
+
+  const preview = await previewInternalVendorSignAuthorization(wired.deps, {
+    operatorUserId: PRINCIPAL,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    partyId: VENDOR_PARTY,
+  });
+  assert(preview.ok === true, 'único admin sem titular chega na prévia');
+  if (!preview.ok) throw new Error('expected preview');
+  assert(preview.requiresAuthorization === true, 'prévia pede senha');
+  assert(decideInternalVendorSignAfterPreview(preview).action === 'authorize', 'não assina sem senha');
+
+  const wrong = await authorizeAndExecuteInternalVendorSign(wired.deps, {
+    operatorUserId: PRINCIPAL,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    password: 'errada',
+    vendorName: 'Daniel Roberto',
+    vendorDocument: '11144477735',
+    vendorEmail: 'daniel@example.com',
+    partyId: VENDOR_PARTY,
+  });
+  assert(!wrong.result.ok, 'senha incorreta recusa');
+  assert(wired.signCalls.length === 0, 'senha incorreta não assina');
+  assert(remembered.length === 0, 'senha incorreta não grava titular');
+  assert(legalRep.status === 'SIGNED', 'representante já assinado permanece');
+
+  const empty = await authorizeAndExecuteInternalVendorSign(wired.deps, {
+    operatorUserId: PRINCIPAL,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    password: '',
+    vendorName: 'Daniel Roberto',
+    vendorDocument: '11144477735',
+    vendorEmail: 'daniel@example.com',
+    partyId: VENDOR_PARTY,
+  });
+  assert(!empty.result.ok, 'senha vazia recusa');
+
+  const other = await authorizeAndExecuteInternalVendorSign(wired.deps, {
+    operatorUserId: PRINCIPAL,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    password: MARCOS_PASSWORD,
+    vendorName: 'Daniel Roberto',
+    vendorDocument: '11144477735',
+    vendorEmail: 'daniel@example.com',
+    partyId: VENDOR_PARTY,
+  });
+  assert(!other.result.ok, 'senha de outro usuário recusa');
+  assert(wired.signCalls.length === 0, 'senha alheia não assina');
+
+  const ok = await authorizeAndExecuteInternalVendorSign(wired.deps, {
+    operatorUserId: PRINCIPAL,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    password: PRINCIPAL_PASSWORD,
+    vendorName: 'Daniel Roberto',
+    vendorDocument: '11144477735',
+    vendorEmail: 'daniel@example.com',
+    partyId: VENDOR_PARTY,
+  });
+  assert(ok.result.ok === true, 'senha do administrador conclui');
+  assert(wired.signCalls.length === 1, 'uma assinatura de vendedor');
+  assert(stored === PRINCIPAL, 'único admin passa a ser o titular');
+  assert(legalRep.status === 'SIGNED', 'representante legal não é regravado');
+  console.log('OK empresa sem titular usa senha do único admin');
+}
+
+async function testSeveralAdminsDoNotGuessPrincipal() {
+  const wired = makeDeps();
+  wired.deps.loadCompanyPrimaryAdminUserId = async () => null;
+  wired.deps.listActiveCompanyAdmins = async () => [users()[PRINCIPAL], users()[MARCOS]];
+  const remembered: string[] = [];
+  wired.deps.rememberSolePrimaryAdmin = async (_companyId, userId) => {
+    remembered.push(userId);
+  };
+  const preview = await previewInternalVendorSignAuthorization(wired.deps, {
+    operatorUserId: MARCOS,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    partyId: VENDOR_PARTY,
+  });
+  assert(preview.ok === true, 'admin ativo vê a etapa de senha');
+  const denied = await authorizeAndExecuteInternalVendorSign(wired.deps, {
+    operatorUserId: MARCOS,
+    contractId: CONTRACT,
+    signatureId: SIGNATURE,
+    password: PRINCIPAL_PASSWORD,
+    vendorName: 'Daniel Roberto',
+    vendorDocument: '11144477735',
+    vendorEmail: 'daniel@example.com',
+    partyId: VENDOR_PARTY,
+  });
+  assert(!denied.result.ok, 'senha de outro admin recusa');
+  assert(wired.signCalls.length === 0, 'não assina');
+  assert(remembered.length === 0, 'não escolhe titular sozinho');
+  console.log('OK vários admins não escolhem titular');
+}
+
 async function main() {
   testRoleGate();
   testClassifyVendorVsIntervenient();
@@ -1098,6 +1216,8 @@ async function main() {
   testSourceWiring();
   testPublicVendorTokenAdminBlock();
   await testPublicSignFailClosed();
+  await testUnassignedCompanyAdminStillRequiresPassword();
+  await testSeveralAdminsDoNotGuessPrincipal();
   console.log('OK mandatory-seller-signature-auth-tests');
 }
 

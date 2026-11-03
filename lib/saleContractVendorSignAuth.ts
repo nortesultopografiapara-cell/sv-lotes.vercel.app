@@ -10,8 +10,10 @@ import {
   readPrimaryAdminVerifyRequest,
   verifyPrimaryAdminPassword,
   type PrimaryAdminReauthDeps,
+  type PrimaryAdminUserRow,
   type PrimaryAdminVerifyResult,
 } from '@/lib/primaryAdminReauth';
+import { evaluatePrimaryAdminCandidate } from '@/lib/companyPrimaryAdmin';
 import { isPlatformAdmin } from '@/lib/rls';
 import {
   isBrokerRole,
@@ -36,6 +38,8 @@ export const SELLER_SIGNATURE_AUDIT_MODULE = 'CONTRACTS';
 
 export const SELLER_SIGNATURE_LOAD_FAILED_MESSAGE =
   'Não foi possível carregar a autorização do Administrador Principal.';
+export const SELLER_SIGNATURE_MISSING_PRIMARY_MESSAGE =
+  'Esta empresa ainda não tem Administrador Principal. A assinatura do vendedor exige a senha de um administrador ativo da empresa.';
 export const SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE =
   'Este vendedor já assinou este contrato.';
 export const SELLER_SIGNATURE_BROKER_DENIED_MESSAGE =
@@ -134,6 +138,7 @@ export type VendorSignExecuteResult =
         | 'already_signed'
         | 'precondition'
         | 'unsupported_party'
+        | 'missing_primary'
         | 'persistence_failed';
       kind?: 'vendor' | 'intervenient';
       requestedBy?: string;
@@ -156,6 +161,7 @@ export type VendorSignPreviewFailureCode =
   | 'wrong_tenant'
   | 'not_found'
   | 'unsupported_party'
+  | 'missing_primary'
   | 'already_signed';
 
 export type VendorSignPreviewResult =
@@ -210,6 +216,8 @@ export type VendorSignAuthDeps = PrimaryAdminReauthDeps & {
     signatureId: string,
   ) => Promise<VendorSignSignatureSnapshot | null>;
   loadParties: (signatureId: string) => Promise<VendorSignPartySnapshot[]>;
+  listActiveCompanyAdmins?: (companyId: string) => Promise<PrimaryAdminUserRow[]>;
+  rememberSolePrimaryAdmin?: (companyId: string, userId: string) => Promise<void>;
   signAsVendor: (input: {
     contractId: string;
     signatureId: string;
@@ -366,17 +374,27 @@ export function toPublicVendorSignError(result: VendorSignExecuteResult): {
   if (!result.ok && result.code === 'forbidden_role') {
     return { ok: false, error: SELLER_SIGNATURE_ROLE_DENIED_MESSAGE };
   }
+  if (!result.ok && result.code === 'missing_primary') {
+    return { ok: false, error: result.message || SELLER_SIGNATURE_MISSING_PRIMARY_MESSAGE };
+  }
   return { ok: false, error: PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE };
 }
 
 export function toPublicVendorSignPreviewError(
   code: VendorSignPreviewFailureCode,
-): { ok: false; error: string; code: 'unauthenticated' | 'load_failed' | 'already_signed' } {
+): { ok: false; error: string; code: 'unauthenticated' | 'load_failed' | 'already_signed' | 'missing_primary' } {
   if (code === 'unauthenticated') {
     return { ok: false, error: 'Não autenticado.', code: 'unauthenticated' };
   }
   if (code === 'already_signed') {
     return { ok: false, error: SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE, code: 'already_signed' };
+  }
+  if (code === 'missing_primary') {
+    return {
+      ok: false,
+      error: SELLER_SIGNATURE_MISSING_PRIMARY_MESSAGE,
+      code: 'missing_primary',
+    };
   }
   return { ok: false, error: SELLER_SIGNATURE_LOAD_FAILED_MESSAGE, code: 'load_failed' };
 }
@@ -481,6 +499,51 @@ async function loadOperatorContext(
   };
 }
 
+function eligibleCompanyAdmin(
+  user: PrimaryAdminUserRow | null | undefined,
+  companyId: string,
+): user is PrimaryAdminUserRow & { id: string; email: string } {
+  const email = String(user?.email || '').trim();
+  return Boolean(user?.id && email && evaluatePrimaryAdminCandidate(user, companyId).ok);
+}
+
+async function resolveVendorSignPrincipal(
+  deps: Pick<
+    VendorSignAuthDeps,
+    'loadCompanyPrimaryAdminUserId' | 'loadUser' | 'listActiveCompanyAdmins'
+  >,
+  tenantId: string,
+  operatorId: string,
+): Promise<
+  | {
+      ok: true;
+      user: PrimaryAdminUserRow & { id: string; email: string };
+      assigned: boolean;
+      soleUnassigned: boolean;
+    }
+  | { ok: false; code: 'denied' | 'missing_primary' }
+> {
+  const storedId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
+  if (storedId) {
+    const stored = await deps.loadUser(storedId);
+    if (!eligibleCompanyAdmin(stored, tenantId)) return { ok: false, code: 'denied' };
+    return { ok: true, user: stored, assigned: true, soleUnassigned: false };
+  }
+
+  const admins = (await deps.listActiveCompanyAdmins?.(tenantId)) || [];
+  const eligible = admins.filter((admin) => eligibleCompanyAdmin(admin, tenantId));
+  const operator = eligible.find((admin) => admin.id === operatorId);
+  if (!operator || !eligibleCompanyAdmin(operator, tenantId)) {
+    return { ok: false, code: 'missing_primary' };
+  }
+  return {
+    ok: true,
+    user: operator,
+    assigned: false,
+    soleUnassigned: eligible.length === 1,
+  };
+}
+
 export async function previewInternalVendorSignAuthorization(
   deps: Pick<
     VendorSignAuthDeps,
@@ -549,9 +612,9 @@ export async function previewInternalVendorSignAuthorization(
     return { ok: false, code: 'already_signed' };
   }
 
-  const primaryId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
-  const primary = primaryId ? await deps.loadUser(primaryId) : null;
-  if (!primary?.id || !primary.email) return { ok: false, code: 'denied' };
+  const principal = await resolveVendorSignPrincipal(deps, tenantId, op.operatorId);
+  if (!principal.ok) return { ok: false, code: principal.code };
+  const primary = principal.user;
 
   return {
     ok: true,
@@ -687,7 +750,35 @@ export async function authorizeAndExecuteInternalVendorSign(
     }
   }
 
-  const verify = await verifyPrimaryAdminPassword(deps, {
+  const principal = await resolveVendorSignPrincipal(deps, tenantId, op.operatorId);
+  if (!principal.ok) {
+    return {
+      result: {
+        ok: false,
+        code: principal.code,
+        kind: target.kind,
+        requestedBy: op.operatorId,
+        tenantId,
+        contractId: contract.id,
+        signatureId: signature.id,
+        saleId: contract.sale_id || null,
+        sellerPartyId: target.partyId,
+        sellerName: target.sellerName,
+        message:
+          principal.code === 'missing_primary'
+            ? SELLER_SIGNATURE_MISSING_PRIMARY_MESSAGE
+            : undefined,
+      },
+    };
+  }
+
+  const verifyDeps: VendorSignAuthDeps = principal.assigned
+    ? deps
+    : {
+        ...deps,
+        loadCompanyPrimaryAdminUserId: async () => principal.user.id,
+      };
+  const verify = await verifyPrimaryAdminPassword(verifyDeps, {
     operatorUserId: op.operatorId,
     password: input.password,
     companyId: tenantId,
@@ -709,6 +800,17 @@ export async function authorizeAndExecuteInternalVendorSign(
         reason: verify.reason,
       },
     };
+  }
+
+  if (!principal.assigned && principal.soleUnassigned && deps.rememberSolePrimaryAdmin) {
+    try {
+      await deps.rememberSolePrimaryAdmin(tenantId, principal.user.id);
+    } catch (err) {
+      console.warn(
+        '[seller-signature-preview] principal',
+        err instanceof Error ? err.message : 'falha ao gravar o administrador principal',
+      );
+    }
   }
 
   const signedAt = new Date().toISOString();

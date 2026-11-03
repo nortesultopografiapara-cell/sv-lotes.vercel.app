@@ -85,6 +85,7 @@ export async function GET(
       vendorDocument,
     });
     if (!preview.ok) {
+      console.warn('[seller-signature-preview]', { code: preview.code, contractId });
       const pub = toPublicVendorSignPreviewError(preview.code);
       return NextResponse.json(pub, { status: pub.code === 'unauthenticated' ? 401 : 422 });
     }
