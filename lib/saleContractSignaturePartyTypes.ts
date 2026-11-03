@@ -167,6 +167,19 @@ export function saleAwaitingVendorPanelMessage(parties: {
       String(p.role).toUpperCase() === 'VENDOR' &&
       String(p.status).toUpperCase() !== 'SIGNED',
   );
+  const hasLegalReps = parties.some(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+  );
+  if (hasLegalReps) {
+    if (pendingVendors.length > 1) {
+      const names = pendingVendors
+        .map((p) => String(p.signer_name || '').trim())
+        .filter(Boolean)
+        .join(' e ');
+      return `Representantes legais assinaram. Aguardando assinatura dos promitentes vendedores${names ? ` (${names})` : ''}.`;
+    }
+    return 'Representante legal assinou. Aguardando assinatura da vendedora.';
+  }
   if (pendingVendors.length > 1) {
     const names = pendingVendors
       .map((p) => String(p.signer_name || '').trim())
@@ -199,6 +212,22 @@ export function isVendorWaitingForBuyers(parties: {
   }
   // Multi-VENDOR: assinatura pública independente (não bloquear UI/compartilhamento).
   if (vendors.length > 1) return false;
+
+  const legalReps = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+  );
+  if (legalReps.length > 0) {
+    const repPending = legalReps.some(
+      (p) => String(p.status).toUpperCase() !== 'SIGNED',
+    );
+    const spouse = parties.find(
+      (p) => String(p.role).toUpperCase() === 'SPOUSE',
+    );
+    const spousePending = Boolean(
+      spouse && String(spouse.status).toUpperCase() !== 'SIGNED',
+    );
+    return repPending || spousePending;
+  }
 
   const external = parties.filter((p) =>
     ['BUYER', 'SPOUSE'].includes(String(p.role).toUpperCase()),

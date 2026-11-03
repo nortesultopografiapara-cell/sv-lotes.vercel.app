@@ -21,6 +21,7 @@ export type ElectronicSlotStamp = {
   signedAt?: string | null;
   signed: boolean;
   role?: ContractPartySignatureDisplayRole;
+  dataPartyRole?: string;
 };
 
 function formatStampDate(iso?: string | null): string {
@@ -177,7 +178,7 @@ export function stampContractSignatureSlotByRole(
   if (!stamp.signed || (!stamp.roleMarker && !stamp.role)) return html;
 
   const slots = findContractSignatureSlots(html);
-  const dataRole = displayRoleToDataPartyRole(stamp.role);
+  const dataRole = stamp.dataPartyRole || displayRoleToDataPartyRole(stamp.role);
   const markers = markersForStamp(stamp);
 
   let target = dataRole
@@ -314,9 +315,24 @@ export function buildElectronicStampsFromSignatureParties(input: {
     buyer.signerName = String(input.buyerNameFallback).trim() || undefined;
   }
 
+  const legalRepStamps: ElectronicSlotStamp[] = parties
+    .filter(
+      (p) =>
+        String(p.role || '').toUpperCase() === 'LEGAL_REPRESENTATIVE' &&
+        String(p.status || '').toUpperCase() === 'SIGNED',
+    )
+    .map((p) => ({
+      roleMarker: 'REPRESENTANTE LEGAL',
+      dataPartyRole: 'LEGAL_REPRESENTATIVE',
+      signerName: String(p.signer_name || '').trim(),
+      signedAt: p.signed_at,
+      signed: Boolean(String(p.signer_name || '').trim() || p.signed_at),
+    }));
+
   return [
     stampFromResolved(seller, CONTRACT_PARTY_SLOT_MARKERS.SELLER),
     stampFromResolved(buyer, CONTRACT_PARTY_SLOT_MARKERS.BUYER),
     stampFromResolved(spouse, CONTRACT_PARTY_SLOT_MARKERS.SPOUSE),
+    ...legalRepStamps,
   ];
 }

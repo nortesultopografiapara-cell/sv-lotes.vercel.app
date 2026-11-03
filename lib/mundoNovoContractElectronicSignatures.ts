@@ -36,8 +36,9 @@ function roleOrder(role: string): number {
   if (key === 'VENDOR') return 1;
   if (key === 'INTERVENIENT') return 2;
   if (key === 'BUYER') return 3;
-  if (key === 'WITNESS_1') return 4;
-  if (key === 'WITNESS_2') return 5;
+  if (key === 'LEGAL_REPRESENTATIVE') return 4;
+  if (key === 'WITNESS_1') return 5;
+  if (key === 'WITNESS_2') return 6;
   return 9;
 }
 
@@ -121,16 +122,33 @@ export function buildMundoNovoElectronicSignatureSlotsFromParties(
     }
 
     if (role === 'BUYER') {
+      const buyerDigits = String(party.signer_cpf || '').replace(/\D/g, '');
       slots.push({
         role,
-        roleLabel: 'PROMITENTE COMPRADOR',
+        roleLabel: buyerDigits.length === 14 ? 'COMPRADORA' : 'PROMITENTE COMPRADOR',
+        name: String(party.signer_name || '').trim() || '—',
+        documentLabel: buyerDigits.length === 14 ? 'CNPJ' : 'CPF',
+        document: party.signer_cpf,
+        ipAddress,
+        signedAt: party.signed_at,
+        signatureEventId: eventId,
+        dataRole: 'BUYER',
+        extraClass: 'signature-slot-buyer-electronic',
+      });
+      continue;
+    }
+
+    if (role === 'LEGAL_REPRESENTATIVE') {
+      slots.push({
+        role,
+        roleLabel: 'REPRESENTANTE LEGAL',
         name: String(party.signer_name || '').trim() || '—',
         documentLabel: 'CPF',
         document: party.signer_cpf,
         ipAddress,
         signedAt: party.signed_at,
         signatureEventId: eventId,
-        dataRole: 'BUYER',
+        dataRole: 'LEGAL_REPRESENTATIVE',
         extraClass: 'signature-slot-buyer-electronic',
       });
       continue;

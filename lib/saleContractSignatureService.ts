@@ -61,6 +61,7 @@ import {
   assertSaleSignaturePartiesReadyBeforeSend,
   createSignaturePartiesAfterSend,
   assertVendorCanSignWithParties,
+  ensureLegalEntityBuyerProcessEvidence,
   markVendorPartySigned,
   signPartyElectronically,
   markPartyOrLegacyViewed,
@@ -1274,7 +1275,19 @@ export async function signSaleContractByVendor(
     signatureRow = syncedEarly.signature as ContractSignatureRow;
   }
 
-  const clientSignedAt = signatureRow.signed_at!;
+  signatureRow = (await ensureLegalEntityBuyerProcessEvidence(
+    supabaseAdmin,
+    signatureRow,
+    allPartiesListed,
+  )) as ContractSignatureRow;
+
+  const clientSignerName = String(signatureRow.signer_name || '').trim();
+  const clientSignedAt = String(signatureRow.signed_at || '').trim();
+  if (!clientSignerName || !clientSignedAt) {
+    throw new SaleContractSignatureError(
+      'Assinatura do comprador incompleta. Aguarde o comprador assinar primeiro.',
+    );
+  }
   const vendorSignedAt = new Date().toISOString();
 
   const clientHash =
@@ -1283,7 +1296,7 @@ export async function signSaleContractByVendor(
       buildSignatureHashPayload({
         contractId: String(contractRow.id),
         contractNumber: String(contractRow.contract_number || ''),
-        signerName: signatureRow.signer_name!,
+        signerName: clientSignerName,
         signerDocument: signatureRow.signer_document || '',
         signerEmail: signatureRow.signer_email || '',
         signedAt: clientSignedAt,
@@ -2025,8 +2038,11 @@ export async function loadSaleContractPdfForSign(
             legacyVendorSignedAt: signature.vendor_signed_at,
             legacyVendorSigned: Boolean(signature.vendor_signed_at),
             legacyBuyerSigned:
-              String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
-              Boolean(signature.signed_at),
+              !parties.some(
+                (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+              ) &&
+              (String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
+                Boolean(signature.signed_at)),
           }),
         );
       }
@@ -2117,6 +2133,26 @@ export async function loadSaleContractPdfForSign(
       buyerSignatureEventId: buyerParty
         ? readPartySignatureEventId(buyerParty)
         : null,
+      buyerLegalRepresentativeCards: parties
+        .filter(
+          (p) =>
+            String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE' &&
+            String(p.status).toUpperCase() === 'SIGNED',
+        )
+        .map((p) => ({
+          name: String(p.signer_name || ''),
+          cpf: p.signer_cpf,
+          email: p.signer_email,
+          phone: p.signer_phone,
+          signedAt: p.signed_at,
+          ipAddress: p.ip_address,
+          signatureHash: p.signature_hash,
+          signatureEventId: readPartySignatureEventId(p),
+          browser: readPartyUaField(p, 'browser'),
+          os: readPartyUaField(p, 'os'),
+          device: readPartyUaField(p, 'device'),
+          approxLocation: readPartyLocation(p),
+        })),
       personVendorCards,
       intervenientCard,
       witnessCards,

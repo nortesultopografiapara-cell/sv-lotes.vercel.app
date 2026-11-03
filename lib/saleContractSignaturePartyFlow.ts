@@ -66,6 +66,7 @@ import {
   type CreatedPartyWithToken,
 } from '@/lib/saleContractSignatureParties';
 import {
+  buyerProcessEvidenceFromLegalRepresentatives,
   canVendorSignFromParties,
   computeAggregateSaleSignatureStatus,
   toPartyStatusSnapshots,
@@ -971,6 +972,7 @@ export async function syncAggregateSignatureStatus(
     updated_at: now,
   };
 
+  const legalEntityEvidence = buyerProcessEvidenceFromLegalRepresentatives(list);
   if (buyer?.signed_at && buyer.status === 'SIGNED') {
     patch.signer_name = buyer.signer_name;
     patch.signer_document = buyer.signer_cpf;
@@ -980,6 +982,10 @@ export async function syncAggregateSignatureStatus(
     patch.signature_hash = buyer.signature_hash;
     patch.ip_address = buyer.ip_address;
     patch.user_agent = buyer.user_agent;
+  } else if (legalEntityEvidence) {
+    patch.signer_name = legalEntityEvidence.signerName;
+    patch.signer_document = legalEntityEvidence.signerDocument;
+    patch.signed_at = legalEntityEvidence.signedAt;
   }
 
   if (buyer?.viewed_at) {
@@ -1032,6 +1038,10 @@ export async function syncAggregateSignatureStatus(
       contractPatch.signed_at = buyer.signed_at;
       contractPatch.signed_by_name = buyer.signer_name;
       contractPatch.signed_by_cpf = buyer.signer_cpf;
+    } else if (legalEntityEvidence) {
+      contractPatch.signed_at = legalEntityEvidence.signedAt;
+      contractPatch.signed_by_name = legalEntityEvidence.signerName;
+      contractPatch.signed_by_cpf = legalEntityEvidence.signerDocument;
     }
   } else if (aggregate === 'SIGNED') {
     contractPatch.status = 'assinado';
@@ -1039,6 +1049,10 @@ export async function syncAggregateSignatureStatus(
       contractPatch.signed_at = buyer.signed_at;
       contractPatch.signed_by_name = buyer.signer_name;
       contractPatch.signed_by_cpf = buyer.signer_cpf;
+    } else if (legalEntityEvidence) {
+      contractPatch.signed_at = legalEntityEvidence.signedAt;
+      contractPatch.signed_by_name = legalEntityEvidence.signerName;
+      contractPatch.signed_by_cpf = legalEntityEvidence.signerDocument;
     }
   } else if (aggregate === 'PARTIALLY_SIGNED' || aggregate === 'VIEWED' || aggregate === 'PENDING') {
     const currentStatus = String(
@@ -1378,6 +1392,52 @@ export async function signPartyElectronically(
     awaitingVendor: aggregate === 'CLIENT_SIGNED',
     awaitingOtherBuyers: aggregate === 'PARTIALLY_SIGNED',
   };
+}
+
+/**
+ * Preenche nome, CNPJ e data do processo quando os representantes já assinaram
+ * e a party BUYER permanece pendente. Não marca BUYER nem conclui o contrato.
+ */
+export async function ensureLegalEntityBuyerProcessEvidence(
+  supabaseAdmin: SupabaseClient,
+  signature: SignatureProcessRow,
+  parties: ContractSignaturePartyRow[],
+): Promise<SignatureProcessRow> {
+  if (
+    String(signature.signed_at || '').trim() &&
+    String(signature.signer_name || '').trim()
+  ) {
+    return signature;
+  }
+
+  const evidence = buyerProcessEvidenceFromLegalRepresentatives(parties);
+  if (!evidence) return signature;
+
+  const now = new Date().toISOString();
+  const patch = {
+    signer_name: evidence.signerName,
+    signer_document: evidence.signerDocument,
+    signed_at: evidence.signedAt,
+    updated_at: now,
+  };
+  const { data } = await supabaseAdmin
+    .from('contract_signatures')
+    .update(patch)
+    .eq('id', signature.id)
+    .select('*')
+    .single();
+
+  await supabaseAdmin
+    .from('contracts')
+    .update({
+      signed_at: evidence.signedAt,
+      signed_by_name: evidence.signerName,
+      signed_by_cpf: evidence.signerDocument,
+      updated_at: now,
+    })
+    .eq('id', signature.contract_id);
+
+  return (data as SignatureProcessRow) || { ...signature, ...patch };
 }
 
 export async function assertVendorCanSignWithParties(

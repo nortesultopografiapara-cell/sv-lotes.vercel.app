@@ -184,11 +184,21 @@ export function canVendorSignFromParties(
   const legalReps = parties.filter(
     (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
   );
-  if (legalReps.length > 0 && !legalReps.every(isSigned)) {
-    return {
-      ok: false,
-      reason: 'O vendedor só pode assinar após a assinatura dos representantes legais.',
-    };
+  if (legalReps.length > 0) {
+    if (!legalReps.every(isSigned)) {
+      return {
+        ok: false,
+        reason:
+          'O vendedor só pode assinar após a assinatura dos representantes legais.',
+      };
+    }
+    if (spouse && !isSigned(spouse)) {
+      return {
+        ok: false,
+        reason: 'O contrato ainda aguarda a assinatura do cônjuge anuente.',
+      };
+    }
+    return { ok: true };
   }
 
   if (spouse && !isSigned(spouse) && isSigned(buyer)) {
@@ -287,19 +297,77 @@ export function allWitnessPartiesSigned(
 export function allAraguaiaV2RequiredPartiesSigned(
   parties: PartyStatusSnapshot[] | null | undefined,
 ): boolean {
+  const legalReps = (parties || []).filter(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+  );
+  const buyerSideSigned =
+    legalReps.length > 0
+      ? legalReps.every(isSigned)
+      : isSigned(partyByRole(parties || [], 'BUYER'));
   return (
     allAraguaiaProviderPartiesSigned(parties) &&
     allWitnessPartiesSigned(parties) &&
-    isSigned(partyByRole(parties || [], 'BUYER'))
+    buyerSideSigned
   );
+}
+
+export type LegalEntityBuyerProcessEvidence = {
+  signerName: string;
+  signerDocument: string;
+  signedAt: string;
+};
+
+/**
+ * Evidência do processo quando a PJ é a parte BUYER e os signatários são os
+ * representantes. Não altera a party BUYER.
+ */
+export function buyerProcessEvidenceFromLegalRepresentatives(
+  parties: Array<{
+    role: string;
+    status?: string | null;
+    signer_name?: string | null;
+    signer_cpf?: string | null;
+    signed_at?: string | null;
+  }> | null | undefined,
+): LegalEntityBuyerProcessEvidence | null {
+  const list = parties || [];
+  const reps = list.filter(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+  );
+  if (reps.length === 0) return null;
+  const complete = reps.every(
+    (p) =>
+      String(p.status || '').toUpperCase() === 'SIGNED' &&
+      String(p.signed_at || '').trim(),
+  );
+  if (!complete) return null;
+
+  const buyer = list.find((p) => String(p.role).toUpperCase() === 'BUYER');
+  const signerName = String(buyer?.signer_name || '').trim();
+  const signerDocument = String(buyer?.signer_cpf || '').replace(/\D/g, '');
+  if (!signerName || signerDocument.length !== 14) return null;
+
+  const signedAt = reps
+    .map((p) => String(p.signed_at || '').trim())
+    .sort()
+    .at(-1);
+  if (!signedAt) return null;
+  return { signerName, signerDocument, signedAt };
 }
 
 export function countSignedParties(
   parties: PartyStatusSnapshot[] | null | undefined,
 ): { signed: number; total: number } {
-  const list = (parties || []).filter(
-    (p) => !['CANCELLED', 'EXPIRED'].includes(String(p.status || '').toUpperCase()),
+  const hasLegalReps = (parties || []).some(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
   );
+  const list = (parties || []).filter((p) => {
+    if (['CANCELLED', 'EXPIRED'].includes(String(p.status || '').toUpperCase())) {
+      return false;
+    }
+    if (hasLegalReps && String(p.role).toUpperCase() === 'BUYER') return false;
+    return true;
+  });
   const total = list.length;
   const signed = list.filter((p) => isSigned(p)).length;
   return { signed, total };

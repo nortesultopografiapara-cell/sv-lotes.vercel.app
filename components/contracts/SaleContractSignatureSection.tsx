@@ -701,9 +701,19 @@ export const SaleContractSignatureSection = forwardRef<
                 </p>
                 <p className="text-xs text-[var(--text-secondary)]">
                   Status:{' '}
-                  {party.status === 'SIGNED' && party.signed_at
-                    ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
-                    : party.statusLabel}
+                  {party.role === 'BUYER' &&
+                  parties.some((item) => item.role === 'LEGAL_REPRESENTATIVE')
+                    ? parties
+                        .filter((item) => item.role === 'LEGAL_REPRESENTATIVE')
+                        .every(
+                          (item) =>
+                            String(item.status || '').toUpperCase() === 'SIGNED',
+                        )
+                      ? 'Parte contratual. Assinatura registrada pelo representante legal.'
+                      : 'Parte contratual. Aguardando o representante legal.'
+                    : party.status === 'SIGNED' && party.signed_at
+                      ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
+                      : party.statusLabel}
                 </p>
                 {(party.role === 'WITNESS_1' || party.role === 'WITNESS_2') &&
                   !party.signer_name &&

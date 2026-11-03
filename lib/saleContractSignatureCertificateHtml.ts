@@ -69,6 +69,21 @@ export type SaleContractSignatureCertificateInput = {
   spouseSignatureEventId?: string | null;
   /** ID único da party BUYER (preferencial sobre o ID do processo). */
   buyerSignatureEventId?: string | null;
+  /** Signatários PF da compradora PJ. A party BUYER permanece a empresa. */
+  buyerLegalRepresentativeCards?: Array<{
+    name: string;
+    cpf?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    signedAt?: string | null;
+    ipAddress?: string | null;
+    signatureHash?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    device?: string | null;
+    approxLocation?: string | null;
+    signatureEventId?: string | null;
+  }> | null;
   /**
    * MUNDO_NOVO ELECTRONIC_SIGNED: omite as fichas extensas (já estão
    * nos cards compactos da página 7 e na validação pública).
@@ -747,13 +762,48 @@ function buildSpouseCard(input: SaleContractSignatureCertificateInput): string {
   });
 }
 
+function buildBuyerLegalRepresentativeCards(
+  input: SaleContractSignatureCertificateInput,
+): string {
+  const cards = Array.isArray(input.buyerLegalRepresentativeCards)
+    ? input.buyerLegalRepresentativeCards.filter((c) => String(c?.name || '').trim())
+    : [];
+  return cards
+    .map((card) => {
+      const cpf = formatCpfCnpj(card.cpf || '') || card.cpf || '—';
+      const fields: Array<{ icon: string; label: string; value: string }> = [
+        { icon: '👤', label: 'Nome', value: String(card.name || '—') },
+        { icon: '🪪', label: 'CPF', value: cpf },
+        ...buildEvidenceFields({
+          email: card.email,
+          phone: card.phone,
+          ipAddress: card.ipAddress,
+          signedAt: card.signedAt,
+          browser: card.browser,
+          os: card.os,
+          device: card.device,
+          approxLocation: card.approxLocation,
+          signatureEventId: card.signatureEventId,
+        }),
+      ];
+      return buildOfficialSignatureCard({
+        role: 'REPRESENTANTE LEGAL',
+        fields,
+        signed: Boolean(card.signedAt),
+      });
+    })
+    .join('\n');
+}
+
 function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
+  const buyerDigits = String(input.buyerDocument || '').replace(/\D/g, '');
+  const buyerIsCompany = buyerDigits.length === 14;
   const buyerDoc =
     formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
 
   const fields: Array<{ icon: string; label: string; value: string }> = [
     { icon: '👤', label: 'Nome', value: String(input.buyerName || '—') },
-    { icon: '🪪', label: 'CPF', value: buyerDoc },
+    { icon: '🪪', label: buyerIsCompany ? 'CNPJ' : 'CPF', value: buyerDoc },
     ...buildEvidenceFields({
       email: input.signerEmail,
       phone: input.signerPhone,
@@ -771,7 +821,7 @@ function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
   ];
 
   return buildOfficialSignatureCard({
-    role: 'PROMISSÁRIO COMPRADOR',
+    role: buyerIsCompany ? 'COMPRADORA' : 'PROMISSÁRIO COMPRADOR',
     fields,
   });
 }
@@ -931,6 +981,7 @@ export function buildSaleContractSignatureCertificateHtml(
           : `<div class="sv-cert-cards">
         ${buildVendorCardsHtml(input)}
         ${buildBuyerCard(input)}
+        ${buildBuyerLegalRepresentativeCards(input)}
         ${input.spouseName ? buildSpouseCard(input) : ''}
         ${
           input.intervenientCard &&

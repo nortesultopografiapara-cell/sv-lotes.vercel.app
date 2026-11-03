@@ -21,11 +21,18 @@ import { lookupCustomerCnpjFromBackend } from '../lib/cnpjLookup';
 import { buildCustomerPayload, emptyCustomerFormValues } from '../lib/customerIdentity';
 import { validateCustomerForContract } from '../lib/validateCustomerForContract';
 import {
+  buyerProcessEvidenceFromLegalRepresentatives,
   canVendorSignFromParties,
   computeAggregateSaleSignatureStatus,
+  countSignedParties,
   type PartyStatusSnapshot,
 } from '../lib/saleContractSignaturePartyStatus';
-import type { SaleSignaturePartyRole } from '../lib/saleContractSignaturePartyTypes';
+import {
+  isVendorWaitingForBuyers,
+  type SaleSignaturePartyRole,
+} from '../lib/saleContractSignaturePartyTypes';
+import { buildElectronicStampsFromSignatureParties } from '../lib/saleContractSignaturePartySlots';
+import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 
 const CNPJ = '11222333000181';
 const CPF = '52998224725';
@@ -346,6 +353,124 @@ function testSignatureAggregate() {
     party('LEGAL_REPRESENTATIVE', 'PENDING'),
   ]);
   assert(!blocked.ok, 'vendedor espera o representante');
+
+  const released = canVendorSignFromParties([
+    buyer,
+    vendor,
+    party('LEGAL_REPRESENTATIVE', 'SIGNED'),
+  ]);
+  assert(released.ok, 'vendedor assina depois do representante, sem assinatura do CNPJ');
+
+  const vendorFirst = canVendorSignFromParties([
+    party('BUYER', 'PENDING'),
+    party('VENDOR', 'PENDING'),
+    party('LEGAL_REPRESENTATIVE', 'PENDING'),
+  ]);
+  assert(!vendorFirst.ok, 'vendedor antes do representante continua bloqueado');
+
+  const pfBlocked = canVendorSignFromParties([
+    party('BUYER', 'PENDING'),
+    party('VENDOR', 'PENDING'),
+  ]);
+  assert(!pfBlocked.ok, 'pessoa física continua exigindo a assinatura do comprador');
+
+  const evidence = buyerProcessEvidenceFromLegalRepresentatives([
+    {
+      role: 'BUYER',
+      status: 'PENDING',
+      signer_name: 'S.V TOPOGRAFIA E PROJETO LTDA',
+      signer_cpf: CNPJ,
+    },
+    {
+      role: 'LEGAL_REPRESENTATIVE',
+      status: 'SIGNED',
+      signer_name: 'SEVERINO JOSE DE FRANÇA',
+      signer_cpf: CPF,
+      signed_at: '2026-11-03T18:00:00.000Z',
+    },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(evidence?.signerName === 'S.V TOPOGRAFIA E PROJETO LTDA', 'processo guarda a razão social');
+  assert(evidence?.signerDocument === CNPJ, 'processo guarda o CNPJ');
+  assert(Boolean(evidence?.signedAt), 'processo recebe a data do representante');
+  assert(
+    buyerProcessEvidenceFromLegalRepresentatives([
+      { role: 'BUYER', status: 'SIGNED', signer_name: 'Fulano', signer_cpf: CPF, signed_at: '2026-11-03T18:00:00.000Z' },
+      { role: 'VENDOR', status: 'PENDING' },
+    ]) === null,
+    'pessoa física não usa a evidência de representante',
+  );
+
+  const progress = countSignedParties([
+    buyer,
+    vendor,
+    party('LEGAL_REPRESENTATIVE', 'SIGNED'),
+  ]);
+  assert(progress.signed === 1 && progress.total === 2, 'contagem ignora a party BUYER da PJ');
+
+  assert(
+    !isVendorWaitingForBuyers([
+      { role: 'BUYER', status: 'PENDING' },
+      { role: 'VENDOR', status: 'PENDING' },
+      { role: 'LEGAL_REPRESENTATIVE', status: 'SIGNED' },
+    ]),
+    'vendedor não espera o CNPJ depois do representante',
+  );
+  assert(
+    isVendorWaitingForBuyers([
+      { role: 'BUYER', status: 'PENDING' },
+      { role: 'VENDOR', status: 'PENDING' },
+      { role: 'LEGAL_REPRESENTATIVE', status: 'PENDING' },
+    ]),
+    'vendedor espera o representante pendente',
+  );
+  assert(
+    isVendorWaitingForBuyers([
+      { role: 'BUYER', status: 'PENDING' },
+      { role: 'VENDOR', status: 'PENDING' },
+    ]),
+    'pessoa física continua aguardando o comprador',
+  );
+
+  const stamps = buildElectronicStampsFromSignatureParties({
+    parties: [
+      { role: 'BUYER', status: 'PENDING', signer_name: 'S.V TOPOGRAFIA E PROJETO LTDA', signer_cpf: CNPJ },
+      { role: 'LEGAL_REPRESENTATIVE', status: 'SIGNED', signer_name: 'SEVERINO JOSE DE FRANÇA', signer_cpf: CPF, signed_at: '2026-11-03T18:00:00.000Z' },
+      { role: 'VENDOR', status: 'PENDING', signer_name: 'MENESES IMOBILIARIA LTDA' },
+    ],
+    legacyBuyerSigned: false,
+  });
+  const buyerStamp = stamps.find((stamp) => stamp.role === 'BUYER');
+  const repStamp = stamps.find((stamp) => stamp.dataPartyRole === 'LEGAL_REPRESENTATIVE');
+  assert(buyerStamp?.signed !== true, 'não cria carimbo de assinatura na role BUYER');
+  assert(repStamp?.signed === true, 'carimba o representante legal');
+
+  const certificate = buildSaleContractSignatureCertificateHtml({
+    contractNumber: '000000090/2026',
+    projectName: 'CHACARAS E LOTES MARTINI I',
+    quadra: '03',
+    lote: '32',
+    buyerName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+    buyerDocument: CNPJ,
+    signatureStatus: 'ASSINADO ELETRONICAMENTE',
+    signedAt: '2026-11-03T18:00:00.000Z',
+    companyName: 'MENESES IMOBILIARIA LTDA',
+    representativeName: 'Representante da imobiliária',
+    representativeCpf: CPF_2,
+    vendorSignedAt: '2026-11-03T19:00:00.000Z',
+    buyerLegalRepresentativeCards: [
+      {
+        name: 'SEVERINO JOSE DE FRANÇA',
+        cpf: CPF,
+        signedAt: '2026-11-03T18:00:00.000Z',
+        signatureEventId: 'rep-event',
+      },
+    ],
+  });
+  assertIncludes(certificate, 'CNPJ', 'certificado identifica o CNPJ da compradora');
+  assertIncludes(certificate, 'COMPRADORA', 'certificado trata a PJ como compradora');
+  assertIncludes(certificate, 'REPRESENTANTE LEGAL', 'certificado registra o representante');
+  assertIncludes(certificate, 'SEVERINO JOSE DE FRANÇA', 'certificado nomeia o signatário');
   console.log('OK testSignatureAggregate');
 }
 
