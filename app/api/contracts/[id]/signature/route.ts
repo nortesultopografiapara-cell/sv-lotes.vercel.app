@@ -180,8 +180,43 @@ export async function GET(
         );
       }
     }
+    const tenantId = String(contract.tenant_id || contract.company_id || '');
+    let vendorDefaults = {
+      name: '',
+      document: '',
+      email: '',
+      companyName: '',
+    };
+    let companyRow: Record<string, unknown> | null = null;
+    if (tenantId) {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', tenantId)
+        .maybeSingle();
+      if (company) {
+        companyRow = company as Record<string, unknown>;
+        const seller = normalizeSellerFromCompany(companyRow);
+        vendorDefaults = {
+          name: seller.representative !== 'Não informado' ? seller.representative : '',
+          document: seller.representativeCpf || seller.cnpj || '',
+          email: seller.email !== 'Não informado' ? seller.email : '',
+          companyName: getCompanyDisplayName(companyRow),
+        };
+      }
+    }
+    const shareContractModel = String(
+      contract.sale_contract_model ||
+        contract.contract_model ||
+        companyRow?.contract_model ||
+        '',
+    );
     const parties = enrichBuyerPartyPhone(
-      toPublicPartyViews(partiesRaw, { includeUrls: true }),
+      toPublicPartyViews(partiesRaw, {
+        includeUrls: true,
+        contractModel: shareContractModel,
+        company: companyRow,
+      }),
       buyerPhoneFallback,
     );
     const progress = countSignedParties(partiesRaw);
@@ -216,30 +251,6 @@ export async function GET(
           contractId: resolvedId.slice(0, 8),
           message: pdfErr instanceof Error ? pdfErr.message : String(pdfErr),
         });
-      }
-    }
-
-    const tenantId = String(contract.tenant_id || contract.company_id || '');
-    let vendorDefaults = {
-      name: '',
-      document: '',
-      email: '',
-      companyName: '',
-    };
-    if (tenantId) {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('id', tenantId)
-        .maybeSingle();
-      if (company) {
-        const seller = normalizeSellerFromCompany(company as Record<string, unknown>);
-        vendorDefaults = {
-          name: seller.representative !== 'Não informado' ? seller.representative : '',
-          document: seller.representativeCpf || seller.cnpj || '',
-          email: seller.email !== 'Não informado' ? seller.email : '',
-          companyName: getCompanyDisplayName(company as Record<string, unknown>),
-        };
       }
     }
 
@@ -328,8 +339,27 @@ export async function POST(
     const signature = normalizeSaleSignaturePublicUrls(result.signature) || result.signature;
     const buyerPhoneFromParties = result.parties.find((p) => p.role === 'BUYER')
       ?.signer_phone;
+    const postCompanyId = String(contract.company_id || contract.tenant_id || '');
+    let postCompany: Record<string, unknown> | null = null;
+    if (postCompanyId) {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', postCompanyId)
+        .maybeSingle();
+      postCompany = (company as Record<string, unknown>) || null;
+    }
     const parties = enrichBuyerPartyPhone(
-      toPublicPartyViews(result.parties, { includeUrls: true }),
+      toPublicPartyViews(result.parties, {
+        includeUrls: true,
+        contractModel: String(
+          contract.sale_contract_model ||
+            contract.contract_model ||
+            postCompany?.contract_model ||
+            '',
+        ),
+        company: postCompany,
+      }),
       buyerPhoneFromParties,
     );
     const buyerParty = parties.find((p) => p.role === 'BUYER');

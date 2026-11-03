@@ -7,6 +7,13 @@ import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { DemoLoginPrefill } from '@/components/login/DemoLoginPrefill';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import {
+  PASSWORD_RECOVERY_REQUEST_PATH,
+  PASSWORD_RECOVERY_RESET_PATH,
+  hasPasswordRecoveryLock,
+  isRecoveryLinkError,
+  looksLikeRecoveryCallback,
+} from '@/lib/auth/passwordRecovery';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -59,7 +66,19 @@ export default function LoginPage() {
     if (!isSupabaseConfigured) return;
 
     const initializeAuth = async () => {
+      const search = new URLSearchParams(window.location.search);
+      const hash = window.location.hash || '';
+      if (isRecoveryLinkError(search, hash) || looksLikeRecoveryCallback(search, hash)) {
+        window.location.replace(
+          `${PASSWORD_RECOVERY_RESET_PATH}${window.location.search}${window.location.hash}`,
+        );
+        return;
+      }
       const { data: { user }, error } = await supabase.auth.getUser();
+      if (user && hasPasswordRecoveryLock()) {
+        window.location.href = PASSWORD_RECOVERY_RESET_PATH;
+        return;
+      }
       if (user) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
         const { data: userData } = await supabase
@@ -226,7 +245,7 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
-                <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
+                <a href={PASSWORD_RECOVERY_REQUEST_PATH} className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />

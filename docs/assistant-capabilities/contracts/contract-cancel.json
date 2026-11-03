@@ -1,0 +1,35 @@
+{
+  "id": "contract.cancel",
+  "title": "Cancelar contrato na tela Contratos",
+  "module": "contracts",
+  "routes": ["/contracts"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "cancelar contrato",
+    "cancelo o contrato",
+    "cancelar este contrato",
+    "botão cancelar em contratos"
+  ],
+  "summary": "Na tela Contratos, o botão Cancelar marca o contrato como cancelado e a venda relacionada como CANCELLED. Não devolve o lote ao estoque.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Contrato selecionado em Contratos."],
+  "controls": [{ "label": "Cancelar", "kind": "button" }],
+  "sequence": [
+    "Abra Contratos e selecione o contrato.",
+    "Clique em Cancelar e confirme. O sistema atualiza o status do contrato para cancelado e, se houver venda vinculada, o status da venda para CANCELLED.",
+    "O lote não volta a Disponível por este botão. Para devolver o lote ao estoque, use Disponibilizar no Mapa GIS (Operações da venda)."
+  ],
+  "conclusion": "Cancelar",
+  "result": "Contrato cancelado e venda CANCELLED; o lote permanece no status comercial anterior.",
+  "states": ["cancelado", "CANCELLED"],
+  "related": ["sale.release", "sale.termination.distrato", "gis.sold.view_contract"],
+  "restrictions": [
+    "Cancelar em Contratos não substitui Confirmar liberação do lote.",
+    "Não ensine este botão como o caminho para o cliente desistir ou para o distrato com termo.",
+    "O assistente não cancela o contrato."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": ["app/contracts/page.tsx"]
+}

@@ -21,12 +21,18 @@ import {
   normalizeInterSituacaoForRelease,
   type ReleaseInterDisposition,
 } from '@/lib/finance/releaseLotShared';
+import {
+  RELEASE_BANK_CANCEL_BUDGET_MS,
+  shouldYieldBankCancel,
+} from '@/lib/finance/releaseLotBankCancelBudget';
 
 export type InterReleaseProcessResult = {
   cancelableIds: string[];
   cancelled: number;
   preservedPaid: number;
   alreadyCancelled: number;
+  timedOut: boolean;
+  remainingIds: string[];
   failed: Array<{
     chargeId: string;
     error: string;
@@ -85,22 +91,40 @@ export async function resolveInterChargesForRelease(
     fetchFn?: InterOAuthFetchFn;
     /** Somente testes — evita rede/DB de credenciais. */
     secretsLoader?: typeof loadInterSecretsForServer;
+    startedAtMs?: number;
+    saleId?: string | null;
   },
 ): Promise<InterReleaseProcessResult> {
   const executeCancel = options?.executeCancel === true;
+  const startedAtMs = options?.startedAtMs ?? Date.now();
   const motivo = interCancelMotivoFromReleaseMotive(options?.motiveCode);
   const secretsLoader = options?.secretsLoader || loadInterSecretsForServer;
   const cancelableIds: string[] = [];
   const failed: InterReleaseProcessResult['failed'] = [];
+  const remainingIds: string[] = [];
+  let timedOut = false;
   let cancelled = 0;
   let preservedPaid = 0;
   let alreadyCancelled = 0;
 
-  for (const chargeId of candidateIds) {
+  for (let index = 0; index < candidateIds.length; index += 1) {
+    const chargeId = candidateIds[index];
+    if (
+      executeCancel &&
+      shouldYieldBankCancel(startedAtMs, Date.now(), RELEASE_BANK_CANCEL_BUDGET_MS)
+    ) {
+      timedOut = true;
+      remainingIds.push(...candidateIds.slice(index));
+      console.warn('[releaseLot][inter] yield_budget', {
+        remaining: remainingIds.length,
+        cancelled,
+      });
+      break;
+    }
     const { data: localRow } = await admin
       .from('bank_charges')
       .select(
-        'id, status, external_id, integration_id, financial_account_id, provider, metadata',
+        'id, status, external_id, integration_id, financial_account_id, provider, metadata, company_id, sale_id',
       )
       .eq('id', chargeId)
       .eq('company_id', companyId)
@@ -109,6 +133,33 @@ export async function resolveInterChargesForRelease(
 
     if (!localRow) {
       alreadyCancelled += 1;
+      console.log('[releaseLot][inter] missing_local', {
+        chargeId: chargeId.slice(0, 8),
+      });
+      continue;
+    }
+    const rowCompanyId = String((localRow as { company_id?: string }).company_id || '');
+    const rowSaleId = String((localRow as { sale_id?: string }).sale_id || '');
+    if (rowCompanyId && rowCompanyId !== companyId) {
+      failed.push({
+        chargeId,
+        error: 'Cobrança Inter não pertence à empresa do lote.',
+        localStatus: String((localRow as { status?: string }).status || ''),
+        remoteStatus: null,
+        disposition: 'block_non_removable',
+        externalId: String((localRow as { external_id?: string }).external_id || '') || null,
+      });
+      continue;
+    }
+    if (options?.saleId && rowSaleId && rowSaleId !== options.saleId) {
+      failed.push({
+        chargeId,
+        error: 'Cobrança Inter não pertence à venda do lote.',
+        localStatus: String((localRow as { status?: string }).status || ''),
+        remoteStatus: null,
+        disposition: 'block_non_removable',
+        externalId: String((localRow as { external_id?: string }).external_id || '') || null,
+      });
       continue;
     }
 
@@ -255,6 +306,8 @@ export async function resolveInterChargesForRelease(
     cancelled,
     preservedPaid,
     alreadyCancelled,
+    timedOut,
+    remainingIds,
     failed,
   };
 }

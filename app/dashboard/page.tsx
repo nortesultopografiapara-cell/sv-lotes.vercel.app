@@ -188,7 +188,11 @@ function OperationalDashboard({ user }: { user: any }) {
   useEffect(() => {
     const p = projects.find((x) => x.id === selectedProjectId);
     if (selectedProjectId && p?.name) {
-      setGisSelectedProject({ id: p.id, name: p.name });
+      setGisSelectedProject({
+        id: p.id,
+        name: p.name,
+        contractModel: p.contract_model || null,
+      });
     } else if (!selectedProjectId) {
       clearGisSelectedProject();
     }
@@ -263,7 +267,7 @@ function OperationalDashboard({ user }: { user: any }) {
           return;
         }
 
-        let projectsQuery = supabase.from('projects').select('id, name');
+        let projectsQuery = supabase.from('projects').select('id, name, contract_model');
         projectsQuery = applyTenantFilter(projectsQuery, rlsCtx, 'projects');
 
         const [{ data: projectsData }, lotFetch] = await Promise.all([

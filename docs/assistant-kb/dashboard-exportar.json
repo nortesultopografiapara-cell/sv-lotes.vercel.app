@@ -1,0 +1,42 @@
+{
+  "id": "dashboard-exportar",
+  "title": "Dashboard e relatório de lotes",
+  "module": "dashboard",
+  "routes": ["/dashboard"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "OWNER"],
+  "access": "read",
+  "tags": ["dashboard", "exportar excel", "exportar pdf", "relatorio de lotes", "valor global"],
+  "objective": "Ler os indicadores do Dashboard e exportar o relatório de lotes.",
+  "prerequisites": [
+    "Perfil operacional (não é o Dashboard Executivo Master)."
+  ],
+  "navigationPath": [
+    "Dashboard",
+    "Exportar Excel / Exportar PDF",
+    "Gerar"
+  ],
+  "steps": [
+    "Abra Dashboard. Filtre por Empreendimento ou Todos os empreendimentos.",
+    "Os cartões mostram Valor global, disponível, reservado, vendido, Recebido no mês, A receber e Inadimplência.",
+    "Quem pode exportar: clique em Exportar Excel ou Exportar PDF, ajuste Formato, Agrupar por e Ordenação no modal Exportar Relatório de Lotes e clique em Gerar."
+  ],
+  "expectedResult": "Indicadores filtrados pelo empreendimento; arquivo Excel/PDF baixado quando a exportação é permitida.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não gera o arquivo."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/dashboard/page.tsx",
+    "components/dashboard/LotReportExportModal.tsx",
+    "components/Layout.tsx"
+  ],
+  "uiLabels": [
+    "Dashboard",
+    "Exportar Excel",
+    "Exportar PDF",
+    "Exportar Relatório de Lotes",
+    "Gerar",
+    "Todos os empreendimentos"
+  ]
+}

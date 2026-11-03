@@ -7,6 +7,32 @@ import {
   BROKERS_COMMISSION_CONTRACT_SELECT,
   BROKERS_CONTRACT_SELECT,
 } from '@/lib/brokersContractQuery';
+import { resolveBrokerCommissionAmount } from '@/lib/brokerCommission';
+
+const COMMISSION_SNAPSHOT_PLAIN_SELECT =
+  'id, broker_id, amount, commission_fixed_amount, commission_mode, commission_percent, status';
+
+function positiveCommissionSnapshotAmount(row: unknown): number {
+  if (!row || typeof row !== 'object') return 0;
+  const rec = row as Record<string, unknown>;
+  const canonical = resolveBrokerCommissionAmount(rec as never);
+  if (canonical > 0) return canonical;
+  const fixed = Number(rec.commission_fixed_amount);
+  return Number.isFinite(fixed) && fixed > 0 ? fixed : 0;
+}
+
+function normalizeCommissionSnapshotRows(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.filter((row) => row && typeof row === 'object') as Record<
+      string,
+      unknown
+    >[];
+  }
+  if (value && typeof value === 'object') {
+    return [value as Record<string, unknown>];
+  }
+  return [];
+}
 
 export type BrokerSnapshot = {
   name: string;
@@ -236,6 +262,79 @@ async function resolveBrokerIdFromCommission(
   return { brokerId, row: joinedBroker };
 }
 
+async function fetchSaleCommissionSnapshotRow(
+  supabase: SupabaseClient,
+  saleId: string,
+): Promise<Record<string, unknown> | null> {
+  const withJoin = await supabase
+    .from('broker_commissions')
+    .select(BROKERS_COMMISSION_CONTRACT_SELECT)
+    .eq('sale_id', saleId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!withJoin.error && withJoin.data) {
+    return withJoin.data as Record<string, unknown>;
+  }
+
+  const plain = await supabase
+    .from('broker_commissions')
+    .select(COMMISSION_SNAPSHOT_PLAIN_SELECT)
+    .eq('sale_id', saleId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!plain.error && plain.data) {
+    return plain.data as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function withCommissionSnapshotOnSale(
+  sale: Record<string, unknown>,
+  rows: Record<string, unknown>[],
+): Record<string, unknown> {
+  const amount = rows
+    .map((row) => positiveCommissionSnapshotAmount(row))
+    .find((value) => value > 0);
+  if (!amount) return sale;
+  return {
+    ...sale,
+    broker_commissions: rows,
+    commission_amount: amount,
+  };
+}
+
+async function attachCommissionSnapshotToSale(
+  supabase: SupabaseClient,
+  sale: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const existingRows = normalizeCommissionSnapshotRows(sale.broker_commissions);
+  const existingAmount = existingRows
+    .map((row) => positiveCommissionSnapshotAmount(row))
+    .find((value) => value > 0);
+  if (existingAmount && existingAmount > 0) {
+    return withCommissionSnapshotOnSale(sale, existingRows);
+  }
+
+  const saleId = clean(sale.id);
+  if (!saleId) return sale;
+
+  const row = await fetchSaleCommissionSnapshotRow(supabase, saleId);
+  if (!row) return sale;
+
+  logSaleBrokerResolutionDiagnostics('commission_snapshot', {
+    saleId,
+    amount: row.amount ?? null,
+    commission_fixed_amount: row.commission_fixed_amount ?? null,
+  });
+
+  return withCommissionSnapshotOnSale(sale, [row]);
+}
+
 export async function enrichSaleWithBrokerForContract(
   supabase: SupabaseClient,
   sale: Record<string, unknown>,
@@ -246,8 +345,9 @@ export async function enrichSaleWithBrokerForContract(
   },
 ): Promise<Record<string, unknown>> {
   const resolved = resolveBrokerFromSaleRecord(sale, options);
+  let next = sale;
   if (resolved.nome) {
-    return attachBrokerSnapshotToSale(
+    next = attachBrokerSnapshotToSale(
       sale,
       brokerRowToSnapshot({
         name: resolved.nome,
@@ -257,37 +357,39 @@ export async function enrichSaleWithBrokerForContract(
         role: resolved.role,
       }),
     );
-  }
+  } else {
+    let brokerId = resolved.brokerId;
+    let brokerRow: Record<string, unknown> | null = null;
 
-  let brokerId = resolved.brokerId;
-  let brokerRow: Record<string, unknown> | null = null;
+    if (!brokerId) {
+      const saleId = clean(sale.id);
+      if (saleId) {
+        const fromCommission = await resolveBrokerIdFromCommission(supabase, saleId);
+        brokerId = fromCommission.brokerId;
+        brokerRow = fromCommission.row;
+      }
+    }
 
-  if (!brokerId) {
-    const saleId = clean(sale.id);
-    if (saleId) {
-      const fromCommission = await resolveBrokerIdFromCommission(supabase, saleId);
-      brokerId = fromCommission.brokerId;
-      brokerRow = fromCommission.row;
+    if (brokerId) {
+      if (!brokerRow) {
+        brokerRow = await fetchBrokerRowById(supabase, brokerId);
+      }
+
+      const snapshot = brokerRowToSnapshot(brokerRow);
+      logSaleBrokerResolutionDiagnostics('enriched', {
+        brokerId,
+        fetchedName: snapshot?.name || null,
+      });
+
+      next = attachBrokerSnapshotToSale(
+        {
+          ...sale,
+          broker_id: sale.broker_id || brokerId,
+        },
+        snapshot,
+      );
     }
   }
 
-  if (!brokerId) return sale;
-
-  if (!brokerRow) {
-    brokerRow = await fetchBrokerRowById(supabase, brokerId);
-  }
-
-  const snapshot = brokerRowToSnapshot(brokerRow);
-  logSaleBrokerResolutionDiagnostics('enriched', {
-    brokerId,
-    fetchedName: snapshot?.name || null,
-  });
-
-  return attachBrokerSnapshotToSale(
-    {
-      ...sale,
-      broker_id: sale.broker_id || brokerId,
-    },
-    snapshot,
-  );
+  return attachCommissionSnapshotToSale(supabase, next);
 }

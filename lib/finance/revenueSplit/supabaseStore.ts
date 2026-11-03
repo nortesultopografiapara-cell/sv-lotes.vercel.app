@@ -20,6 +20,12 @@ import type {
   SaleRevenueSplitSnapshotParticipant,
 } from './types';
 import type { RevenueSplitStore, SaveProjectRevenueSplitInput, UpsertRevenueSplitDestinationInput } from './store';
+import {
+  EMPTY_SNAPSHOT_BANK_IDENTITY,
+  mapSnapshotBankIdentity,
+  snapshotBankIdentityToDbPayload,
+  type RevenueSplitFinancialAccountFreezeSource,
+} from './snapshotBankIdentity';
 
 function asText(value: unknown): string {
   return String(value ?? '').trim();
@@ -92,6 +98,7 @@ function mapSnapshotParticipant(row: Record<string, unknown>): SaleRevenueSplitS
     isIssuerRemainder: Boolean(row.is_issuer_remainder),
     sortOrder: Number(row.sort_order || 0),
     createdAt: asText(row.created_at),
+    ...mapSnapshotBankIdentity(row),
   };
 }
 
@@ -237,6 +244,52 @@ export function createSupabaseRevenueSplitStore(admin: SupabaseClient): RevenueS
         companyId: asText(data.company_id),
         active: data.active !== false,
       };
+    },
+
+    async listFinancialAccountsForSnapshotFreeze(
+      companyId: string,
+      financialAccountIds: string[],
+    ): Promise<RevenueSplitFinancialAccountFreezeSource[]> {
+      const ids = [...new Set(financialAccountIds.map((id) => asText(id)).filter(Boolean))];
+      if (!ids.length) return [];
+      const { data, error } = await admin
+        .from('company_financial_accounts')
+        .select(
+          'id, company_id, beneficiary_name, bank_name, bank_code, agency, account_number, account_digit, bank_account_kind, bank_integration_id',
+        )
+        .eq('company_id', companyId)
+        .in('id', ids);
+      throwIfError(error, 'Falha ao carregar contas para freeze do snapshot.');
+      const rows = (data || []) as Array<Record<string, unknown>>;
+      const integrationIds = [
+        ...new Set(rows.map((row) => asText(row.bank_integration_id)).filter(Boolean)),
+      ];
+      const providerByIntegration = new Map<string, string>();
+      if (integrationIds.length) {
+        const { data: integrations, error: integrationError } = await admin
+          .from('bank_integrations')
+          .select('id, provider')
+          .in('id', integrationIds);
+        throwIfError(integrationError, 'Falha ao carregar provider da conta no freeze.');
+        for (const item of integrations || []) {
+          const row = item as Record<string, unknown>;
+          const id = asText(row.id);
+          const provider = asText(row.provider);
+          if (id && provider) providerByIntegration.set(id, provider);
+        }
+      }
+      return rows.map((row) => ({
+        id: asText(row.id),
+        companyId: asText(row.company_id),
+        beneficiaryName: asText(row.beneficiary_name) || null,
+        provider: providerByIntegration.get(asText(row.bank_integration_id)) || null,
+        bankName: asText(row.bank_name) || null,
+        bankCode: asText(row.bank_code) || null,
+        agency: asText(row.agency) || null,
+        accountNumber: asText(row.account_number) || null,
+        accountDigit: asText(row.account_digit) || null,
+        bankAccountKind: asText(row.bank_account_kind) || null,
+      }));
     },
 
     async getConfigByProject(projectId: string): Promise<ProjectRevenueSplitConfig | null> {
@@ -551,21 +604,28 @@ export function createSupabaseRevenueSplitStore(admin: SupabaseClient): RevenueS
         const { error: insertError } = await admin
           .from('sale_revenue_split_snapshot_participants')
           .insert(
-            input.participants.map((row, index) => ({
-              snapshot_id: snapshot.id,
-              company_id: snapshot.companyId,
-              source_participant_id: row.sourceParticipantId,
-              display_name: row.displayName,
-              party_kind: row.partyKind,
-              user_id: row.userId,
-              financial_account_id: row.financialAccountId,
-              destination_provider: row.destinationProvider,
-              destination_type: row.destinationType,
-              destination_identifier: row.destinationIdentifier,
-              share_percent: row.sharePercent,
-              is_issuer_remainder: row.isIssuerRemainder,
-              sort_order: row.sortOrder ?? index,
-            })),
+            input.participants.map((row, index) => {
+              const identity = {
+                ...EMPTY_SNAPSHOT_BANK_IDENTITY,
+                ...mapSnapshotBankIdentity(row as unknown as Record<string, unknown>),
+              };
+              return {
+                snapshot_id: snapshot.id,
+                company_id: snapshot.companyId,
+                source_participant_id: row.sourceParticipantId,
+                display_name: row.displayName,
+                party_kind: row.partyKind,
+                user_id: row.userId,
+                financial_account_id: row.financialAccountId,
+                destination_provider: row.destinationProvider,
+                destination_type: row.destinationType,
+                destination_identifier: row.destinationIdentifier,
+                share_percent: row.sharePercent,
+                is_issuer_remainder: row.isIssuerRemainder,
+                sort_order: row.sortOrder ?? index,
+                ...snapshotBankIdentityToDbPayload(identity),
+              };
+            }),
           );
         throwIfError(insertError, 'Falha ao gravar participantes do snapshot.');
       }

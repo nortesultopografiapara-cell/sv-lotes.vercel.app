@@ -116,6 +116,13 @@ export type SaleRevenueSplitSnapshotParticipant = {
   isIssuerRemainder: boolean;
   sortOrder: number;
   createdAt: string;
+  destBeneficiaryName: string | null;
+  destInstitution: string | null;
+  destBankName: string | null;
+  destBankCode: string | null;
+  destAgency: string | null;
+  destAccountMasked: string | null;
+  destBankAccountKind: string | null;
 };
 
 export type ChargeRevenueSplitLegDraft = {
@@ -183,6 +190,14 @@ export type RevenueSplitFinancialAccountRecord = {
   id: string;
   companyId: string;
   active: boolean;
+  beneficiaryName?: string | null;
+  provider?: string | null;
+  bankName?: string | null;
+  bankCode?: string | null;
+  agency?: string | null;
+  accountNumber?: string | null;
+  accountDigit?: string | null;
+  bankAccountKind?: string | null;
 };
 
 export type GetProjectRevenueSplitResult = {

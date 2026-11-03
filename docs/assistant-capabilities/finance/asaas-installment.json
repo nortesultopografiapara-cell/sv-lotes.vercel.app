@@ -1,0 +1,45 @@
+{
+  "id": "finance.asaas.installment",
+  "title": "Asaas no Financeiro",
+  "module": "finance",
+  "routes": ["/finance"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "sincronizar asaas",
+    "sincronizo o asaas",
+    "painel asaas no financeiro",
+    "asaas da parcela",
+    "gerar cobrança asaas no financeiro"
+  ],
+  "summary": "No Financeiro, sincronizar caixa Asaas e gerar/atualizar cobrança Asaas da parcela (PIX ou boleto).",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador.", "Conta financeira Asaas configurada."],
+  "controls": [
+    { "label": "Sincronizar Asaas", "kind": "button" },
+    { "label": "Gerar Cobrança", "kind": "button" },
+    { "label": "PIX", "kind": "button" },
+    { "label": "Boleto", "kind": "button" },
+    { "label": "Atualizar status", "kind": "button" },
+    { "label": "Cancelar cobrança", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra Financeiro.",
+    "Se a conta Asaas estiver configurada, use Sincronizar Asaas no topo da tela.",
+    "Na parcela, no painel Asaas, escolha PIX ou Boleto e clique em Gerar Cobrança. Depois use Atualizar status, Copiar PIX ou Cancelar cobrança conforme a tela oferecer."
+  ],
+  "conclusion": "Gerar Cobrança ou Sincronizar Asaas",
+  "result": "Cobrança Asaas da parcela gerada/atualizada, ou caixa sincronizado.",
+  "related": ["finance.accounts.upsert", "charge.emit"],
+  "restrictions": [
+    "Não cole chave API no chat.",
+    "Cadastro da conta recebedora é em Configurações → Integração Financeira, não neste painel.",
+    "O assistente não emite cobrança nem lê status real."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "app/finance/page.tsx",
+    "components/finance/AsaasInstallmentChargePanel.tsx"
+  ]
+}

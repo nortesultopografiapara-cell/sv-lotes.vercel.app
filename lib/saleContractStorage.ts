@@ -25,6 +25,26 @@ export function buildSignedSaleContractStoragePath(
   return `contracts/sale-signed/${tenantId}/${safeName}.pdf`;
 }
 
+export function buildPhysicalSaleContractStoragePath(
+  tenantId: string,
+  contractNumber: string,
+  contractId?: string | null,
+): string {
+  const safeName = String(contractNumber || 'contrato').replace(/[^\w-]+/g, '_');
+  const id = String(contractId || '').trim();
+  if (id) {
+    return `contracts/sale-physical/${tenantId}/${safeName}/${id}.pdf`;
+  }
+  return `contracts/sale-physical/${tenantId}/${safeName}.pdf`;
+}
+
+export function buildLegacyPhysicalSaleContractStoragePath(
+  tenantId: string,
+  contractNumber: string,
+): string {
+  return buildPhysicalSaleContractStoragePath(tenantId, contractNumber);
+}
+
 /**
  * Garante que o bucket existe e é acessível com a service role.
  * Não cria bucket novo automaticamente (evita surpresa em produção).

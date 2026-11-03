@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Banknote,
+  Bell,
   Calendar,
   Download,
   FileText,
@@ -21,6 +22,10 @@ import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/Financ
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import { ChargeWhatsAppBatchModal } from '@/components/charges/ChargeWhatsAppBatchModal';
+import { BuyerReminderHistoryPanel } from '@/components/charges/BuyerReminderHistoryPanel';
+import type { ChargeWhatsAppBatchSendResult } from '@/components/charges/ChargeWhatsAppBatchModal';
+import type { ChargeWhatsAppBatchPreview } from '@/lib/charges/chargeWhatsAppBatch';
 import {
   executeChargeWhatsAppShare,
   openChargeWhatsAppShareUrl,
@@ -159,6 +164,17 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
   );
   const [exportingKind, setExportingKind] = useState<'pdf' | 'excel' | null>(null);
+  const [whatsAppBatchOpen, setWhatsAppBatchOpen] = useState(false);
+  const [whatsAppBatchLoading, setWhatsAppBatchLoading] = useState(false);
+  const [whatsAppBatchSending, setWhatsAppBatchSending] = useState(false);
+  const [reminderOpsOpen, setReminderOpsOpen] = useState(false);
+  const [whatsAppBatchError, setWhatsAppBatchError] = useState<string | null>(null);
+  const [whatsAppBatchPreview, setWhatsAppBatchPreview] = useState<ChargeWhatsAppBatchPreview | null>(
+    null,
+  );
+  const [whatsAppBatchResult, setWhatsAppBatchResult] =
+    useState<ChargeWhatsAppBatchSendResult | null>(null);
+  const whatsAppBatchIdempotencyRef = useRef<string | null>(null);
 
   const ownerReadOnly = isOwnerRole(user?.role);
   const [asaasAccessAvailable, setAsaasAccessAvailable] = useState(true);
@@ -1223,6 +1239,138 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     showToast(ok ? 'Link copiado.' : 'Não foi possível copiar o link.', !ok);
   };
 
+  const openWhatsAppBatch = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) {
+      showToast('Selecione ao menos uma parcela.', true);
+      return;
+    }
+    setWhatsAppBatchOpen(true);
+    setWhatsAppBatchLoading(true);
+    setWhatsAppBatchError(null);
+    setWhatsAppBatchPreview(null);
+    setWhatsAppBatchResult(null);
+    whatsAppBatchIdempotencyRef.current =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `wa-batch-${Date.now()}`;
+    try {
+      const res = await fetch('/api/finance/charges/whatsapp-batch', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'preview', installmentIds: ids }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao validar o lote de WhatsApp.');
+      }
+      setWhatsAppBatchPreview(json.preview || null);
+    } catch (err) {
+      setWhatsAppBatchError(
+        err instanceof Error ? err.message : 'Falha ao validar o lote de WhatsApp.',
+      );
+    } finally {
+      setWhatsAppBatchLoading(false);
+    }
+  };
+
+  const confirmWhatsAppBatch = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (whatsAppBatchSending) return;
+    const ids = Array.from(selectedIds);
+    const key =
+      whatsAppBatchIdempotencyRef.current ||
+      (typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `wa-batch-${Date.now()}`);
+    whatsAppBatchIdempotencyRef.current = key;
+    setWhatsAppBatchSending(true);
+    setWhatsAppBatchError(null);
+    try {
+      const res = await fetch('/api/finance/charges/whatsapp-batch', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send',
+          installmentIds: ids,
+          idempotencyKey: key,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao enviar o lote de WhatsApp.');
+      }
+      if (json.preview) setWhatsAppBatchPreview(json.preview);
+      if (json.status === 'blocked') {
+        setWhatsAppBatchError(json.preview?.sendBlockedReason || 'Envio bloqueado.');
+        return;
+      }
+      setWhatsAppBatchResult({
+        batchId: json.batchId || null,
+        status: json.status,
+        replayed: Boolean(json.replayed),
+        processed: Number(json.processed) || 0,
+        sent: Number(json.sent) || 0,
+        failed: Number(json.failed) || 0,
+        skipped: Number(json.skipped) || 0,
+        items: json.items || [],
+      });
+    } catch (err) {
+      setWhatsAppBatchError(
+        err instanceof Error ? err.message : 'Falha ao enviar o lote de WhatsApp.',
+      );
+    } finally {
+      setWhatsAppBatchSending(false);
+    }
+  };
+
+  const retryWhatsAppBatchFailed = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (whatsAppBatchSending) return;
+    const batchId = whatsAppBatchResult?.batchId;
+    if (!batchId) {
+      setWhatsAppBatchError('Lote anterior não encontrado para reenvio.');
+      return;
+    }
+    setWhatsAppBatchSending(true);
+    setWhatsAppBatchError(null);
+    try {
+      const res = await fetch('/api/finance/charges/whatsapp-batch', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'retry', batchId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao reenviar as mensagens com erro.');
+      }
+      if (json.preview) setWhatsAppBatchPreview(json.preview);
+      setWhatsAppBatchResult({
+        batchId: json.batchId || batchId,
+        status: json.status,
+        replayed: Boolean(json.replayed),
+        processed: Number(json.processed) || 0,
+        sent: Number(json.sent) || 0,
+        failed: Number(json.failed) || 0,
+        skipped: Number(json.skipped) || 0,
+        items: json.items || [],
+      });
+    } catch (err) {
+      setWhatsAppBatchError(
+        err instanceof Error ? err.message : 'Falha ao reenviar as mensagens com erro.',
+      );
+    } finally {
+      setWhatsAppBatchSending(false);
+    }
+  };
+
   const handleWhatsApp = (
     installmentId: string,
     row: FinanceReceiptRow,
@@ -1618,6 +1766,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
               {formatRefreshAllChargesBlockReason('integration_unavailable')}
             </span>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setReminderOpsOpen(true)}
+            className="charges-ops-btn border border-amber-500/40 bg-amber-600/90 text-white hover:bg-amber-500"
+            title="Consultar lembretes automáticos e histórico operacional"
+          >
+            <Bell className="h-4 w-4" />
+            Lembretes
+          </button>
         </div>
       </div>
 
@@ -1748,12 +1905,17 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </button>
           <button
             type="button"
-            disabled
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] opacity-60"
-            title="WhatsApp em lote — em breve"
+            disabled={bulkBusy || whatsAppBatchLoading || whatsAppBatchSending || ownerReadOnly}
+            onClick={() => void openWhatsAppBatch()}
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-700/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Enviar cobrança consolidada via WhatsApp (Central SV Lotes)"
           >
-            <MessageCircle className="h-3.5 w-3.5" />
-            WhatsApp em lote (em breve)
+            {whatsAppBatchLoading || whatsAppBatchSending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <MessageCircle className="h-3.5 w-3.5" />
+            )}
+            WhatsApp em lote
           </button>
         </div>
       ) : null}
@@ -1953,6 +2115,21 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </div>
         </div>
       )}
+      <BuyerReminderHistoryPanel open={reminderOpsOpen} onClose={() => setReminderOpsOpen(false)} />
+      <ChargeWhatsAppBatchModal
+        open={whatsAppBatchOpen}
+        loading={whatsAppBatchLoading}
+        sending={whatsAppBatchSending}
+        error={whatsAppBatchError}
+        preview={whatsAppBatchPreview}
+        result={whatsAppBatchResult}
+        onClose={() => {
+          if (whatsAppBatchSending) return;
+          setWhatsAppBatchOpen(false);
+        }}
+        onConfirm={() => void confirmWhatsAppBatch()}
+        onRetryFailed={() => void retryWhatsAppBatchFailed()}
+      />
     </div>
   );
 }

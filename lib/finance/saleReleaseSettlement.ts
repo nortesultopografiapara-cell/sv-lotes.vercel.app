@@ -38,6 +38,10 @@ import {
   money2,
   type ReleaseLotMotiveCode,
 } from '@/lib/finance/releaseLotShared';
+import {
+  isReleaseExecLockHeld,
+  readReleaseExecLock,
+} from '@/lib/finance/releaseLotExecutionLock';
 import type { TerminationRefundSchedule } from '@/lib/termination-documents/types';
 import { undefinedRefundSchedule } from '@/lib/termination-documents/refundSchedule';
 
@@ -117,7 +121,34 @@ export type SaleReleaseSettlementRow = {
   calculation_status: string;
   operation_type: string;
   executed_at?: string | null;
+  updated_at?: string | null;
+  total_paid?: number | null;
+  calculation_snapshot?: Record<string, unknown> | null;
 };
+
+export function assertReusableCalculatedSettlement(params: {
+  existing: SaleReleaseSettlementRow | null;
+  prepared: PreparedReleaseSettlement;
+}): { ok: true; staleAmounts: boolean } | { ok: false; code: string; error: string } {
+  const existing = params.existing;
+  if (!existing || existing.status === 'EXECUTED') {
+    return { ok: true, staleAmounts: false };
+  }
+  const existingType = String(existing.operation_type || '').trim();
+  if (existingType && existingType !== params.prepared.operationType) {
+    return {
+      ok: false,
+      code: 'SETTLEMENT_OPERATION_MISMATCH',
+      error:
+        'Há um acerto CALCULATED de outra operação nesta venda. Recarregue a prévia antes de continuar.',
+    };
+  }
+  const storedPaid = existing.total_paid == null ? null : Number(existing.total_paid);
+  const freshPaid = Number(params.prepared.settlement.totalPaid || 0);
+  const staleAmounts =
+    storedPaid != null && Number.isFinite(storedPaid) && storedPaid !== freshPaid;
+  return { ok: true, staleAmounts };
+}
 
 export function isSaleReleaseSettlementOperation(
   code?: string | null,
@@ -576,7 +607,9 @@ export async function loadActiveReleaseSettlement(
 ): Promise<SaleReleaseSettlementRow | null> {
   const { data, error } = await admin
     .from('sale_release_settlements')
-    .select('id, sale_id, status, calculation_status, operation_type, executed_at')
+    .select(
+      'id, sale_id, status, calculation_status, operation_type, executed_at, updated_at, total_paid, calculation_snapshot',
+    )
     .eq('sale_id', saleId)
     .in('status', ['CALCULATED', 'EXECUTED', 'FAILED_DOCUMENT'])
     .limit(1);
@@ -601,8 +634,15 @@ export async function upsertCalculatedReleaseSettlement(
     idempotencyKey: string | null;
     prepared: PreparedReleaseSettlement;
     existingId?: string | null;
+    casUpdatedAt?: string | null;
+    execLock?: { token: string; until: string; ownerUserId: string } | null;
   },
-): Promise<{ id: string; reused: boolean; status: SaleReleaseSettlementStatus }> {
+): Promise<{
+  id: string;
+  reused: boolean;
+  status: SaleReleaseSettlementStatus;
+  updatedAt: string;
+}> {
   const s = params.prepared.settlement;
   const now = new Date().toISOString();
   const row = {
@@ -623,6 +663,7 @@ export async function upsertCalculatedReleaseSettlement(
       refundSchedule: params.prepared.refundSchedule,
       improvements: params.prepared.improvements,
       obligation: params.prepared.obligation,
+      ...(params.execLock ? { _execLock: params.execLock } : {}),
     },
     receipts_snapshot: params.prepared.receiptsSnapshot,
     total_paid: s.totalPaid,
@@ -653,43 +694,72 @@ export async function upsertCalculatedReleaseSettlement(
   };
 
   if (params.existingId) {
-    const { data, error } = await admin
+    let updateQuery = admin
       .from('sale_release_settlements')
       .update(row)
       .eq('id', params.existingId)
       .eq('sale_id', params.saleId)
-      .in('status', ['CALCULATED', 'FAILED_DOCUMENT'])
-      .select('id, status')
-      .maybeSingle();
+      .in('status', ['CALCULATED', 'FAILED_DOCUMENT']);
+    if (params.casUpdatedAt) {
+      updateQuery = updateQuery.eq('updated_at', params.casUpdatedAt);
+    }
+    const { data, error } = await updateQuery.select('id, status, updated_at').maybeSingle();
     if (error) {
       throw new SettlementPersistError('SETTLEMENT_UPDATE_FAILED', error);
     }
     if (!data?.id) {
       const existing = await loadActiveReleaseSettlement(admin, params.saleId);
       if (existing?.status === 'EXECUTED') {
-        return { id: existing.id, reused: true, status: 'EXECUTED' };
+        return {
+          id: existing.id,
+          reused: true,
+          status: 'EXECUTED',
+          updatedAt: existing.updated_at || now,
+        };
+      }
+      if (params.casUpdatedAt) {
+        throw new Error('RELEASE_IN_PROGRESS');
       }
       throw new Error('SETTLEMENT_UPDATE_FAILED: row not updatable');
     }
-    return { id: params.existingId, reused: true, status: 'CALCULATED' };
+    return {
+      id: params.existingId,
+      reused: true,
+      status: 'CALCULATED',
+      updatedAt: String((data as { updated_at?: string }).updated_at || now),
+    };
   }
 
   const { data, error } = await admin
     .from('sale_release_settlements')
     .insert({ ...row, created_at: now })
-    .select('id')
+    .select('id, updated_at')
     .maybeSingle();
 
   if (error) {
     if (/duplicate|unique|sale_release_settlements_sale_active/i.test(error.message)) {
       const existing = await loadActiveReleaseSettlement(admin, params.saleId);
       if (existing?.status === 'EXECUTED') {
-        return { id: existing.id, reused: true, status: 'EXECUTED' };
+        return {
+          id: existing.id,
+          reused: true,
+          status: 'EXECUTED',
+          updatedAt: existing.updated_at || now,
+        };
       }
       if (existing?.id) {
+        if (
+          isReleaseExecLockHeld(
+            readReleaseExecLock(existing.calculation_snapshot),
+            Date.now(),
+          )
+        ) {
+          throw new Error('RELEASE_IN_PROGRESS');
+        }
         return upsertCalculatedReleaseSettlement(admin, {
           ...params,
           existingId: existing.id,
+          casUpdatedAt: existing.updated_at || null,
         });
       }
     }
@@ -698,7 +768,12 @@ export async function upsertCalculatedReleaseSettlement(
   if (!data?.id) {
     throw new Error('SETTLEMENT_INSERT_FAILED: empty id');
   }
-  return { id: String(data.id), reused: false, status: 'CALCULATED' };
+  return {
+    id: String(data.id),
+    reused: false,
+    status: 'CALCULATED',
+    updatedAt: String((data as { updated_at?: string }).updated_at || now),
+  };
 }
 
 export async function markReleaseSettlementExecuted(

@@ -726,6 +726,14 @@ function testSignaturesFormat() {
   const spouseIdx = html.indexOf('CÔNJUGE ANUENTE');
   const witnessesIdx = html.indexOf('TESTEMUNHA 1');
   assert(spouseIdx >= 0 && witnessesIdx > spouseIdx, 'testemunhas após cônjuge sem slot corretor');
+  assert(
+    html.includes('class="contract-closing-date"') &&
+      html.includes('margin: 0 0 18px 0; text-align: right'),
+    'data isolada no topo com respiro Araguaia (18px)',
+  );
+  assert(html.includes('margin: 28px auto 0 auto'), 'linha de assinatura com respiro Araguaia');
+  assert(html.includes('VENDEDOR(A)'), 'slot vendedor');
+  assert(html.includes('COMPRADOR(A)'), 'slot comprador');
   console.log('OK testSignaturesFormat');
 }
 

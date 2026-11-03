@@ -12,6 +12,10 @@ import {
   MUNDO_NOVO_LOGO_PUBLIC_FILE,
   buildMundoNovoElectronicSaleContractPrintTemplates,
 } from '@/lib/mundoNovoContractPdf';
+import { buildEstrelaDoSulSaleContractPrintTemplates } from '@/lib/estrelaDoSulContractPdf';
+import {
+  ESTRELA_DO_SUL_PDF_MARGIN_MM,
+} from '@/lib/estrelaDoSulHtml2PdfPagination';
 import { displayContractNumber } from '@/lib/contractNumber';
 import {
   CONTRACT_PDF_PRINT_CSS,
@@ -23,6 +27,10 @@ import {
   CONTRACT_PDF_MARGIN_MM,
 } from '@/lib/contractPaginationEngine';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
+import {
+  isLfEstrelaCustomHtml,
+  prepareLfEstrelaGisFinalHtml,
+} from '@/lib/lfEstrelaPrintCss';
 
 function escapeHtml(value: string): string {
   return String(value || '')
@@ -36,6 +44,9 @@ export function wrapSaleContractHtmlDocument(
   htmlFragment: string,
   title = 'Contrato',
 ): string {
+  const bodyHtml = isLfEstrelaCustomHtml(htmlFragment)
+    ? prepareLfEstrelaGisFinalHtml(htmlFragment)
+    : htmlFragment;
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -51,11 +62,14 @@ ${CONTRACT_PDF_PRINT_CSS}
     box-sizing: border-box;
     font-family: 'Times New Roman', Times, serif;
     font-size: 12pt;
-    color: #111;
+    color: #000;
+    background: #fff;
+    opacity: 1;
+    -webkit-text-fill-color: #000;
   }
 </style>
 </head>
-<body>${htmlFragment}</body>
+<body>${bodyHtml}</body>
 </html>`;
 }
 
@@ -225,9 +239,16 @@ export async function loadTenantLogoBase64ForPdf(
   return loadSvLotesLogoDataUrl();
 }
 
+export type BuildSaleContractPdfFromHtmlOptions = {
+  skipPaginationMeasure?: boolean;
+  displayHeaderFooter?: boolean;
+  marginMm?: { top: number; right: number; bottom: number; left: number };
+};
+
 export async function buildSaleContractPdfFromHtml(
   htmlFragment: string,
   chrome: ContractPdfChromeInput,
+  options?: BuildSaleContractPdfFromHtmlOptions,
 ): Promise<Uint8Array> {
   const documentHtml = wrapSaleContractHtmlDocument(
     htmlFragment,
@@ -236,9 +257,25 @@ export async function buildSaleContractPdfFromHtml(
   const { headerTemplate, footerTemplate } =
     chrome.headerVariant === 'mundo-novo-electronic'
       ? buildMundoNovoElectronicSaleContractPrintTemplates(chrome)
+      : chrome.headerVariant === 'estrela-do-sul'
+        ? buildEstrelaDoSulSaleContractPrintTemplates(chrome)
       : chrome.printStyle === 'sv-lotes-2'
         ? buildSvLotes2SaleContractPrintTemplates(chrome)
         : buildSaleContractPrintTemplates(chrome);
+
+  const lf = isLfEstrelaCustomHtml(htmlFragment);
+  const pdfMargin = options?.marginMm
+    ? options.marginMm
+    : lf
+    ? { top: 15, right: 15, bottom: 15, left: 15 }
+    : chrome.headerVariant === 'estrela-do-sul'
+      ? ESTRELA_DO_SUL_PDF_MARGIN_MM
+      : CONTRACT_PDF_MARGIN_MM;
+  const skipMeasure = Boolean(options?.skipPaginationMeasure || lf);
+  const showChrome =
+    options?.displayHeaderFooter !== undefined
+      ? options.displayHeaderFooter
+      : !lf;
 
   let browser: Browser | null = null;
   let page: Awaited<ReturnType<Browser['newPage']>> | null = null;
@@ -256,24 +293,27 @@ export async function buildSaleContractPdfFromHtml(
     // Engine única: mede espaço restante.
     // Assinaturas só vão para nova página se não couberem; certificado é independente
     // (nunca empurra assinaturas juntos — evita páginas quase vazias).
-    try {
-      await page.evaluate(CONTRACT_PAGINATION_MEASURE_SCRIPT);
-    } catch (measureErr) {
-      console.warn('[sale-sign-pdf] pagination measure skipped', {
-        message: measureErr instanceof Error ? measureErr.message : String(measureErr),
-      });
+    // LF ESTRELA: o PDF físico já está paginado (html2pdf, 10 páginas). Não medir/repartir.
+    if (!skipMeasure) {
+      try {
+        await page.evaluate(CONTRACT_PAGINATION_MEASURE_SCRIPT);
+      } catch (measureErr) {
+        console.warn('[sale-sign-pdf] pagination measure skipped', {
+          message: measureErr instanceof Error ? measureErr.message : String(measureErr),
+        });
+      }
     }
 
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: {
-        top: `${CONTRACT_PDF_MARGIN_MM.top}mm`,
-        right: `${CONTRACT_PDF_MARGIN_MM.right}mm`,
-        bottom: `${CONTRACT_PDF_MARGIN_MM.bottom}mm`,
-        left: `${CONTRACT_PDF_MARGIN_MM.left}mm`,
+        top: `${pdfMargin.top}mm`,
+        right: `${pdfMargin.right}mm`,
+        bottom: `${pdfMargin.bottom}mm`,
+        left: `${pdfMargin.left}mm`,
       },
-      displayHeaderFooter: true,
+      displayHeaderFooter: showChrome,
       headerTemplate,
       footerTemplate,
     });

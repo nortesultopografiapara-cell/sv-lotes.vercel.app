@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useIsWideDesktop } from '@/hooks/use-mobile';
 import { setSaleWorkspaceChromeOpen } from '@/lib/saleWorkspaceChrome';
+import { AssistantSaleUiBridge } from '@/components/assistant/AssistantSaleUiBridge';
 import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
@@ -44,7 +45,6 @@ import {
 import { listCustomerSpouseSuggestions } from '@/lib/customerSpousesService';
 import {
   computeInstallmentDisplayValue,
-  downPaymentReducesInstallmentBase,
   resolveInstallmentPrincipal,
   splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
@@ -71,8 +71,22 @@ import {
   DEFAULT_INSTALLMENT_CORRECTION_TYPE,
   INSTALLMENT_CORRECTION_OPTIONS,
   normalizeInstallmentCorrectionType,
+  parseInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
-import type { SaleContractModel } from '@/lib/contractModel';
+import {
+  normalizeSaleContractModel,
+  type SaleContractModel,
+} from '@/lib/contractModel';
+import {
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal,
+  isInstallmentCorrectionOptionEnabled,
+  LF_ESTRELA_CORRECTION_SELECTOR_HINT,
+  lfEstrelaRequiresHardcodedIgpm,
+  resolvePersistInstallmentCorrectionType,
+  resolveProjectInstallmentCorrectionType,
+  shouldForceFixedInstallmentCorrection,
+  usesSplitDownPaymentFinance,
+} from '@/lib/saleFinanceConfig';
 import {
   formatCurrencyBRL,
   parseCurrencyBRLNumber,
@@ -86,7 +100,6 @@ import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { SaleBalloonInstallmentsPanel } from '@/components/map/SaleBalloonInstallmentsPanel';
 import {
-  PAYMENT_TYPE_INSTALLMENT,
   resolveSalePaymentMode,
   salePaymentModeSelectOptions,
 } from '@/lib/salePaymentMode';
@@ -157,7 +170,7 @@ const GIS_INPUT_DATE =
 const GIS_INPUT_READONLY =
   'form-input-light w-full px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700 border-slate-300 cursor-not-allowed';
 
-function emptyLotFormState(): LotFormState {
+function emptyLotFormState(installmentCorrectionType: string): LotFormState {
   return {
     ...emptyCustomerFormValues(),
     ...emptySaleSpouseFormFields(),
@@ -174,7 +187,7 @@ function emptyLotFormState(): LotFormState {
     sale_commission_fixed_amount: '',
     financial_account_id: '',
     notes: '',
-    installment_correction_type: DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+    installment_correction_type: installmentCorrectionType,
     signal_contract_value: '',
     signal_paid_at_sale: '',
     signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
@@ -265,7 +278,9 @@ export function CustomerLotFormModal({
     'dados' | 'cobrancas' | 'capa_carne' | 'documentos'
   >('dados');
   const [formData, setFormData] = useState<LotFormState>(() => ({
-    ...emptyLotFormState(),
+    ...emptyLotFormState(
+      resolveProjectInstallmentCorrectionType({ contractModel }),
+    ),
     ...initialFormData,
   }));
   const [submitting, setSubmitting] = useState(false);
@@ -287,6 +302,15 @@ export function CustomerLotFormModal({
   }, [initialFormData]);
 
   useEffect(() => {
+    if (!lfEstrelaRequiresHardcodedIgpm(contractModel)) return;
+    setFormData((prev) =>
+      prev.installment_correction_type === 'IGPM'
+        ? prev
+        : { ...prev, installment_correction_type: 'IGPM' },
+    );
+  }, [contractModel, initialFormData]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadFinancialAccounts() {
@@ -294,16 +318,29 @@ export function CustomerLotFormModal({
       setFinancialAccountsLoading(true);
       setFinancialAccountsUnavailable(false);
       try {
-        const [accountsRes, projectRes] = await Promise.all([
+        const [accountsRes, projectResRaw] = await Promise.all([
           fetch('/api/finance/financial-accounts', { credentials: 'include' }),
           lot.project_id
             ? supabase
                 .from('projects')
-                .select('financial_account_id')
+                .select('financial_account_id, lf_contract_config_json')
                 .eq('id', lot.project_id)
                 .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
         ]);
+
+        let projectRes = projectResRaw;
+        if (
+          lot.project_id &&
+          projectRes.error &&
+          /lf_contract_config_json/i.test(String(projectRes.error.message || ''))
+        ) {
+          projectRes = await supabase
+            .from('projects')
+            .select('financial_account_id')
+            .eq('id', lot.project_id)
+            .maybeSingle();
+        }
 
         if (cancelled) return;
 
@@ -319,19 +356,30 @@ export function CustomerLotFormModal({
           : [];
         setFinancialAccounts(accounts);
 
-        const projectAccountId = String(
-          (projectRes.data as { financial_account_id?: string } | null)?.financial_account_id || '',
-        );
+        const projectRow = projectRes.data as {
+          financial_account_id?: string;
+          lf_contract_config_json?: unknown;
+        } | null;
+        const projectAccountId = String(projectRow?.financial_account_id || '');
         const defaultAccount =
           accounts.find((account) => account.isDefault) || accounts[0] || null;
         const resolvedAccountId = projectAccountId || defaultAccount?.id || '';
+        const inheritedCorrection = resolveProjectInstallmentCorrectionType({
+          contractModel,
+          projectLfConfig: projectRow?.lf_contract_config_json,
+        });
 
-        if (resolvedAccountId) {
-          setFormData((prev) =>
-            prev.financial_account_id
-              ? prev
-              : { ...prev, financial_account_id: resolvedAccountId },
-          );
+        if (resolvedAccountId || (!isEditMode && !initialFormData?.installment_correction_type)) {
+          setFormData((prev) => {
+            const next = { ...prev };
+            if (resolvedAccountId && !prev.financial_account_id) {
+              next.financial_account_id = resolvedAccountId;
+            }
+            if (!isEditMode && !initialFormData?.installment_correction_type) {
+              next.installment_correction_type = inheritedCorrection;
+            }
+            return next;
+          });
         }
       } catch {
         if (!cancelled) setFinancialAccounts([]);
@@ -344,7 +392,7 @@ export function CustomerLotFormModal({
     return () => {
       cancelled = true;
     };
-  }, [tenantId, lot.project_id]);
+  }, [tenantId, lot.project_id, contractModel, isEditMode, initialFormData?.installment_correction_type]);
 
   useEffect(() => {
     let cancelled = false;
@@ -434,7 +482,9 @@ export function CustomerLotFormModal({
 
         const paidSignal = Number(signalAmount) || 0;
         const next: LotFormState = {
-          ...emptyLotFormState(),
+          ...emptyLotFormState(
+            resolveProjectInstallmentCorrectionType({ contractModel }),
+          ),
           ...customerToFormValues(customer),
           signal_amount: paidSignal > 0 ? formatCurrencyBRL(paidSignal) : '',
           signal_date: signalDate ? String(signalDate).split('T')[0] : '',
@@ -541,8 +591,12 @@ export function CustomerLotFormModal({
   };
   const installmentsCount =
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
-  const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
+  const isRecantoSinal = usesSplitDownPaymentFinance(contractModel);
+  const isEstrelaSinalForm =
+    isRecantoSinal && normalizeSaleContractModel(contractModel) === 'ESTRELA_DO_SUL';
   const isStandardSaleForm = !isRecantoSinal;
+  const showsInstallmentCorrectionSelector =
+    isStandardSaleForm || isEstrelaSinalForm;
   const signalContractValue = isRecantoSinal
     ? parseCurrencyBRLNumber(
         formData.signal_contract_value || downPaymentStr || '',
@@ -588,7 +642,7 @@ export function CustomerLotFormModal({
   const recantoLotPlan =
     isRecantoSinal && installmentsCount > 0
       ? resolveRecantoLotInstallmentPlan({
-          lotValue: finalValue,
+          lotValue: installmentPrincipal,
           regularCount: installmentsCount,
           mode: installmentDefinitionMode,
           regularAmount:
@@ -713,7 +767,11 @@ export function CustomerLotFormModal({
 
         if (isRecantoSinal) {
           const lotValidation = validateRecantoLotInstallmentPlan({
-            lotValue: finalValue,
+            lotValue: resolveInstallmentPrincipal({
+              totalValue: finalValue,
+              downPayment: effectiveDownPayment,
+              contractModel,
+            }),
             regularCount: installmentsResult.value,
             mode: formData.installment_definition_mode,
             regularAmount: parseCurrencyBRLNumber(
@@ -802,6 +860,14 @@ export function CustomerLotFormModal({
       const recantoDownPayment = isRecantoSinal
         ? serializeCurrencyBRL(String(signalContractValue || 0))
         : serializeCurrencyBRL(downPaymentStr);
+      const persistedCorrection = resolvePersistInstallmentCorrectionType({
+        contractModel,
+        selected: formData.installment_correction_type,
+      });
+      assertLfEstrelaCorrectionCoherentWithHardcodedLegal(
+        contractModel,
+        persistedCorrection,
+      );
       await onConfirm({
         ...formData,
         payment_type: paymentType,
@@ -866,11 +932,7 @@ export function CustomerLotFormModal({
           )
             ? formData.balloon_config || emptyBalloonFormConfig()
             : null,
-        installment_correction_type: isStandardSaleForm
-          ? paymentMode.isInstallment
-            ? normalizeInstallmentCorrectionType(formData.installment_correction_type)
-            : DEFAULT_INSTALLMENT_CORRECTION_TYPE
-          : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+        installment_correction_type: persistedCorrection,
         sale_commission_fixed_amount: String(
           parseCurrencyBRLNumber(formData.sale_commission_fixed_amount) || 0,
         ),
@@ -1041,6 +1103,21 @@ export function CustomerLotFormModal({
 
   return (
     <div className={`sv-modal-overlay z-[1000] pointer-events-auto font-sans${isWorkspaceDesktop ? " sv-modal-overlay--sale-workspace" : ""}`}>
+      <AssistantSaleUiBridge
+        paymentMode={formData.payment_type}
+        customerSelected={Boolean(formData.selected_customer_id)}
+        lotId={lot?.id ? String(lot.id) : null}
+        projectId={lot?.project_id || null}
+        blockNumber={lot?.block || null}
+        lotNumber={lot?.number != null ? String(lot.number) : null}
+        lotStatus={lot?.status || null}
+        installmentsFilled={Boolean(String(formData.installments_count || '').trim())}
+        firstDueFilled={Boolean(String(formData.first_installment_due_date || formData.down_payment_due_date || '').trim())}
+        brokerSelected={Boolean(formData.broker_id)}
+        downPaymentFilled={Boolean(String(formData.down_payment || formData.signal_contract_value || '').trim())}
+        isEditMode={isEditMode}
+        saleEditTab={isEditMode ? activeTab : null}
+      />
       <div className={`sv-modal-shell sv-modal-shell--full-mobile ${workspaceShellClass} bg-white animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200`}>
         <div className={`sv-modal-header sticky top-0 z-20 border-b border-gray-100 flex items-center justify-between gap-4 bg-white shadow-sm ${isWorkspaceDesktop ? "px-5 py-2 sv-sale-workspace-header" : "p-4"}`}>
           <div className="min-w-0 flex-1">
@@ -1219,6 +1296,15 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.profession}
                     onChange={(e) => setField({ profession: e.target.value })}
+                    className={GIS_INPUT}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Nacionalidade</label>
+                  <input
+                    type="text"
+                    value={formData.nationality || ''}
+                    onChange={(e) => setField({ nationality: e.target.value })}
                     className={GIS_INPUT}
                   />
                 </div>
@@ -1633,11 +1719,14 @@ export function CustomerLotFormModal({
                           balloon_config: nextMode.isInstallment
                             ? formData.balloon_config
                             : null,
-                          installment_correction_type:
-                            nextType === PAYMENT_TYPE_INSTALLMENT
-                              ? formData.installment_correction_type ||
-                                DEFAULT_INSTALLMENT_CORRECTION_TYPE
-                              : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+                          installment_correction_type: shouldForceFixedInstallmentCorrection(
+                            contractModel,
+                          )
+                            ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
+                            : formData.installment_correction_type ||
+                              resolveProjectInstallmentCorrectionType({
+                                contractModel,
+                              }),
                         });
                       }}
                       className={GIS_INPUT}
@@ -1767,7 +1856,9 @@ export function CustomerLotFormModal({
                       <>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Valor do sinal contratado (R$)
+                            {isEstrelaSinalForm
+                              ? 'Valor do Sinal / Entrada (Arras)'
+                              : 'Valor do sinal contratado (R$)'}
                           </label>
                           <CurrencyInput
                             value={formData.signal_contract_value || downPaymentStr}
@@ -1786,7 +1877,9 @@ export function CustomerLotFormModal({
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Valor pago no ato do sinal (R$)
+                            {isEstrelaSinalForm
+                              ? 'Valor pago no ato do Sinal / Entrada'
+                              : 'Valor pago no ato do sinal (R$)'}
                           </label>
                           <CurrencyInput
                             value={formData.signal_paid_at_sale || ''}
@@ -1797,7 +1890,9 @@ export function CustomerLotFormModal({
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Restante do sinal
+                            {isEstrelaSinalForm
+                              ? 'Restante do Sinal / Entrada'
+                              : 'Restante do sinal'}
                           </label>
                           <CurrencyInput
                             readOnly
@@ -1808,7 +1903,9 @@ export function CustomerLotFormModal({
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Venc. do sinal (pago no ato)
+                            {isEstrelaSinalForm
+                              ? 'Vencimento do Sinal / Entrada'
+                              : 'Venc. do sinal (pago no ato)'}
                           </label>
                           <input
                             type="date"
@@ -1824,7 +1921,9 @@ export function CustomerLotFormModal({
                           <>
                             <div className="md:col-span-2">
                               <label className="block text-xs font-semibold text-gray-700 mb-1">
-                                Forma de cobrança do restante do sinal
+                                {isEstrelaSinalForm
+                                  ? 'Forma de cobrança do restante do Sinal / Entrada'
+                                  : 'Forma de cobrança do restante do sinal'}
                               </label>
                               <select
                                 value={
@@ -2081,26 +2180,54 @@ export function CustomerLotFormModal({
                         </p>
                       ) : null}
                     </div>
-                    {isStandardSaleForm ? (
+                    {showsInstallmentCorrectionSelector ? (
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">
-                          Correção das Parcelas
+                          Correção das Parcelas / Índice de Correção Anual
                         </label>
                         <select
-                          value={normalizeInstallmentCorrectionType(
-                            formData.installment_correction_type,
-                          )}
-                          onChange={(e) =>
-                            setField({ installment_correction_type: e.target.value })
+                          value={
+                            lfEstrelaRequiresHardcodedIgpm(contractModel)
+                              ? 'IGPM'
+                              : normalizeInstallmentCorrectionType(
+                                  formData.installment_correction_type,
+                                )
                           }
+                          onChange={(e) => {
+                            const next = parseInstallmentCorrectionType(e.target.value);
+                            if (
+                              !next ||
+                              !isInstallmentCorrectionOptionEnabled(contractModel, next)
+                            ) {
+                              return;
+                            }
+                            setField({ installment_correction_type: next });
+                          }}
                           className={GIS_INPUT}
                         >
-                          {INSTALLMENT_CORRECTION_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
+                          {INSTALLMENT_CORRECTION_OPTIONS.map((option) => {
+                            const enabled = isInstallmentCorrectionOptionEnabled(
+                              contractModel,
+                              option.value,
+                            );
+                            return (
+                              <option
+                                key={option.value}
+                                value={option.value}
+                                disabled={!enabled}
+                              >
+                                {enabled
+                                  ? option.label
+                                  : `${option.label} (indisponível neste modelo)`}
+                              </option>
+                            );
+                          })}
                         </select>
+                        {lfEstrelaRequiresHardcodedIgpm(contractModel) ? (
+                          <p className="mt-1 text-[11px] text-slate-600 leading-snug">
+                            {LF_ESTRELA_CORRECTION_SELECTOR_HINT}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                     <div>

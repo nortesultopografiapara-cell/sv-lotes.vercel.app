@@ -68,6 +68,20 @@ function testFinanceLayoutWiring() {
   assert(!summary.includes('392.945'), 'sem valor fixo do mockup');
 
   assert(totals.includes('export function calculateFinancialTotals'), 'fórmula intacta');
+
+  const splitUi = read('components/finance/ChargeRevenueSplitDistribution.tsx');
+  assert(splitUi.includes('finance-split-distribution'), 'quadro de split com classe própria');
+  assert(splitUi.includes('finance-split-status'), 'situação em badge');
+  assert(splitUi.includes('formatSplitBeneficiaryLabel'), 'nome do beneficiário formatado na UI');
+  assert(splitUi.includes('formatSplitSharePercentLabel'), 'percentual amigável na UI');
+  assert(!splitUi.includes('text-gray-900'), 'sem cinza fixo ilegível no dark');
+  assert(!splitUi.includes('text-gray-700'), 'sem cinza 700 no quadro');
+  assert(css.includes('.finance-split-distribution'), 'CSS do quadro de split');
+  assert(css.includes('.finance-split-status.is-settled'), 'badge liquidado/recebido');
+  assert(css.includes('.finance-split-status.is-pending'), 'badge previsto/pendente');
+  assert(css.includes('#dcfce7'), 'verde com texto claro (AA)');
+  assert(css.includes('#fef3c7'), 'âmbar com texto claro (AA)');
+  assert(!css.includes('.finance-split-distribution {') || !/finance-split-distribution[\s\S]{0,200}background:\s*#fff/.test(css), 'quadro não é fundo branco');
   console.log('OK testFinanceLayoutWiring');
 }
 

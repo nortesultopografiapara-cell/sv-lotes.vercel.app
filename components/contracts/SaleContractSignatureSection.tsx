@@ -116,6 +116,7 @@ type Props = {
   } | null;
   compact?: boolean;
   onSigned?: () => void;
+  onBeforeSendForSignature?: () => Promise<void>;
   onCapabilitiesChange?: (capabilities: SaleContractSignatureCapabilities) => void;
 };
 
@@ -130,6 +131,7 @@ export const SaleContractSignatureSection = forwardRef<
     authUser,
     compact = false,
     onSigned,
+    onBeforeSendForSignature,
     onCapabilitiesChange,
   },
   ref,
@@ -251,6 +253,29 @@ export const SaleContractSignatureSection = forwardRef<
     void loadSignature();
   }, [loadSignature, contract?.signature_status]);
 
+  useEffect(() => {
+    if (!contract?.id) return;
+    let lastAt = 0;
+    const refetchIfActive = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastAt < 800) return;
+      lastAt = now;
+      void loadSignature();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refetchIfActive();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refetchIfActive);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refetchIfActive);
+    };
+  }, [contract?.id, loadSignature]);
+
   const canSend = useMemo(
     () =>
       contract &&
@@ -307,6 +332,7 @@ export const SaleContractSignatureSection = forwardRef<
       vendorEmail: string;
       vendorRole: string;
       partyId?: string | null;
+      password?: string;
     }) => {
       if (!contract?.id || blockOwnerWriteOnClient(userRole)) {
         throw new Error('Sem permissão para assinar como vendedor.');
@@ -334,6 +360,7 @@ export const SaleContractSignatureSection = forwardRef<
               vendorEmail: input.vendorEmail,
               vendorRole: input.vendorRole,
               partyId: input.partyId || null,
+              password: input.password || '',
             }),
           },
           CONTRACTS_FETCH_TIMEOUT_MS,
@@ -471,6 +498,9 @@ export const SaleContractSignatureSection = forwardRef<
     setSending(true);
     setError(null);
     try {
+      if (onBeforeSendForSignature) {
+        await onBeforeSendForSignature();
+      }
       const apiUrl = await buildSignatureApiUrl(contract.id);
       const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
         success?: boolean;
@@ -524,7 +554,7 @@ export const SaleContractSignatureSection = forwardRef<
     } finally {
       setSending(false);
     }
-  }, [contract?.id, onSigned, userRole, buildSignatureApiUrl]);
+  }, [contract?.id, onSigned, onBeforeSendForSignature, userRole, buildSignatureApiUrl]);
 
   useImperativeHandle(
     ref,
@@ -788,13 +818,6 @@ export const SaleContractSignatureSection = forwardRef<
                         });
                       }}
                     />
-                    <ActionChip
-                      icon={ExternalLink}
-                      label="Abrir página"
-                      onClick={() =>
-                        window.open(url, '_blank', 'noopener,noreferrer')
-                      }
-                    />
                     {party.canResend && (
                       <ActionChip
                         icon={Send}
@@ -830,11 +853,6 @@ export const SaleContractSignatureSection = forwardRef<
         {canShare && signUrl && (
           <>
             <ActionChip icon={Copy} label="Copiar link" onClick={() => void handleCopyLink()} />
-            <ActionChip
-              icon={ExternalLink}
-              label="Abrir página"
-              onClick={() => window.open(signUrl, '_blank', 'noopener,noreferrer')}
-            />
             <ActionChip
               icon={MessageCircle}
               label="WhatsApp"
@@ -877,7 +895,34 @@ export const SaleContractSignatureSection = forwardRef<
               label="Baixar PDF Assinado"
               primary
               onClick={() => {
-                window.location.href = signedPdfDownloadUrl;
+                void (async () => {
+                  try {
+                    const res = await fetch(signedPdfDownloadUrl, {
+                      credentials: 'include',
+                    });
+                    if (!res.ok) {
+                      const payload = (await res.json().catch(() => null)) as {
+                        error?: string;
+                      } | null;
+                      window.alert(
+                        payload?.error ||
+                          'Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.',
+                      );
+                      return;
+                    }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `contrato-assinado_${contract.contract_number || contract.id}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch {
+                    window.alert(
+                      'Não foi possível baixar o PDF assinado. Tente novamente depois de gerar o PDF físico.',
+                    );
+                  }
+                })();
               }}
             />
           </>
@@ -926,11 +971,14 @@ export const SaleContractSignatureSection = forwardRef<
         onClose={() => setVendorSignOpen(false)}
         companyName={vendorDefaults.companyName || projectName}
         contractNumber={String(contract.contract_number || '')}
+        contractId={contract.id}
+        signatureId={latest?.id || null}
         busy={signingVendor}
         defaultName={vendorDefaults.name}
         defaultDocument={vendorDefaults.document}
         defaultEmail={vendorDefaults.email}
-        vendorTargets={multiVendorPending ? pendingVendorTargets : []}
+        vendorTargets={pendingVendorTargets}
+        signKind="vendor"
         onSign={handleVendorSign}
       />
 
@@ -940,20 +988,15 @@ export const SaleContractSignatureSection = forwardRef<
           onClose={() => setIntervenientSignOpen(false)}
           companyName={pendingIntervenientTarget.name}
           contractNumber={String(contract.contract_number || '')}
+          contractId={contract.id}
+          signatureId={latest?.id || null}
           busy={signingVendor}
           defaultName={pendingIntervenientTarget.name}
           defaultDocument={pendingIntervenientTarget.document}
           defaultEmail={pendingIntervenientTarget.email}
           documentLabel="CNPJ"
-          vendorTargets={[
-            {
-              partyId: pendingIntervenientTarget.partyId,
-              name: pendingIntervenientTarget.name,
-              document: pendingIntervenientTarget.document,
-              email: pendingIntervenientTarget.email,
-              emailRequired: false,
-            },
-          ]}
+          signKind="intervenient"
+          partyId={pendingIntervenientTarget.partyId}
           onSign={async (input) => {
             await handleVendorSign({
               ...input,

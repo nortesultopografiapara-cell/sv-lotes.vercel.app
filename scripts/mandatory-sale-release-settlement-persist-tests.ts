@@ -551,7 +551,7 @@ function testOrphanBlockContractIdNeverPersisted() {
 
   const execFn = svc.slice(svc.indexOf('export async function executeReleaseLot'));
   const persistIdx = execFn.indexOf('upsertCalculatedReleaseSettlement');
-  const asaasIdx = execFn.indexOf('{ executeCancel: true }');
+  const asaasIdx = execFn.indexOf('resolveAsaasChargesForRelease');
   const localIdx = execFn.indexOf('const local = await applyLocalRelease');
   assert(persistIdx > 0 && persistIdx < asaasIdx, 'settlement antes do Asaas');
   assert(asaasIdx < localIdx, 'Asaas antes de liberar o lote');

@@ -57,6 +57,8 @@ function testCategoriesAndTypes() {
   assert(desistencia.valid, 'DESISTENCIA system-generated');
   const signed = validateSaleDocumentType('SYSTEM_GENERATED', 'DESISTENCIA_ASSINADO');
   assert(signed.valid, 'DESISTENCIA_ASSINADO system-generated');
+  const lfBase = validateSaleDocumentType('SYSTEM_GENERATED', 'LF_ESTRELA_PHYSICAL_BASE');
+  assert(lfBase.valid, 'LF_ESTRELA_PHYSICAL_BASE system-generated');
 
   console.log('OK testCategoriesAndTypes');
 }

@@ -1,0 +1,76 @@
+{
+  "id": "gis-sale-termination",
+  "title": "Encerrar venda e liberar lote (distrato / desistência / inadimplência)",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": [
+    "sale.release",
+    "sale.termination.distrato",
+    "sale.termination.desistencia",
+    "sale.termination.inadimplencia",
+    "distrato",
+    "desistencia",
+    "liberar lote",
+    "encerrar venda"
+  ],
+  "objective": "Devolver o lote ao estoque encerrando a venda pelo modal Operações da venda, com o motivo correto e o termo correspondente.",
+  "prerequisites": [
+    "Administrador da empresa.",
+    "Lote vendido ou reservado no Mapa GIS."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "lote vendido",
+    "Comercial",
+    "Disponibilizar",
+    "Operações da venda",
+    "Encerrar venda",
+    "Confirmar liberação do lote"
+  ],
+  "steps": [
+    "Abra o lote no Mapa GIS, aba Comercial.",
+    "Clique em Disponibilizar. Lote vendido ou reservado abre o modal Operações da venda; o status não muda sozinho.",
+    "Em Encerrar venda, escolha o card: Desistência do cliente, Distrato ou Inadimplência. Troca de lote e Transferência de titularidade ficam em Alterar venda e não devolvem o lote.",
+    "Confira o acerto financeiro exibido, informe justificativa quando o card exigir, marque ciência, digite a senha e clique em Confirmar liberação do lote."
+  ],
+  "expectedResult": "Venda CANCELLED, contrato cancelado, parcelas em aberto canceladas, cobranças Asaas/Inter canceláveis encerradas, lote Disponível, termo de encerramento gerado.",
+  "commonErrors": [
+    "Apenas mudar o status do lote no mapa.",
+    "Usar só Cancelar em Contratos — isso não devolve o lote ao estoque.",
+    "Tratar Troca de lote como liberação."
+  ],
+  "limitations": [
+    "O Assistente SV não executa distrato, não libera lote e não consulta valores reais.",
+    "O percentual de retenção/restituição é o do termination_policy_snapshot congelado na venda/contrato. Não invente percentual.",
+    "Cancelar na tela Contratos altera status do contrato/venda e não substitui POST /api/lots/{id}/release.",
+    "Erro de cadastro não é card de Encerrar venda; correção cadastral usa Editar Venda."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["ARAGUAIA"],
+      "note": "O acerto segue a política congelada da venda (catálogo Araguaia). O modal mostra os valores; o Assistente não recalcula."
+    },
+    {
+      "models": ["RECANTO_PRIMAVERA", "MUNDO_NOVO", "ESTRELA_DO_SUL", "PADRAO"],
+      "note": "Use somente o acerto exibido no modal daquela venda. Não generalize percentual de um modelo para outro."
+    }
+  ],
+  "sourceOfTruth": [
+    "components/map/GISMap.tsx",
+    "components/map/ReleaseLotConfirmModal.tsx",
+    "lib/finance/releaseLotShared.ts",
+    "lib/finance/releaseLotService.ts",
+    "app/api/lots/[lotId]/release/route.ts"
+  ],
+  "uiLabels": [
+    "Disponibilizar",
+    "Operações da venda",
+    "Encerrar venda",
+    "Desistência do cliente",
+    "Distrato",
+    "Inadimplência",
+    "Confirmar liberação do lote"
+  ]
+}

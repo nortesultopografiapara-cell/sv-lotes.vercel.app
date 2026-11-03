@@ -51,6 +51,7 @@ import {
 
 const SALES_CREATE_FETCH_TIMEOUT_MS = Math.max(SALES_FETCH_TIMEOUT_MS, 90_000);
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
+import { AssistantLotUiBridge } from "@/components/assistant/AssistantLotUiBridge";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
 import {
@@ -58,7 +59,7 @@ import {
   normalizeInstallmentCorrectionType,
 } from "@/lib/installmentCorrectionType";
 import { buildSaleEditFinancePayloads } from "@/lib/saleEditFinanceRecalc";
-import { normalizeSaleContractModel } from "@/lib/contractModel";
+import { resolveSaleContractModelFromContext } from "@/lib/contractModel";
 import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
@@ -2174,6 +2175,14 @@ function LotPopupContent({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
+      <AssistantLotUiBridge
+        lotId={lot?.id ? String(lot.id) : null}
+        projectId={lot?.project_id || lot?.projectId || null}
+        blockNumber={quadraLabel || null}
+        lotNumber={displayNum || null}
+        lotStatus={getStatusLabel(lot.status) || lot?.status || null}
+        activeLotTab={popupTab}
+      />
       <div className="shrink-0 px-4 pt-4 pb-3 pr-10 lg:pt-2.5 lg:pb-2 border-b border-gray-100">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-bold text-base md:text-lg lg:text-base text-gray-900 leading-tight min-w-0">
@@ -4092,7 +4101,7 @@ export default function GISMap({
   useEffect(() => {
     async function loadBrokersAndContractModel() {
       if (!user?.tenant_id || !isBrowserOnline()) return;
-      const [{ data: brokers }, { data: company }] = await Promise.all([
+      const [{ data: brokers }, { data: company }, projectRes] = await Promise.all([
         supabase
           .from("brokers")
           .select("id, name, commission_percent, commission_mode, commission_fixed_amount")
@@ -4104,6 +4113,13 @@ export default function GISMap({
           .select("contract_model")
           .eq("id", user.tenant_id)
           .maybeSingle(),
+        projectId
+          ? supabase
+              .from("projects")
+              .select("contract_model, name")
+              .eq("id", projectId)
+              .maybeSingle()
+          : Promise.resolve({ data: null as { contract_model?: string | null; name?: string | null } | null }),
       ]);
       setBrokersList(
         (brokers || []).map((b) => ({
@@ -4114,12 +4130,17 @@ export default function GISMap({
           commission_fixed_amount: b.commission_fixed_amount ?? null,
         })),
       );
+      const project = projectRes.data;
       setTenantContractModel(
-        normalizeSaleContractModel(company?.contract_model),
+        resolveSaleContractModelFromContext({
+          projectModel: project?.contract_model,
+          projectName: project?.name,
+          companyModel: company?.contract_model,
+        }).model,
       );
     }
     if (user) void loadBrokersAndContractModel();
-  }, [user?.tenant_id, user?.id]);
+  }, [user?.tenant_id, user?.id, projectId]);
 
   const openEditSaleForm = async (lot: any) => {
     if (!userCanEditSale) {

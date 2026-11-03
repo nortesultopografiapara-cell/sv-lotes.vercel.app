@@ -40,7 +40,12 @@ export const SALE_DOCUMENT_TERMINATION_TYPES = [
   'INADIMPLENCIA_ASSINADO',
 ] as const;
 
-/** Termo aditivo de Troca de lote — Fase 6 futura. Sem PDF nesta fase. */
+/** PDF físico homologado LF ESTRELA — congelado uma vez por contracts.id. */
+export const SALE_DOCUMENT_LF_ESTRELA_TYPES = [
+  'LF_ESTRELA_PHYSICAL_BASE',
+] as const;
+
+export const LF_ESTRELA_PHYSICAL_BASE_DOCUMENT_TYPE = 'LF_ESTRELA_PHYSICAL_BASE';
 export const SALE_DOCUMENT_LOT_SWAP_TYPES = [
   'TROCA_LOTE',
   'TROCA_LOTE_ASSINADO',
@@ -65,6 +70,7 @@ export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
     ...SALE_DOCUMENT_CONTRACT_OPERATION_TYPES,
     ...SALE_DOCUMENT_TERMINATION_TYPES,
     ...SALE_DOCUMENT_LOT_SWAP_TYPES,
+    ...SALE_DOCUMENT_LF_ESTRELA_TYPES,
   ],
 };
 
@@ -104,6 +110,7 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   TROCA_LOTE: 'Termo Aditivo de Troca de Lote / Substituição de Unidade',
   TROCA_LOTE_ASSINADO:
     'Termo Aditivo de Troca de Lote / Substituição de Unidade (assinado)',
+  LF_ESTRELA_PHYSICAL_BASE: 'PDF físico LF ESTRELA (congelado)',
 };
 
 export const SALE_DOCUMENT_ALLOWED_MIME_TYPES = [

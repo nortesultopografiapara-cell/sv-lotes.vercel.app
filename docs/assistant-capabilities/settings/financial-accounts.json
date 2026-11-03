@@ -1,0 +1,64 @@
+{
+  "id": "finance.accounts.upsert",
+  "title": "Contas recebedoras / contas financeiras",
+  "module": "settings",
+  "routes": ["/settings"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "contas recebedoras",
+    "conta recebedora",
+    "conta financeira",
+    "contas financeiras",
+    "cadastrar conta financeira",
+    "nova conta financeira",
+    "adicionar conta para receber",
+    "conta para receber",
+    "nova conta asaas",
+    "nova conta inter"
+  ],
+  "summary": "Cadastrar ou alterar contas recebedoras Asaas e Banco Inter usadas por empreendimento e venda.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa."],
+  "requiredContext": ["aba Integração Financeira"],
+  "controls": [
+    { "label": "Configurações", "kind": "tab" },
+    { "label": "Integração Financeira", "kind": "tab" },
+    { "label": "Contas Financeiras", "kind": "tab" },
+    { "label": "Nova conta Asaas", "kind": "button" },
+    { "label": "Nova conta Inter", "kind": "button" },
+    { "label": "Criar conta", "kind": "button" },
+    { "label": "Salvar alterações", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra Configurações.",
+    "Abra a aba Integração Financeira (também em /settings#financeiro).",
+    "Na aba Contas Financeiras, clique em Nova conta Asaas ou Nova conta Inter.",
+    "Preencha Nome da conta * e os demais dados da conta.",
+    "Clique em Criar conta. Para editar uma conta existente, selecione-a na lista e clique em Salvar alterações."
+  ],
+  "fields": [
+    "Nome da conta *",
+    "tipo (Imobiliária, Proprietário, SPE, Parceiro, Outro)",
+    "Conta padrão da empresa",
+    "Ativa"
+  ],
+  "validations": ["Nome da conta é obrigatório.", "Credenciais do provedor são preenchidas só nesta tela."],
+  "conclusion": "Criar conta ou Salvar alterações",
+  "result": "A conta aparece em Contas Financeiras e pode ser escolhida no empreendimento e na venda.",
+  "states": ["rascunho", "salva", "padrão", "ativa", "inativa"],
+  "related": ["split.configure", "settings.project"],
+  "restrictions": [
+    "Não cole chave API, token ou dado bancário no chat.",
+    "O assistente não cria a conta.",
+    "Cada empreendimento/venda escolhe a conta; credenciais não se misturam."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "components/settings/CompanySettingsV2Shell.tsx",
+    "components/finance/FinancialIntegrationPanel.tsx",
+    "components/finance/FinancialAccountsPanel.tsx",
+    "lib/finance/companyFinancialAccountTypes.ts"
+  ]
+}

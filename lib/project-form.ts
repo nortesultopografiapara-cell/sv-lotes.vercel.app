@@ -1,6 +1,11 @@
 import {
   listMundoNovoSellerPartiesFromProject,
 } from '@/lib/mundoNovoContractSellers';
+import {
+  emptyLfContractConfigForm,
+  lfConfigToFormState,
+  type LfContractConfigFormState,
+} from '@/lib/lfImoveisContractConfig';
 
 export type ProjectModalMode = 'create' | 'edit';
 
@@ -21,6 +26,7 @@ export type ProjectFormInitialData = {
     email: string;
     phone: string;
   }>;
+  lf_contract_config: LfContractConfigFormState;
 };
 
 export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
@@ -33,6 +39,7 @@ export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
   financial_account_id: '',
   contract_model: '',
   seller_party_contacts: [],
+  lf_contract_config: emptyLfContractConfigForm(),
 };
 
 /** Converte registro do Supabase para o formulário unificado (criar/editar). */
@@ -79,5 +86,6 @@ export function projectToFormInitialData(
     financial_account_id: String(project.financial_account_id || '').trim(),
     contract_model: String(project.contract_model || '').trim(),
     seller_party_contacts,
+    lf_contract_config: lfConfigToFormState(project.lf_contract_config_json),
   };
 }

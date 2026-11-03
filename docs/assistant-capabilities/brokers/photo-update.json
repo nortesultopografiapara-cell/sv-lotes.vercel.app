@@ -1,0 +1,44 @@
+{
+  "id": "broker.photo.update",
+  "title": "Foto do corretor",
+  "module": "brokers",
+  "routes": ["/dashboard/brokers"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": ["foto do corretor", "avatar do corretor", "imagem do corretor", "fotografia", "alterar foto", "adicionar foto", "pôr foto", "por foto"],
+  "summary": "Incluir ou trocar a fotografia de um corretor já cadastrado.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["O corretor já existe na lista.", "Administrador da empresa do mesmo tenant."],
+  "requiredContext": ["lista de corretores"],
+  "controls": [
+    { "label": "foto ou inicial na lista", "kind": "list" },
+    { "label": "Adicionar foto", "kind": "button" },
+    { "label": "Alterar foto", "kind": "button" },
+    { "label": "Foto do corretor", "kind": "modal" },
+    { "label": "Salvar foto", "kind": "button" },
+    { "label": "Remover foto", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra Corretores.",
+    "Clique na foto ou na inicial do corretor (ou em Editar Corretor → Adicionar foto / Alterar foto).",
+    "No modal Foto do corretor, escolha o arquivo.",
+    "Clique em Salvar foto."
+  ],
+  "fields": ["JPG, PNG ou WebP · até 2 MB"],
+  "validations": ["JPG, PNG ou WebP", "até 2 MB"],
+  "conclusion": "Salvar foto",
+  "result": "A foto aparece na lista de Corretores e no cadastro do corretor.",
+  "states": ["sem foto", "com foto"],
+  "related": ["broker.upsert"],
+  "restrictions": [
+    "Novo Corretor não tem campo de foto; a foto só existe depois que o corretor está salvo.",
+    "O assistente não envia nem recorta a imagem."
+  ],
+  "knowledgeIds": ["brokers-foto"],
+  "sourceOfTruth": [
+    "app/dashboard/brokers/page.tsx",
+    "components/brokers/BrokerAvatarModal.tsx",
+    "lib/brokerAvatar.ts"
+  ]
+}

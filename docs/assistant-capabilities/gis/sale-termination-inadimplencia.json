@@ -1,0 +1,45 @@
+{
+  "id": "sale.termination.inadimplencia",
+  "title": "Encerrar venda por inadimplência",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "inadimplência",
+    "encerrar por inadimplencia",
+    "rescisão por inadimplência",
+    "termo de inadimplência"
+  ],
+  "summary": "Encerrar a venda por descumprimento de pagamento, pelo card Inadimplência, quando a política da venda permitir.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Venda ativa.", "Política de inadimplência da venda elegível."],
+  "controls": [
+    { "label": "Disponibilizar", "kind": "button" },
+    { "label": "Inadimplência", "kind": "button" },
+    { "label": "Confirmar liberação do lote", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o lote vendido no Mapa GIS, aba Comercial, e clique em Disponibilizar.",
+    "No modal Operações da venda, grupo Encerrar venda, clique no card Inadimplência.",
+    "Informe a justificativa da inadimplência. Se a tela bloquear por política, siga o aviso exibido — não force outro card para burlar a regra.",
+    "Confira o acerto, marque ciência, informe a senha e clique em Confirmar liberação do lote."
+  ],
+  "fields": ["motivo/justificativa da inadimplência"],
+  "validations": ["Justificativa obrigatória.", "A confirmação só habilita se a política de inadimplência da venda estiver ok."],
+  "conclusion": "Confirmar liberação do lote",
+  "result": "Venda encerrada, lote Disponível, termo de inadimplência gerado.",
+  "related": ["sale.release", "sale.termination.distrato", "sale.termination.desistencia"],
+  "restrictions": [
+    "Não confundir com consulta de parcela vencida no Financeiro.",
+    "O assistente não avalia inadimplência real nem executa o encerramento."
+  ],
+  "knowledgeIds": ["gis-sale-termination"],
+  "sourceOfTruth": [
+    "components/map/ReleaseLotConfirmModal.tsx",
+    "lib/finance/releaseLotShared.ts",
+    "lib/finance/inadimplenciaGuards.ts",
+    "lib/termination-documents/inadimplenciaTemplate.ts"
+  ]
+}

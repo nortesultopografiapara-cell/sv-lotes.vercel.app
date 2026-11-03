@@ -1,0 +1,39 @@
+{
+  "id": "gis.lot.confrontations",
+  "title": "Confrontações no mapa e na ficha",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": ["confrontacoes", "confrontação", "confrontação automática", "revisar confrontações", "confrontante"],
+  "summary": "Rodar a Confrontação Automática, revisar no mapa e ajustar confrontantes na ficha.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Quem gerencia o GIS.", "Empreendimento aberto."],
+  "requiredContext": ["mapa aberto"],
+  "controls": [
+    { "label": "Confrontação Automática", "kind": "toolbar" },
+    { "label": "Revisar Confrontações", "kind": "toolbar" },
+    { "label": "Confrontações", "kind": "tab" },
+    { "label": "Editar", "kind": "button" },
+    { "label": "Salvar", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Na barra (desktop), clique em Confrontação Automática.",
+    "Use Revisar Confrontações para ligar ou desligar a revisão no mapa.",
+    "Para um lote: clique no lote → aba Confrontações → Editar → Confrontante → Salvar."
+  ],
+  "fields": ["Confrontante", "Frente", "Fundo", "Lado direito", "Lado esquerdo"],
+  "conclusion": "Salvar",
+  "result": "Confrontantes preenchidos nos segmentos do lote.",
+  "related": ["gis.lot.memorial", "gis.lot.sheet"],
+  "restrictions": ["No celular a barra esconde Confrontação Automática; a aba Confrontações da ficha continua disponível."],
+  "knowledgeIds": ["gis-confrontacoes"],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/GISMap.tsx",
+    "components/map/LotOfficialSidesEditor.tsx",
+    "components/map/LotConfrontationsPanel.tsx"
+  ]
+}

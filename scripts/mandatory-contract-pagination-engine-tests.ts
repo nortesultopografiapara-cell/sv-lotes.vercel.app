@@ -17,6 +17,7 @@ import {
   CONTRACT_PAGE_CONTENT_HEIGHT_PX,
   CONTRACT_PAGINATION_MEASURE_SCRIPT,
   CONTRACT_PAGINATION_SELECTORS,
+  CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS,
   CONTRACT_SIGNATURE_PAGINATION_CSS,
   CONTRACT_SIGNATURE_SPACING,
   decideIndivisibleBlockPlacement,
@@ -244,6 +245,17 @@ assert(
     !CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decidePackFits'),
 );
 assert(
+  'script Estrela mede o bloco do instrumento, não a Capa',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('contract-closing-and-signatures--estrela') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('estrelaElectronic') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('sv-esign-stamp'),
+);
+assert(
+  'script LF assinado só força certificado se fecho+certificado não cabem numa página',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('pairFitsFreshPage') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('estrelaElectronic'),
+);
+assert(
   'CSS de compactação leve existe',
   CONTRACT_SIGNATURE_PAGINATION_CSS.includes('sv-pagination-compact'),
 );
@@ -302,6 +314,18 @@ assert(
   !(RECANTO_HTML2PDF_PAGINATION_AVOID as readonly string[]).includes(
     '.sv-contract-recanto-primavera .signature-slot',
   ),
+);
+assert(
+  'Recanto print CSS aplica layout físico Araguaia (data 18px / grade 28×22)',
+  RECANTO_CONTRACT_PDF_PRINT_CSS.includes(CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS) &&
+    CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS.includes('margin: 0 0 18px 0') &&
+    CONTRACT_SIGNATURE_SPACING.slotMarginBottomRecanto === '22px' &&
+    CONTRACT_SIGNATURE_SPACING.recantoGridColumnGap === '28px',
+);
+assert(
+  'CSS clássico de data 3px permanece (não altera Araguaia/Meneses)',
+  CONTRACT_SIGNATURE_PAGINATION_CSS.includes('margin-bottom: 3px !important') &&
+    !CONTRACT_PDF_PRINT_CSS.includes(CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS),
 );
 
 // --- applyCertificateBreakClass ---

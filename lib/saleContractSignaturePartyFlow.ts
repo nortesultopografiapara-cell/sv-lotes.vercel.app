@@ -47,6 +47,12 @@ import {
   shouldPersistMundoNovoWitnessParties,
 } from '@/lib/mundoNovoContractEsign';
 import { shouldEnableMundoNovoEsign } from '@/lib/mundoNovoEsignGate';
+import {
+  buildEstrelaDoSulEsignVendorPartyInputs,
+  isEstrelaDoSulSaleContractModel,
+  isEstrelaInternalCompanyVendorParty,
+  toEstrelaDoSulVendorPartyCreateInputs,
+} from '@/lib/estrelaDoSulContractEsign';
 import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
 import { assertOriginalContractAllowsElectronicSignature } from '@/lib/termination-documents/signatureGate';
 import {
@@ -192,7 +198,7 @@ export async function loadSaleAndCompanyForSignature(
   if (saleId) {
     // Colunas de cônjuge explícitas + project_id para resolver modelo ARAGUAIA.
     const spouseCols =
-      'id, company_id, tenant_id, customer_id, project_id, contract_model, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
+      'id, company_id, tenant_id, customer_id, project_id, contract_model, lf_contract_snapshot_json, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
     let { data, error } = await supabaseAdmin
       .from('sales')
       .select(spouseCols)
@@ -234,12 +240,21 @@ export async function loadSaleAndCompanyForSignature(
     contractRow.project_id || sale?.project_id || '',
   ).trim();
   if (projectId) {
-    const { data: projectData } = await supabaseAdmin
+    const withLf = await supabaseAdmin
       .from('projects')
-      .select('id, name, contract_model, company_id, seller_parties_json')
+      .select('id, name, contract_model, company_id, seller_parties_json, lf_contract_config_json')
       .eq('id', projectId)
       .maybeSingle();
-    project = (projectData as Record<string, unknown>) || null;
+    if (withLf.error && /lf_contract_config_json/i.test(withLf.error.message || '')) {
+      const fallback = await supabaseAdmin
+        .from('projects')
+        .select('id, name, contract_model, company_id, seller_parties_json')
+        .eq('id', projectId)
+        .maybeSingle();
+      project = (fallback.data as Record<string, unknown>) || null;
+    } else {
+      project = (withLf.data as Record<string, unknown>) || null;
+    }
   }
 
   let customer: Record<string, unknown> | null = null;
@@ -303,6 +318,9 @@ export function resolveEffectiveSaleContractModel(
     return 'MUNDO_NOVO';
   }
   if (key === 'MENESES') return 'MENESES';
+  if (key === 'ESTRELA_DO_SUL' || key.includes('ESTRELA_DO_SUL')) {
+    return 'ESTRELA_DO_SUL';
+  }
   if (key === 'SV_LOTES_2' || key.includes('SV_LOTES_2')) return 'SV_LOTES_2';
   if (key === 'CUSTOM') return 'CUSTOM';
 
@@ -522,6 +540,7 @@ export async function createSignaturePartiesAfterSend(
     companyId: mundoNovoCompanyId,
     contractModel,
   });
+  const estrelaEsign = isEstrelaDoSulSaleContractModel(contractModel);
 
   const seller = company
     ? normalizeSellerFromCompany(company)
@@ -570,6 +589,10 @@ export async function createSignaturePartiesAfterSend(
     }
   }
 
+  const estrelaVendors = estrelaEsign
+    ? buildEstrelaDoSulEsignVendorPartyInputs({ company, project, sale })
+    : null;
+
   if (araguaiaEsign) {
     partiesRequested.length = 1; // BUYER
     if (spouseRequired) partiesRequested.push('SPOUSE');
@@ -584,6 +607,14 @@ export async function createSignaturePartiesAfterSend(
       partiesRequested.push('VENDOR');
     }
     partiesRequested.push('INTERVENIENT', 'WITNESS_1', 'WITNESS_2');
+  }
+
+  if (estrelaEsign) {
+    partiesRequested.length = 1;
+    if (spouseRequired) partiesRequested.push('SPOUSE');
+    for (let i = 0; i < (estrelaVendors?.length || 0); i++) {
+      partiesRequested.push('VENDOR');
+    }
   }
 
   console.log('[signature-parties] araguaia_esign_gate', {
@@ -678,7 +709,7 @@ export async function createSignaturePartiesAfterSend(
             email: spouseData.email || null,
           }
         : null,
-      vendor: araguaiaVendors || mundoNovoVendors
+      vendor: araguaiaVendors || mundoNovoVendors || estrelaVendors
         ? null
         : {
             name:
@@ -704,6 +735,8 @@ export async function createSignaturePartiesAfterSend(
             email: v.email,
             withPublicToken: true,
           }))
+        : estrelaVendors
+        ? toEstrelaDoSulVendorPartyCreateInputs(estrelaVendors)
         : null,
       // Persistência remota: schema V2 + env + ARAGUAIA + allowlist company_id.
       intervenient:
@@ -1201,6 +1234,49 @@ export async function signPartyElectronically(
     );
   }
 
+  if (partyRoleKey === 'VENDOR') {
+    const partiesForGuard = await listSignatureParties(
+      supabaseAdmin,
+      signature.id,
+    );
+    const { data: contractRow } = await supabaseAdmin
+      .from('contracts')
+      .select('contract_model, sale_contract_model, company_id, tenant_id')
+      .eq('id', signature.contract_id)
+      .maybeSingle();
+    const tenantId = String(
+      (contractRow as Record<string, unknown> | null)?.company_id ||
+        (contractRow as Record<string, unknown> | null)?.tenant_id ||
+        signature.tenant_id ||
+        '',
+    );
+    let company: Record<string, unknown> | null = null;
+    if (tenantId) {
+      const { data: companyRow } = await supabaseAdmin
+        .from('companies')
+        .select('*')
+        .eq('id', tenantId)
+        .maybeSingle();
+      company = (companyRow as Record<string, unknown>) || null;
+    }
+    const contractModel = String(
+      (contractRow as Record<string, unknown> | null)?.sale_contract_model ||
+        (contractRow as Record<string, unknown> | null)?.contract_model ||
+        company?.contract_model ||
+        '',
+    );
+    if (
+      isEstrelaInternalCompanyVendorParty(party, partiesForGuard, {
+        contractModel,
+        company,
+      })
+    ) {
+      throw new SaleContractSignatureError(
+        'Este link não é válido para assinatura pública.',
+      );
+    }
+  }
+
   const partyStatus = String(party.status).toUpperCase();
   if (partyStatus === 'SIGNED') {
     throw new SaleContractSignatureError(
@@ -1676,6 +1752,42 @@ export async function reissueExternalPartyLink(
   const party = parties.find((p) => p.id === params.partyId);
   if (!party || party.contract_id !== params.contractId) {
     throw new SaleContractSignatureError('Participante não encontrado.');
+  }
+
+  const { data: reissueContract } = await supabaseAdmin
+    .from('contracts')
+    .select('contract_model, sale_contract_model, company_id, tenant_id')
+    .eq('id', params.contractId)
+    .maybeSingle();
+  const reissueTenantId = String(
+    (reissueContract as Record<string, unknown> | null)?.company_id ||
+      (reissueContract as Record<string, unknown> | null)?.tenant_id ||
+      '',
+  );
+  let reissueCompany: Record<string, unknown> | null = null;
+  if (reissueTenantId) {
+    const { data: companyRow } = await supabaseAdmin
+      .from('companies')
+      .select('*')
+      .eq('id', reissueTenantId)
+      .maybeSingle();
+    reissueCompany = (companyRow as Record<string, unknown>) || null;
+  }
+  const reissueModel = String(
+    (reissueContract as Record<string, unknown> | null)?.sale_contract_model ||
+      (reissueContract as Record<string, unknown> | null)?.contract_model ||
+      reissueCompany?.contract_model ||
+      '',
+  );
+  if (
+    isEstrelaInternalCompanyVendorParty(party, parties, {
+      contractModel: reissueModel,
+      company: reissueCompany,
+    })
+  ) {
+    throw new SaleContractSignatureError(
+      'A assinatura da vendedora é interna. Não é possível gerar link público.',
+    );
   }
 
   const result = await reissuePartyPublicLink(supabaseAdmin, party);

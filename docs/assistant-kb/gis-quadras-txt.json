@@ -1,0 +1,42 @@
+{
+  "id": "gis-quadras-txt",
+  "title": "Quadras e importação TXT",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["quadras", "importar txt", "civil 3d", "reimportar txt", "excluir quadra"],
+  "objective": "Abrir o painel de quadras e importar lotes por TXT Civil 3D.",
+  "prerequisites": [
+    "ADMIN gerencia GIS, em desktop. Corretor não importa."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Quadras do Projeto",
+    "Importar TXT"
+  ],
+  "steps": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Clique em Quadras do Projeto para Ver no mapa, Reimportar TXT, Atualizar lote, Excluir lote ou Excluir quadra.",
+    "Clique em Importar TXT. No modal Importar Lotes (TXT Civil 3D), escolha Zona UTM, Identificação da Quadra, o arquivo TXT e Preço por m².",
+    "Clique em Processar TXT e Salvar. Shapefile (.zip) permanece disponível por esse modal, não na barra."
+  ],
+  "expectedResult": "Quadras e lotes atualizados no mapa.",
+  "commonErrors": [],
+  "limitations": [
+    "Importar Quadras (KML) e o botão Shapefile da barra estão desligados nesta versão (SHOW_LEGACY_GIS_IMPORT).",
+    "O assistente não envia arquivo."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/ProjectQuadrasPanel.tsx"
+  ],
+  "uiLabels": [
+    "Quadras do Projeto",
+    "Importar TXT",
+    "Importar Lotes (TXT Civil 3D)",
+    "Processar TXT e Salvar",
+    "Reimportar TXT"
+  ]
+}

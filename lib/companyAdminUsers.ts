@@ -19,6 +19,10 @@ import { isPlatformAdmin } from '@/lib/rls';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
 import { formatAdminsLimitMessage } from '@/lib/saasPlanEnforcementMessages';
 import { resolveTenantAdminLimit } from '@/lib/saasPlanEnforcement';
+import {
+  assertPrimaryAdminNotLocked,
+  loadCompanyPrimaryAdminUserId,
+} from '@/lib/companyPrimaryAdmin';
 
 export const COMPANY_ADMIN_ROLE_VALUES = [
   'ADMIN',
@@ -48,6 +52,7 @@ export type CompanyAdminListMeta = {
   limit: number | null;
   activeCount: number;
   canCreate: boolean;
+  primaryAdminUserId: string | null;
 };
 
 export function isCompanyAdminUserRole(role?: string | null): boolean {
@@ -165,7 +170,10 @@ export async function listCompanyAdminUsers(
   if (error) throw new Error(error.message);
 
   const admins = (data || []).map((row) => mapCompanyAdminRow(row as Record<string, unknown>));
-  const limit = await loadCompanyAdminLimit(admin, tenantId);
+  const [limit, primaryAdminUserId] = await Promise.all([
+    loadCompanyAdminLimit(admin, tenantId),
+    loadCompanyPrimaryAdminUserId(admin, tenantId),
+  ]);
   const activeCount = countActiveCompanyAdmins(admins);
   const quota = canCreateCompanyAdmin(activeCount, limit);
 
@@ -176,6 +184,7 @@ export async function listCompanyAdminUsers(
       limit,
       activeCount,
       canCreate: quota.ok,
+      primaryAdminUserId,
     },
   };
 }
@@ -347,6 +356,14 @@ export async function updateCompanyAdminUser(
   }
   if (!isCompanyAdminUserRole(row.role)) {
     throw new Error('Usuário não é administrador da empresa.');
+  }
+
+  if (params.status === 'INACTIVE') {
+    const primaryAdminUserId = await loadCompanyPrimaryAdminUserId(admin, params.tenantId);
+    const lock = assertPrimaryAdminNotLocked(params.adminId, primaryAdminUserId, 'deactivate');
+    if (!lock.ok) {
+      throw new Error(lock.error);
+    }
   }
 
   if (params.status === 'ACTIVE') {

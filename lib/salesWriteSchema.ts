@@ -54,6 +54,7 @@ export const SALES_ORPHAN_ONLY_FIELDS = [
 /** Colunas proibidas no UPDATE (órfãs + notes sem migration aplicada em produção). */
 export const SALES_UPDATE_FORBIDDEN_FIELDS = [
   'notes',
+  'lf_contract_snapshot_json',
   ...SALES_ORPHAN_ONLY_FIELDS,
 ] as const;
 

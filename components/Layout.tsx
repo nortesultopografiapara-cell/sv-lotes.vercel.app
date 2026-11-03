@@ -46,9 +46,12 @@ import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { HelpCenterHeaderButton } from '@/components/ui/HelpCenterHeaderButton';
 import { HelpCenterProfileMenuLink } from '@/components/ui/HelpCenterProfileMenuLink';
+import { AssistantChrome } from '@/components/assistant/AssistantChrome';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
+import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
+import { CONTRACT_MODELS_CENTRAL_PATH } from '@/lib/contractModelCentral';
 import {
   isMasterDashboardV2EnabledForUi,
   shouldUseMasterExecutiveShell,
@@ -531,7 +534,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     pathname === '/demo' ||
     pathname.startsWith('/sign/') ||
     pathname.startsWith('/portal-cliente') ||
-    ['/login', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
+    ['/login', '/esqueci-senha', '/redefinir-senha', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
       pathname.startsWith(route)
     );
   if (isPublicStandalone) return <>{children}</>;
@@ -571,9 +574,15 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   ) {
     return (
       <GisSelectedProjectProvider>
-        <MasterExecutiveLayout user={user} onLogout={handleLogout}>
-          {children}
-        </MasterExecutiveLayout>
+        <AssistantChrome
+          role={user?.role}
+          tenantName={impersonatingCompanyName || company?.name || null}
+          impersonatingTenant={Boolean(impersonatingTenantId)}
+        >
+          <MasterExecutiveLayout user={user} onLogout={handleLogout}>
+            {children}
+          </MasterExecutiveLayout>
+        </AssistantChrome>
       </GisSelectedProjectProvider>
     );
   }
@@ -589,8 +598,32 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       : getMenuItems('OWNER')
     : getMenuItems(menuRoleForTenantChrome);
 
+  const showContractModelsHeaderButton =
+    String(pathname || '').startsWith('/contracts') &&
+    isPartnerPanelAdmin(user?.role);
+
+  const contractModelsHeaderLink = (compact: boolean) =>
+    showContractModelsHeaderButton ? (
+      <Link
+        href={CONTRACT_MODELS_CENTRAL_PATH}
+        title="Modelos de Contrato"
+        aria-label="Modelos de Contrato"
+        className="inline-flex items-center gap-1.5 shrink-0 h-9 px-2.5 sm:px-3 rounded-lg border border-[var(--border-color)] text-[11px] sm:text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+      >
+        <FileText className="w-4 h-4 shrink-0" />
+        <span className={compact ? 'sr-only' : 'whitespace-nowrap'}>
+          Modelos de Contrato
+        </span>
+      </Link>
+    ) : null;
+
   return (
     <GisSelectedProjectProvider>
+    <AssistantChrome
+      role={user?.role}
+      tenantName={impersonatingCompanyName || company?.name || null}
+      impersonatingTenant={Boolean(impersonatingTenantId)}
+    >
     <div className="flex h-dvh w-full overflow-hidden bg-[var(--color-background)]">
       {/* Mobile Header */}
       {isMobile && (
@@ -614,6 +647,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {contractModelsHeaderLink(true)}
             <OfflineStatusBar />
             {isMasterConsole && <SuperAdminQuickActions />}
             <GisProjectHeaderBadge />
@@ -831,6 +865,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             ) : null}
 
             <div className="flex items-center gap-3 shrink-0">
+              {contractModelsHeaderLink(false)}
               <OfflineStatusBar />
               {isMasterConsole && <SuperAdminQuickActions />}
               {isMasterConsole && (
@@ -938,6 +973,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         setActiveModal={setActiveProfileModal} 
       />
     </div>
+    </AssistantChrome>
     </GisSelectedProjectProvider>
   );
 }

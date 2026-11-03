@@ -153,6 +153,7 @@ function testUiSource() {
   const panel = read('components/projects/ProjectRevenueSplitPanel.tsx');
   const accountsPanel = read('components/finance/FinancialAccountsPanel.tsx');
   const mapPage = read('app/map/page.tsx');
+  const formModal = read('components/projects/GisProjectFormModal.tsx');
   const ownersModal = read('components/owners/OwnerRevenueSplitModal.tsx');
   const route = read('app/api/finance/asaas/accounts/[id]/resolve-wallet/route.ts');
   const client = read('lib/finance/asaasCompanyClient.ts');
@@ -183,6 +184,7 @@ function testUiSource() {
     ['ProjectRevenueSplitPanel', panel],
     ['FinancialAccountsPanel', accountsPanel],
     ['map/page', mapPage],
+    ['GisProjectFormModal', formModal],
     ['OwnerRevenueSplitModal', ownersModal],
   ] as const) {
     assert(!src.includes('credentialsCrypto'), `${name} não importa credentialsCrypto`);

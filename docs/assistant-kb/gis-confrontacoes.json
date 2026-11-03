@@ -1,0 +1,48 @@
+{
+  "id": "gis-confrontacoes",
+  "title": "Confrontações no mapa e na ficha",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["gis.lot.confrontations", "confrontacao", "confrontações", "revisar confrontacoes", "automatica"],
+  "objective": "Rodar a Confrontação Automática, revisar no mapa e ajustar confrontantes na ficha do lote.",
+  "prerequisites": [
+    "Quem gerencia o GIS (ADMIN). Em desktop: Confrontação Automática e Revisar Confrontações ficam na barra.",
+    "Empreendimento aberto."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Confrontação Automática",
+    "Revisar Confrontações",
+    "ficha do lote",
+    "Confrontações"
+  ],
+  "steps": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Na barra (desktop), clique em Confrontação Automática.",
+    "Use Revisar Confrontações para ligar ou desligar a revisão no mapa.",
+    "Para um lote: clique no lote → aba Confrontações → Editar → informe o Confrontante e o lado (Frente, Fundo, Lado direito, Lado esquerdo) → Salvar."
+  ],
+  "expectedResult": "Confrontantes preenchidos nos segmentos do lote e disponíveis para memorial e prancha.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não grava confrontante.",
+    "No celular a barra esconde Confrontação Automática; a aba Confrontações da ficha continua disponível."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/GISMap.tsx",
+    "components/map/LotOfficialSidesEditor.tsx",
+    "components/map/LotConfrontationsPanel.tsx"
+  ],
+  "uiLabels": [
+    "Confrontação Automática",
+    "Revisar Confrontações",
+    "Confrontações",
+    "Editar",
+    "Confrontante",
+    "Salvar"
+  ]
+}

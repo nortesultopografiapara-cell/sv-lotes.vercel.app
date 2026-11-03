@@ -1,0 +1,29 @@
+{
+  "id": "gis.sold.view_contract",
+  "title": "Ver Contrato do lote vendido",
+  "module": "gis",
+  "routes": ["/map", "/contracts"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "read",
+  "aliases": [
+    "ver contrato",
+    "vejo o contrato",
+    "abrir contrato do lote",
+    "contrato deste lote vendido"
+  ],
+  "summary": "Do lote vendido, abrir a tela Contratos com o contrato vinculado em destaque.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Lote vendido no mapa."],
+  "controls": [{ "label": "Ver Contrato", "kind": "button" }],
+  "sequence": [
+    "Abra o lote vendido no Mapa GIS, aba Comercial.",
+    "Clique em Ver Contrato. O sistema abre Contratos em nova aba, com highlight do contrato do lote quando houver contractId."
+  ],
+  "conclusion": "Ver Contrato",
+  "result": "Tela Contratos aberta no contrato do lote, ou a lista se não houver contrato vinculado.",
+  "related": ["sale.edit", "gis.sold.view_finance", "contract.signature.send"],
+  "restrictions": ["O assistente não abre o contrato nem lê o HTML."],
+  "knowledgeIds": [],
+  "sourceOfTruth": ["components/map/GISMap.tsx", "app/contracts/page.tsx"]
+}

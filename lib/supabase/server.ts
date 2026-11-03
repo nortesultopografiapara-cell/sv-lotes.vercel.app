@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import { getServerConfigErrorMessage, getSupabaseConfigStatus } from '@/lib/supabase-config';
+import { getServerConfigErrorMessage, getServerSupabaseConfigStatus } from '@/lib/supabase-config.server';
 
 export async function createRouteHandlerSupabase(): Promise<{
   client: SupabaseClient | null;
@@ -101,7 +101,7 @@ export async function resolveCallerProfile(
 }
 
 export function logSupabaseConfigDebug(context: string) {
-  const status = getSupabaseConfigStatus();
+  const status = getServerSupabaseConfigStatus();
   console.log(`[${context}] Supabase config`, {
     url: status.url ? `${status.url.slice(0, 32)}...` : '(vazio)',
     hasAnonKey: status.hasAnonKey,

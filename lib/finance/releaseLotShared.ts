@@ -684,6 +684,11 @@ export function resolveBlockLotLabel(row: {
 }
 
 /** Preview serializado pela API GET /api/lots/[lotId]/release (seguro no client). */
+export const RELEASE_PREVIEW_BANK_STATUS_SOURCE = 'local' as const;
+
+export const RELEASE_PREVIEW_BANK_STATUS_NOTICE =
+  'Status de cobranças Asaas e Banco Inter nesta prévia são dados locais do sistema e podem estar desatualizados em relação ao banco. A confirmação da liberação consulta os bancos e cancela somente o que ainda estiver em aberto.';
+
 export type ReleaseLotPreview = {
   lotId: string;
   companyId: string;
@@ -722,6 +727,9 @@ export type ReleaseLotPreview = {
   alreadyCanceledInterCharges: number;
   /** Total cancelável (Asaas + Inter) — label UI agnóstico. */
   openCancelableCharges: number;
+  /** GET preview não consulta banco: contagens Asaas/Inter são status local. */
+  bankStatusSource: 'local';
+  bankStatusNotice: string;
   /** Cobranças com status remoto não removível (não PENDING/OVERDUE) — bloqueiam limpeza local. */
   asaasBlockedCharges: number;
   asaasBlockedDetails: Array<{

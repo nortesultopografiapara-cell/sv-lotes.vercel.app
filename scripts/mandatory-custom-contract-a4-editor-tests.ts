@@ -1,0 +1,890 @@
+/**
+ * Testes obrigatórios — Editor CUSTOM A4.
+ * npx tsx scripts/mandatory-custom-contract-a4-editor-tests.ts
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  cloneStore,
+  createNewModel,
+  historyForModel,
+  importCustomModel,
+  snapshotGisFields,
+  type OperationalStore,
+} from '../lib/contractModelCentralOps';
+import {
+  configureOrEditTarget,
+  resolveUserCreatedModelIdentity,
+  visualizeTarget,
+} from '../lib/customContractCreateIdentity';
+import {
+  canonicalizeCustomContractHtml,
+  fillCustomPlaceholdersForPreview,
+  hydrateCustomPlaceholderHtml,
+  isRejectedImportMime,
+  sanitizeImportedContractHtml,
+} from '../lib/customContractHtml';
+import {
+  CUSTOM_CONTRACT_EDITOR_PATH,
+  CUSTOM_DRAFT_VERSION,
+  CUSTOM_EDITOR_ONLY,
+  NO_CHANGE_SINCE_PUBLISHED,
+  assertCustomEditorAllowed,
+  canOpenCustomA4Editor,
+  canPublishCustomDraft,
+  shouldAutosavePublish,
+  simulateEnsureCustomDraft,
+  simulatePublishCustomDraft,
+} from '../lib/customContractModelEditor';
+import {
+  CUSTOM_PLACEHOLDERS,
+  CUSTOM_PLACEHOLDER_GROUPS,
+  DEFAULT_CUSTOM_CONTRACT_HTML,
+  PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE,
+} from '../lib/customContractPlaceholders';
+import { convertDocxToCustomHtml, DOCX_IMPORT_LIBRARY } from '../lib/customContractDocxImport';
+import { resolveCustomPreviewValues } from '../lib/customContractPreviewResolver';
+import {
+  COMPANY_LOGO_PREVIEW_EMPTY,
+  COMPANY_LOGO_TOKEN,
+  renderCompanyLogoBlock,
+} from '../lib/customContractLogo';
+import {
+  a4PageIdentity,
+  CUSTOM_A4_MARGIN_MM,
+  CUSTOM_A4_PAGE_CONFIG,
+  customA4ContentWidthMm,
+  planA4BlockSpacers,
+  planA4Pages,
+  shouldExplodeTableByHeight,
+  findUnintendedSparseA4Pages,
+  a4PageOccupancy,
+  type A4LayoutUnit,
+} from '../lib/customContractA4Layout';
+import { normalizeCustomFootnotesHtml } from '../lib/customContractFootnotes';
+import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx';
+
+const root = path.join(__dirname, '..');
+
+function assert(cond: unknown, msg: string) {
+  if (!cond) throw new Error(`FALHOU — ${msg}`);
+  console.log(`PASSOU — ${msg}`);
+}
+
+function read(rel: string) {
+  return fs.readFileSync(path.join(root, rel), 'utf8');
+}
+
+const editorPage = read('app/contracts/models/[id]/editor/page.tsx');
+const editorUi = read('components/contracts/editor/CustomContractA4Editor.tsx');
+const tiptap = read('components/contracts/editor/CustomContractTiptap.tsx');
+const central = read('components/contracts/central/ContractModelsOperationalCentral.tsx');
+const migration = read('supabase/migrations/20261028121000_contract_model_version_draft_history.sql');
+const generateHtml = read('lib/contractTemplate.ts');
+const gisSale = read('lib/gisSaleCreateService.ts');
+const mundoSellers = read('lib/mundoNovoContractSellers.ts');
+
+assert(editorPage.includes('CustomContractA4Editor'), 'rota /contracts/models/[id]/editor existe');
+assert(
+  CUSTOM_CONTRACT_EDITOR_PATH('abc') === '/contracts/models/abc/editor',
+  'path do editor CUSTOM',
+);
+assert(tiptap.includes('useEditor') && tiptap.includes('StarterKit'), 'TipTap/ProseMirror no documento');
+assert(!editorUi.includes('<textarea') && !tiptap.includes('<textarea'), 'editor não é textarea de HTML');
+assert(editorUi.includes('sv-a4-sheet') && editorUi.includes('Salvar rascunho'), 'folha A4 e salvar rascunho');
+assert(editorUi.includes('Publicar versão'), 'publicar versão na barra');
+assert(editorUi.includes('Salvar como novo'), 'salvar como novo na barra');
+assert(editorUi.includes('Visualizar'), 'visualizar na barra');
+assert(editorUi.includes('Histórico'), 'histórico na barra');
+assert(editorUi.includes('Gerenciar empreendimentos'), 'gerenciar empreendimentos na barra');
+assert(editorUi.includes('toggleBold') && editorUi.includes('toggleItalic'), 'negrito e itálico');
+assert(editorUi.includes('toggleUnderline'), 'sublinhado');
+assert(editorUi.includes('setTextAlign'), 'alinhamento');
+assert(editorUi.includes('toggleBulletList') && editorUi.includes('toggleOrderedList'), 'listas');
+assert(editorUi.includes('toggleHeading'), 'títulos');
+assert(editorUi.includes('setFontSize'), 'tamanho de fonte');
+assert(editorUi.includes('undo()') && editorUi.includes('redo()'), 'desfazer/refazer');
+assert(editorUi.includes('insertPageBreak'), 'quebra de página');
+assert(editorUi.includes('Campos automáticos'), 'painel de campos');
+
+assert(editorUi.includes('CUSTOM_PLACEHOLDER_GROUPS'), 'painel usa os grupos aprovados');
+assert(CUSTOM_PLACEHOLDER_GROUPS.length === 11, 'onze grupos de campos automáticos');
+assert(
+  CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_CPF') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_RG_STATE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SPOUSE_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SELLER_1_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SELLER_2_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'PROJECT_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'BLOCK_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_NUMBER') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_BOUNDARIES') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_PRICE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_DISCOUNT') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_VALUE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_DUE_DATE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'BROKER_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'FINANCIAL_ACCOUNT_LABEL') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'WITNESS_1_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'PARTNERSHIP_NOTE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LF_FIRST_VENDOR_PERCENT') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'PROJECT_LOCATION') &&
+    !CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_NOTES') &&
+    !CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SPOUSE_CITY'),
+  'placeholders compatíveis com o sistema atual',
+);
+assert(
+  PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'),
+  'testemunhas marcadas sem fonte automática',
+);
+assert(
+  !PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'),
+  'nacionalidade do comprador tem fonte cadastral',
+);
+
+assert(
+  hydrateCustomPlaceholderHtml('Olá {{CLIENT_NAME}}').includes('data-sv-placeholder="CLIENT_NAME"'),
+  'chip visual preserva chave do placeholder',
+);
+assert(
+  canonicalizeCustomContractHtml(
+    hydrateCustomPlaceholderHtml('<p>{{CLIENT_NAME}}</p>'),
+  ) === canonicalizeCustomContractHtml('<p>{{CLIENT_NAME}}</p>'),
+  'HTML canônico ignora chip vs token',
+);
+
+assert(canOpenCustomA4Editor('CUSTOM') && !canOpenCustomA4Editor('MUNDO_NOVO'), 'editor só CUSTOM');
+let locked = false;
+try {
+  assertCustomEditorAllowed('PADRAO');
+} catch (e) {
+  locked = e instanceof Error && e.message === CUSTOM_EDITOR_ONLY;
+}
+assert(locked, 'motores TypeScript não abrem o editor A4');
+assert(
+  !canOpenCustomA4Editor('SV_LOTES_2') &&
+    !canOpenCustomA4Editor('MENESES') &&
+    !canOpenCustomA4Editor('RECANTO_PRIMAVERA') &&
+    !canOpenCustomA4Editor('ARAGUAIA') &&
+    !canOpenCustomA4Editor('ESTRELA_DO_SUL'),
+  'todos os motores TS permanecem fora do editor',
+);
+
+assert(shouldAutosavePublish() === false, 'autosave nunca publica');
+assert(editorUi.includes("eq('status', 'draft')") && editorUi.includes("eq('version', 0)"), 'autosave só no draft 0');
+assert(editorUi.includes('publish_company_contract_model_version'), 'publicar chama RPC atômica');
+assert(editorUi.includes('ensure_company_contract_model_draft'), 'abrir editor garante draft via RPC');
+assert(editorUi.includes('Salvando') && editorUi.includes('Rascunho salvo'), 'indicação visual de autosave');
+assert(editorUi.includes(NO_CHANGE_SINCE_PUBLISHED) || editorUi.includes('canPublishCustomDraft'), 'gate contra republicar igual');
+
+{
+  const emptyVsNull = canPublishCustomDraft('<p>{{CLIENT_NAME}}</p>', null);
+  assert(emptyVsNull.ok, 'primeira publicação permitida');
+  const same = canPublishCustomDraft(
+    hydrateCustomPlaceholderHtml('<p>{{CLIENT_NAME}}</p>'),
+    '<p>{{CLIENT_NAME}}</p>',
+  );
+  assert(!same.ok && same.reason === NO_CHANGE_SINCE_PUBLISHED, 'sem alteração não publica v2/v3');
+  const changed = canPublishCustomDraft('<p>Novo {{CLIENT_NAME}}</p>', '<p>{{CLIENT_NAME}}</p>');
+  assert(changed.ok, 'com alteração pode publicar');
+}
+
+function sample(): OperationalStore {
+  return {
+    models: [
+      {
+        id: 'm-custom',
+        companyId: 'co-a',
+        catalogCode: 'CUSTOM',
+        engineKey: 'custom',
+        name: 'Minuta',
+        status: 'active',
+        source: 'user',
+        isCompanyDefault: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'm-mundo',
+        companyId: 'co-a',
+        catalogCode: 'MUNDO_NOVO',
+        engineKey: 'mundo_novo',
+        name: 'Mundo Novo',
+        status: 'active',
+        source: 'system_seed',
+        isCompanyDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+    versions: [],
+    links: [],
+    companiesContractModel: { 'co-a': 'MUNDO_NOVO' },
+    projectsContractModel: { 'proj-1': 'MUNDO_NOVO' },
+    generatedHtmlByContractId: { 'ct-1': '<p>contrato</p>' },
+  };
+}
+
+{
+  const store = sample();
+  const before = snapshotGisFields(store);
+  const draft = simulateEnsureCustomDraft(store, 'm-custom', 'co-a');
+  assert(draft.version === CUSTOM_DRAFT_VERSION && draft.status === 'draft', 'ensure cria draft 0');
+  draft.contentHtml = DEFAULT_CUSTOM_CONTRACT_HTML;
+  const v1 = simulatePublishCustomDraft(store, 'm-custom', 'co-a');
+  assert(v1.status === 'published' && v1.version === 1, 'publicar cria v1 por INSERT');
+  const stillDraft = store.versions.find((v) => v.status === 'draft');
+  assert(
+    stillDraft?.version === 0 && stillDraft.status === 'draft',
+    'draft permanece draft após publicar',
+  );
+  let blocked = false;
+  try {
+    simulatePublishCustomDraft(store, 'm-custom', 'co-a');
+  } catch (e) {
+    blocked = e instanceof Error && e.message === NO_CHANGE_SINCE_PUBLISHED;
+  }
+  assert(blocked, 'segunda publicação idêntica é bloqueada');
+  stillDraft!.contentHtml = `${DEFAULT_CUSTOM_CONTRACT_HTML}<p>Cláusula extra</p>`;
+  const v2 = simulatePublishCustomDraft(store, 'm-custom', 'co-a');
+  assert(v2.version === 2 && v1.contentHtml !== v2.contentHtml, 'v2 nasce de INSERT novo');
+  assert(
+    store.versions.filter((v) => v.status === 'published').length === 2,
+    'v1 e v2 publicadas convivem',
+  );
+  assert(
+    JSON.stringify(snapshotGisFields(store)) === JSON.stringify(before),
+    'editor simulado não toca GIS/generated_html',
+  );
+
+  let tsBlocked = false;
+  try {
+    simulateEnsureCustomDraft(store, 'm-mundo', 'co-a');
+  } catch (e) {
+    tsBlocked = e instanceof Error && e.message === CUSTOM_EDITOR_ONLY;
+  }
+  assert(tsBlocked, 'ensure recusa motor TypeScript');
+}
+
+{
+  const store = sample();
+  const created = createNewModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'Contrato da imobiliária',
+    personalized: true,
+  });
+  const versions = historyForModel(store, created.model.id, 'co-a');
+  assert(
+    versions.some((v) => v.version === 0 && v.status === 'draft') &&
+      !versions.some((v) => v.status === 'published'),
+    'Novo Modelo Personalizado começa em rascunho',
+  );
+  const imported = importCustomModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'Contrato colado',
+    pastedHtml: '<p>Minuta {{CLIENT_NAME}}<script>alert(1)</script></p>',
+  });
+  const importedHtml = historyForModel(store, imported.model.id, 'co-a').find((v) => v.status === 'draft')
+    ?.contentHtml || '';
+  assert(!importedHtml.includes('<script'), 'importação remove script');
+}
+
+assert(isRejectedImportMime('application/pdf', 'minuta.pdf'), 'PDF rejeitado nesta etapa');
+assert(!isRejectedImportMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.docx'), 'DOCX aceito');
+assert(!isRejectedImportMime('text/html', 'minuta.html'), 'HTML aceito');
+assert(!sanitizeImportedContractHtml('<p onclick="x()">ok</p>').includes('onclick'), 'HTML importado sem handlers');
+
+assert(migration.includes('publish_company_contract_model_version'), 'SQL de publish no repositório');
+assert(
+  migration.includes('INSERT INTO public.company_contract_model_versions') &&
+    migration.includes('v_draft.content_html'),
+  'publicar copia o draft em INSERT',
+);
+assert(
+  !migration.includes("SET status = 'published'"),
+  'publish não faz UPDATE draft→published',
+);
+assert(migration.includes('uq_company_contract_model_versions_one_draft'), 'índice de um draft');
+assert(migration.includes('protect_published_contract_model_version'), 'trigger de imutabilidade');
+
+{
+  const withAraguaiaSelected = resolveUserCreatedModelIdentity({
+    mode: 'custom',
+    baseCatalogCode: 'ARAGUAIA',
+    baseEngineKey: 'araguaia',
+  });
+  assert(
+    withAraguaiaSelected.catalogCode === 'CUSTOM' &&
+      withAraguaiaSelected.engineKey === 'custom' &&
+      withAraguaiaSelected.source === 'user' &&
+      withAraguaiaSelected.status === 'active' &&
+      withAraguaiaSelected.openA4Editor === true,
+    '1. Novo Modelo → Personalizado sempre cria CUSTOM mesmo com Araguaia pré-selecionado',
+  );
+
+  const fromExisting = resolveUserCreatedModelIdentity({
+    mode: 'existing',
+    baseCatalogCode: 'ARAGUAIA',
+    baseEngineKey: 'araguaia',
+  });
+  assert(
+    fromExisting.catalogCode === 'ARAGUAIA' && fromExisting.openA4Editor === false,
+    'Modelo existente ainda herda o motor TypeScript',
+  );
+
+  const store = sample();
+  store.models.push({
+    id: 'm-araguaia',
+    companyId: 'co-a',
+    catalogCode: 'ARAGUAIA',
+    engineKey: 'araguaia',
+    name: 'Chacreamento Araguaia',
+    status: 'active',
+    source: 'system_seed',
+    isCompanyDefault: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+  const personalizedDespiteBase = createNewModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'TESTE EDITOR CUSTOM',
+    personalized: true,
+    basedOnModelId: 'm-araguaia',
+  });
+  assert(
+    personalizedDespiteBase.model.catalogCode === 'CUSTOM' &&
+      personalizedDespiteBase.model.engineKey === 'custom' &&
+      personalizedDespiteBase.model.source === 'user' &&
+      personalizedDespiteBase.model.status === 'active',
+    '1. createNewModel Personalizado não herda ARAGUAIA',
+  );
+  const draftVersions = historyForModel(store, personalizedDespiteBase.model.id, 'co-a');
+  assert(
+    draftVersions.some((v) => v.version === 0 && v.status === 'draft') &&
+      !draftVersions.some((v) => v.status === 'published'),
+    '2. CUSTOM sempre cria/garante draft v0',
+  );
+
+  assert(configureOrEditTarget('CUSTOM') === 'a4-editor', '3. CUSTOM → Configurar/Editar abre /editor');
+  assert(
+    CUSTOM_CONTRACT_EDITOR_PATH('abc').endsWith('/contracts/models/abc/editor'),
+    '3. rota do editor CUSTOM',
+  );
+  assert(central.includes('configureOrEditTarget') && central.includes('openEditor(model)'), '3. UI roteia CUSTOM para o editor');
+  assert(visualizeTarget('CUSTOM') === 'custom-preview', '4. CUSTOM → Visualizar usa preview CUSTOM');
+  assert(central.includes('visualizeTarget') && central.includes("openEditor(model, true)"), '4. UI não usa o visualizador legado para CUSTOM');
+  assert(central.includes("setNewMode('custom')"), 'modal Novo Modelo inicia em Personalizado');
+  assert(central.includes('name="sv-new-model-mode"'), 'radios de tipo formam um grupo');
+
+  for (const code of [
+    'PADRAO',
+    'SV_LOTES_2',
+    'MENESES',
+    'RECANTO_PRIMAVERA',
+    'ARAGUAIA',
+    'MUNDO_NOVO',
+    'ESTRELA_DO_SUL',
+  ]) {
+    assert(
+      configureOrEditTarget(code) === 'locked-sheet' &&
+        visualizeTarget(code) === 'typescript-preview' &&
+        !canOpenCustomA4Editor(code),
+      `5. ${code} nunca entra no editor CUSTOM`,
+    );
+  }
+}
+  assert(central.includes('insertCustomDraftModel'), 'Novo Personalizado cria draft CUSTOM');
+assert(central.includes("catalog_code: 'CUSTOM'"), 'Personalizado grava catalog_code CUSTOM');
+assert(central.includes("engine_key: 'custom'"), 'Personalizado grava engine_key custom');
+assert(central.includes('DELETE_COMPANY_CONTRACT_MODEL_RPC'), 'exclusão segura chama RPC');
+assert(central.includes('CUSTOM_CONTRACT_EDITOR_PATH'), 'Central abre o editor A4');
+assert(central.includes("'Editar contrato'"), 'menu CUSTOM usa Editar contrato');
+assert(central.includes('CONVERT_TO_CUSTOM_LABEL'), 'Central oferece converter motor para CUSTOM');
+assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF');
+assert(central.includes('convertDocxToCustomHtml') && central.includes('isDocxFile'), 'Central converte DOCX');
+assert(tiptap.includes('CONTRACT_TABLE_EXTENSIONS') && tiptap.includes('extension-image'), 'editor aceita tabelas e imagens');
+assert(editorUi.includes('Substituir seleção por campo'), 'substituir trecho por campo');
+assert(editorUi.includes('listSalesForCustomPreview') && editorUi.includes('applyPreviewSale'), 'prévia escolhe venda real');
+assert(editorUi.includes('fillCustomPlaceholdersForPreview'), 'prévia usa resolver separado');
+
+const editorBundle = editorPage + editorUi + tiptap + read('lib/customContractModelEditor.ts');
+assert(
+  !editorBundle.includes("from '@/lib/contractTemplate'") &&
+    !editorBundle.includes('from "@/lib/contractTemplate"'),
+  'editor não importa generateContractHTML',
+);
+assert(
+  !editorBundle.includes("from '@/lib/gisSaleCreateService'"),
+  'editor não chama GIS',
+);
+assert(!editorBundle.includes("from('contracts')"), 'editor não grava generated_html');
+assert(!editorBundle.includes('seller_parties_json'), 'editor não toca Mundo Novo sellers');
+assert(!editorBundle.includes('lf_contract_snapshot_json'), 'editor não toca snapshot LF');
+assert(
+  generateHtml.includes('export function generateContractHTML') &&
+    gisSale.includes('executeGisSaleCreate') &&
+    mundoSellers.includes('resolveMundoNovoPromitenteVendors'),
+  'motores e Mundo Novo permanecem nos arquivos originais',
+);
+
+assert(
+  editorUi.includes('Não cria venda') && editorUi.includes('generated_html'),
+  'prévia declara que não persiste venda/contrato',
+);
+
+void cloneStore;
+
+{
+  const saved = sample();
+  const first = simulateEnsureCustomDraft(saved, 'm-custom', 'co-a');
+  first.contentHtml = '<p>CONTEUDO SALVO DO DRAFT</p><table><tr><td>Q1</td></tr></table>';
+  const reopened = simulateEnsureCustomDraft(saved, 'm-custom', 'co-a');
+  assert(
+    reopened.id === first.id &&
+      String(reopened.contentHtml).includes('CONTEUDO SALVO DO DRAFT') &&
+      String(reopened.contentHtml).includes('<table'),
+    'fechar/reabrir recupera o draft salvo com tabela',
+  );
+}
+
+void (async () => {
+  const doc = new Document({
+    sections: [
+      {
+        children: [
+          new Paragraph({ children: [new TextRun({ text: 'MODELO CHACREAMENTO ESTRELA DO SUL', bold: true })] }),
+          new Paragraph('Qualificação do comprador'),
+          new Table({
+            rows: [
+              new TableRow({
+                children: [
+                  new TableCell({ children: [new Paragraph('Quadra')] }),
+                  new TableCell({ children: [new Paragraph('01')] }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      },
+    ],
+  });
+  const buf = await Packer.toBuffer(doc);
+  const converted = await convertDocxToCustomHtml(buf);
+  assert(DOCX_IMPORT_LIBRARY === 'mammoth', 'biblioteca DOCX = mammoth');
+  assert(converted.html.toLowerCase().includes('estrela'), 'DOCX vira HTML com o texto');
+  assert(converted.tableCount >= 1 || /<table/i.test(converted.html), 'tabelas do DOCX preservadas');
+  assert(!converted.html.includes('<script'), 'HTML importado sem script');
+
+  assert(isRejectedImportMime('application/pdf', 'x.pdf') === true, 'PDF continua recusado');
+  assert(isRejectedImportMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'modelo.docx') === false, 'DOCX passa na importação');
+  const filled = fillCustomPlaceholdersForPreview('<p>{{CLIENT_NAME}} {{SPOUSE_CPF}}</p>', {
+    CLIENT_NAME: 'Maria Silva',
+    SPOUSE_CPF: null,
+  });
+  assert(filled.includes('Maria Silva'), 'prévia preenche dado real');
+  assert(filled.includes('[SEM DADO: CPF DO CÔNJUGE]'), 'prévia não esconde campo vazio');
+
+  const values = resolveCustomPreviewValues({
+    tenantId: 'co-a',
+    company: { name: 'SV Topografia', cnpj: '00.000.000/0001-00', city: 'Marabá' },
+    customer: {
+      name: 'João',
+      cpf_cnpj: '12345678901',
+      rg: '3658956',
+      rg_issuer: 'PC',
+      rg_issuer_state: 'PA',
+      nationality: 'Brasileira',
+    },
+    sale: {
+      company_id: 'co-a',
+      lot_price: 40000,
+      discount: 1500,
+      total_value: 38500,
+      agreed_price: 38500,
+      payment_type: 'parcelado',
+      installments_count: 10,
+      sale_date: '2026-03-01',
+      has_spouse: true,
+      sale_spouse_name: 'Ana',
+      sale_spouse_cpf: '52998224725',
+      sale_spouse_nationality: 'Brasileira',
+      notes: 'não persistir no contrato',
+    },
+    project: { name: 'Estrela do Sul', city: 'Marabá', seller_parties_json: [{ name: 'Vendedor Um', cpf: '111' }] },
+    lot: { quadra: 'QD 01', lote: '12', frente: 20, fundo: 20, 'Lado Dir.': 40, 'Lado Esq.': 40 },
+    receipts: [
+      { installment_number: 0, amount: 5000, due_date: '2026-03-10', status: 'pendente' },
+      { installment_number: 1, amount: 3350, due_date: '2026-04-10', status: 'pendente' },
+    ],
+    broker: { name: 'Carlos Corretor', cpf: '11144477735', creci: '12345-F', phone: '94999990000', email: 'c@ex.com' },
+    financialAccount: {
+      name: 'Conta Imobiliária',
+      account_type: 'IMOBILIARIA',
+      beneficiary_name: 'SV Lotes',
+      document: '00.000.000/0001-00',
+    },
+  });
+  assert(values.CLIENT_NAME === 'João', 'fonte real do comprador');
+  assert(values.CLIENT_RG_ISSUER === 'PC', 'órgão emissor sem concatenar UF');
+  assert(values.CLIENT_RG_STATE === 'PA', 'UF emissor do RG da Nova Venda');
+  assert(values.CLIENT_NATIONALITY === 'Brasileira', 'nacionalidade do comprador a partir de customers/clients');
+  assert(values.SPOUSE_NATIONALITY === 'Brasileira', 'nacionalidade do cônjuge da venda');
+  assert(values.PROJECT_NAME === 'Estrela do Sul', 'fonte real do empreendimento');
+  assert(String(values.LOT_PRICE || '').includes('40.000'), 'LOT_PRICE = valor original do lote');
+  assert(String(values.SALE_DISCOUNT || '').includes('1.500'), 'SALE_DISCOUNT = desconto persistido');
+  assert(String(values.SALE_VALUE || '').includes('38.500'), 'SALE_VALUE = valor final contratado sem recálculo');
+  assert(values.PAYMENT_TYPE === 'Parcelado', 'forma de pagamento da Nova Venda');
+  assert(values.SALE_DUE_DATE === '10/04/2026', 'vencimento parcelado = 1ª parcela dos receipts');
+  assert(values.FIRST_DUE_DATE === '10/04/2026', 'primeiro vencimento das parcelas');
+  assert(values.BROKER_NAME === 'Carlos Corretor', 'nome do corretor');
+  assert(values.BROKER_CRECI === '12345-F', 'CRECI do corretor');
+  assert(String(values.FINANCIAL_ACCOUNT_LABEL || '').includes('Conta Imobiliária'), 'conta recebedora pública');
+  assert(values.FINANCIAL_ACCOUNT_BENEFICIARY === 'SV Lotes', 'beneficiário da conta recebedora');
+  assert(values.SELLER_1_NAME === 'Vendedor Um', 'vendedor 1 a partir de seller_parties_json (leitura)');
+  assert(!values.WITNESS_1_NAME, 'testemunha sem cadastro fica vazia no resolver');
+  let cross = false;
+  try {
+    resolveCustomPreviewValues({
+      tenantId: 'co-a',
+      sale: { company_id: 'co-b', total_value: 1 },
+    });
+  } catch {
+    cross = true;
+  }
+  assert(cross, 'prévia isola tenant');
+
+  const previewLoad = read('lib/customContractPreviewLoad.ts');
+  const previewResolver = read('lib/customContractPreviewResolver.ts');
+  const docxLib = read('lib/customContractDocxImport.ts');
+  assert(!previewLoad.includes('.insert(') && !previewLoad.includes('.update(') && !previewLoad.includes('.delete('), 'loader de prévia é somente leitura');
+  assert(!previewLoad.includes('generated_html'), 'prévia não lê generated_html');
+  assert(previewLoad.includes("from('brokers')"), 'prévia carrega corretor da venda');
+  assert(previewLoad.includes('company_financial_accounts'), 'prévia carrega conta recebedora');
+  assert(
+    previewLoad.includes('name, account_type, beneficiary_name, document') &&
+      !previewLoad.includes('encrypted_payload') &&
+      !previewLoad.includes('account_number') &&
+      !previewLoad.includes('sandboxApiKey'),
+    'conta recebedora só com campos públicos',
+  );
+  assert(!previewResolver.includes('generateContractHTML'), 'resolver não usa o motor oficial');
+  assert(!previewResolver.includes('gisSaleCreateService'), 'resolver não cria venda GIS');
+  assert(docxLib.includes("from 'mammoth'") || docxLib.includes('from "mammoth"'), 'importação usa mammoth');
+  assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'), 'testemunhas marcadas sem fonte');
+  assert(!PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'), 'nacionalidade comprador com fonte');
+
+  const css = read('components/contracts/editor/customContractEditor.css');
+  const logoNode = read('components/contracts/editor/CompanyLogoNode.ts');
+  const layoutLib = read('lib/customContractA4Layout.ts');
+  const htmlLib = read('lib/customContractHtml.ts');
+  const a4Ext = read('components/contracts/editor/A4PaginationExtension.ts');
+  const previewHtml = read('components/contracts/editor/CustomA4PaginatedHtml.tsx');
+  assert(!css.includes('repeating-linear-gradient'), 'paginação não usa faixa sobreposta no conteúdo');
+  assert(css.includes('page-break-inside: avoid') && css.includes('break-inside: avoid'), 'CSS evita cortar tr/título');
+  assert(layoutLib.includes('planA4BlockSpacers') && layoutLib.includes('keepWithNext'), 'paginação orientada a blocos');
+  assert(tiptap.includes('A4Pagination') && tiptap.includes('CompanyLogo'), 'TipTap usa paginação e node de logo');
+  assert(editorUi.includes("select('logo_url')"), 'editor lê companies.logo_url da Aparência');
+  assert(
+    !editorUi.includes('getReportHeaderLogoUrl') &&
+      !tiptap.includes('getReportHeaderLogoUrl') &&
+      !htmlLib.includes('getReportHeaderLogoUrl'),
+    'CUSTOM não usa fallback do logo da plataforma',
+  );
+  assert(logoNode.includes('COMPANY_LOGO_TOKEN') && !/src:\s*`/.test(logoNode), 'modelo persiste token, não src da imagem');
+  assert(editorUi.includes('insertPageBreak') && editorUi.includes("'Página'"), 'botão Página permanece');
+  assert(docxLib.includes('acompanham a página da referência'), 'notas acompanham a página da referência');
+  assert(docxLib.includes('logotipo do cabeçalho do Word não é importado'), 'logo do cabeçalho DOCX não bloqueia importação');
+
+  {
+    const headingThenPara: A4LayoutUnit[] = [
+      { id: 'h', kind: 'heading', height: 40, keepTogether: true, keepWithNext: true },
+      { id: 'p', kind: 'paragraph', height: 80, keepTogether: false, keepWithNext: false },
+    ];
+    const together = planA4BlockSpacers(headingThenPara, 200, 18);
+    assert(together.length === 0, 'título + primeiro parágrafo cabem na mesma folha');
+    const split = planA4BlockSpacers(headingThenPara, 100, 18);
+    assert(
+      split.some((row) => row.beforeUnitId === 'p') &&
+        !split.some((row) => row.beforeUnitId === 'h'),
+      'título não fica isolado no rodapé quando o parágrafo não cabe',
+    );
+
+    const orphan: A4LayoutUnit[] = [
+      { id: 'a', kind: 'paragraph', height: 460, keepTogether: false, keepWithNext: false },
+      { id: 'h2', kind: 'heading', height: 40, keepTogether: true, keepWithNext: true },
+      { id: 'p2', kind: 'paragraph', height: 80, keepTogether: false, keepWithNext: false },
+    ];
+    const orphanPlan = planA4BlockSpacers(orphan, 500, 18);
+    assert(
+      orphanPlan.some((row) => row.beforeUnitId === 'h2'),
+      'título + primeiro parágrafo sobem juntos em vez de deixar o título no rodapé',
+    );
+
+    const rows: A4LayoutUnit[] = [
+      { id: 'r1', kind: 'tableRow', height: 70, keepTogether: true, keepWithNext: false },
+      { id: 'r2', kind: 'tableRow', height: 70, keepTogether: true, keepWithNext: false },
+      { id: 'r3', kind: 'tableRow', height: 70, keepTogether: true, keepWithNext: false },
+    ];
+    const tablePlan = planA4BlockSpacers(rows, 130, 18);
+    assert(
+      tablePlan.some((row) => row.beforeUnitId === 'r3' || row.beforeUnitId === 'r2'),
+      'tabela grande quebra ENTRE linhas, nunca no meio da tr',
+    );
+
+    const signatures: A4LayoutUnit[] = [
+      { id: 's1', kind: 'signature', height: 50, keepTogether: true, keepWithNext: true },
+      { id: 's2', kind: 'signature', height: 50, keepTogether: true, keepWithNext: true },
+    ];
+    const signPlan = planA4BlockSpacers(signatures, 80, 18);
+    assert(
+      signPlan.some((row) => row.beforeUnitId === 's1' || row.beforeUnitId === 's2'),
+      'bloco de assinatura evita quebra interna quando não cabe no restante',
+    );
+
+    const signRows: A4LayoutUnit[] = [
+      { id: 'sr1', kind: 'tableRow', height: 50, keepTogether: true, keepWithNext: true },
+      { id: 'sr2', kind: 'tableRow', height: 50, keepTogether: true, keepWithNext: true },
+      { id: 'sr3', kind: 'tableRow', height: 50, keepTogether: true, keepWithNext: false },
+    ];
+    const signTogether = planA4Pages(signRows, 200, 18);
+    assert(signTogether.length === 1, '3 linhas de assinatura compactas cabem juntas');
+    const signJump = planA4Pages(
+      [
+        { id: 'infra', kind: 'tableRow', height: 140, keepTogether: true, keepWithNext: false },
+        ...signRows,
+      ],
+      200,
+      18,
+    );
+    assert(signJump.length === 2, 'se o trio de assinatura não cabe no resto, as 3 linhas sobem juntas');
+    assert(signJump[1].start === 1, 'assinaturas não deixam uma linha órfã na página seguinte');
+
+    const sparseUnits: A4LayoutUnit[] = [
+      { id: 'full', kind: 'paragraph', height: 490, keepTogether: false, keepWithNext: false },
+      { id: 'tiny', kind: 'paragraph', height: 20, keepTogether: false, keepWithNext: false },
+    ];
+    const sparsePages = planA4Pages(sparseUnits, 500, 18);
+    const unintended = findUnintendedSparseA4Pages(sparseUnits, sparsePages, 500);
+    assert(unintended.length >= 1, 'detecta página quase vazia criada pelo empacotador');
+    assert(a4PageOccupancy(sparsePages[1].leftover, 500) < 0.18, 'página órfã tem ocupação baixa');
+
+    const manualBreak: A4LayoutUnit[] = [
+      { id: 'capa', kind: 'paragraph', height: 400, keepTogether: false, keepWithNext: false },
+      { id: 'br', kind: 'pageBreak', height: 1, keepTogether: true, keepWithNext: false },
+      { id: 'infra2', kind: 'tableRow', height: 80, keepTogether: true, keepWithNext: false },
+    ];
+    const manualPages = planA4Pages(manualBreak, 500, 18);
+    assert(
+      findUnintendedSparseA4Pages(manualBreak, manualPages, 500).length === 0,
+      'quebra manual da referência (capa p2) não é página órfã',
+    );
+  }
+
+  const logoHtml = renderCompanyLogoBlock({ align: 'center', width: 220, marginBefore: 8, marginAfter: 16 });
+  assert(logoHtml.includes(COMPANY_LOGO_TOKEN), 'bloco de logo persiste {{COMPANY_LOGO_URL}}');
+  assert(!logoHtml.includes('<img'), 'bloco persistido não grava cópia da imagem');
+  assert(
+    canonicalizeCustomContractHtml(logoHtml) === canonicalizeCustomContractHtml('<p>{{COMPANY_LOGO_URL}}</p>'),
+    'canônico trata bloco de logo como token',
+  );
+  const filledLogo = fillCustomPlaceholdersForPreview(logoHtml, {
+    COMPANY_LOGO_URL: 'https://cdn.example/empresa.png',
+  });
+  assert(filledLogo.includes('https://cdn.example/empresa.png'), 'prévia resolve logo dinâmico');
+  assert(filledLogo.includes('object-fit:contain'), 'prévia do logo não distorce');
+  const emptyLogo = fillCustomPlaceholdersForPreview('{{COMPANY_LOGO_URL}}', { COMPANY_LOGO_URL: null });
+  assert(emptyLogo.includes(COMPANY_LOGO_PREVIEW_EMPTY), 'empresa sem logo mostra [SEM LOGO CADASTRADO]');
+  assert(!emptyLogo.includes('<img'), 'empresa sem logo nunca mostra imagem quebrada');
+
+  const tableExt = read('components/contracts/editor/ContractTableExtensions.ts');
+  assert(tableExt.includes('resizable: true'), 'tabelas usam resize oficial do TipTap');
+  assert(tableExt.includes('colwidth') || tableExt.includes('this.parent?.()'), 'largura de coluna persiste no HTML via colwidth');
+  assert(tableExt.includes('minHeight'), 'altura mínima da linha/célula');
+  assert(editorUi.includes('addRowBefore') && editorUi.includes('addColumnAfter'), 'barra contextual insere linha/coluna');
+  assert(editorUi.includes('deleteRow') && editorUi.includes('deleteTable'), 'barra contextual exclui linha/tabela');
+  assert(editorUi.includes('mergeCells') && editorUi.includes('splitCell'), 'mesclar e dividir células');
+  assert(editorUi.includes('setTextAlign') && editorUi.includes('Texto justificado'), 'alinhamento horizontal na célula');
+  assert(editorUi.includes("borders: 'none'") && css.includes('sv-table-borderless'), 'tabela sem bordas para assinaturas');
+  assert(editorUi.includes('setCellAttribute') && editorUi.includes('verticalAlign'), 'alinhamento vertical da célula');
+  assert(css.includes('column-resize-handle'), 'divisória de coluna arrastável');
+  assert(css.includes('max-width: 100%'), 'tabela não ultrapassa a folha A4');
+  assert(css.includes('table-header-group'), 'cabeçalho de tabela pode repetir na página seguinte');
+  assert(layoutLib.includes('shouldExplodeTableIntoRows') && layoutLib.includes('cloneRepeatedTableHeader'), 'tabela explode em linhas e repete thead');
+  assert(layoutLib.includes('CUSTOM_A4_PAGE_CONFIG'), 'arquitetura de margens A4 preparada');
+  assert(CUSTOM_A4_MARGIN_MM === 15, 'margem segura A4 = 15mm');
+  assert(
+    CUSTOM_A4_PAGE_CONFIG.marginLeftMm === 15 &&
+      CUSTOM_A4_PAGE_CONFIG.marginRightMm === 15 &&
+      CUSTOM_A4_PAGE_CONFIG.marginTopMm === 15 &&
+      CUSTOM_A4_PAGE_CONFIG.marginBottomMm === 15,
+    '15mm em todos os lados',
+  );
+  assert(customA4ContentWidthMm() === 180, 'área útil horizontal = 180mm');
+  assert(css.includes('--paper-pad: 15mm'), 'editor/prévia usam --paper-pad 15mm');
+  assert(css.includes('overflow-x: hidden'), 'conteúdo não vaza da área útil');
+  const printSrc = read('lib/customContractPrint.ts');
+  assert(/@page \{ size: A4; margin: 0; \}/.test(printSrc), 'PDF não duplica margem no @page');
+  assert(printSrc.includes('CUSTOM_A4_MARGIN_MM') && printSrc.includes('--paper-pad:'), 'PDF herda os 15mm do conteúdo');
+  assert(
+    /<body class="sv-editor-preview-doc">\$\{html\}<\/body>/.test(printSrc),
+    'PDF não embrulha a folha A4 com um segundo padding',
+  );
+  assert(!printSrc.includes('sv-a4-sheet sv-a4-prose sv-editor-preview-doc'), 'PDF sem wrapper A4 extra');
+  assert(editorUi.includes('deletePageBreak'), 'quebra manual pode ser removida');
+  assert(editorUi.includes('setParagraphLayout'), 'espaçamento e recuo de parágrafo');
+  assert(tiptap.includes('ParagraphLayout'), 'TipTap persiste layout de parágrafo');
+  assert(editorUi.includes('printCustomContractPreview') && editorUi.includes('Gerar PDF'), 'PDF sai da mesma paginação do preview');
+  assert(
+    fillCustomPlaceholdersForPreview('<table><tr><td>{{CLIENT_NAME}}</td></tr></table>', {
+      CLIENT_NAME: 'Maria Compradora',
+    }).includes('Maria Compradora'),
+    'tokens dentro de células continuam dinâmicos',
+  );
+  assert(
+    !fillCustomPlaceholdersForPreview('<td>{{PARTNERSHIP_NOTE}}</td>', {
+      PARTNERSHIP_NOTE: '40% e 60%',
+    }).includes('{{PARTNERSHIP_NOTE}}'),
+    'token em célula não vira texto morto na prévia',
+  );
+
+  const mammothNotes = [
+    '<p>ARRAS<sup><a href="#doc-42-footnote-5" id="doc-42-footnote-ref-5">[5]</a></sup> e medidas',
+    '<sup><a href="#doc-42-footnote-6" id="doc-42-footnote-ref-6">[6]</a></sup>.</p>',
+    '<p>Bloco de assinaturas</p>',
+    '<ol>',
+    '<li id="doc-42-footnote-5"><p> Natureza jurídica: arras confirmatórias. <a href="#doc-42-footnote-ref-5">↑</a></p></li>',
+    '<li id="doc-42-footnote-6"><p> Área conforme memorial descritivo. <a href="#doc-42-footnote-ref-6">↑</a></p></li>',
+    '<li id="doc-42-footnote-7"><p> Área conforme memorial descritivo. <a href="#doc-42-footnote-ref-7">↑</a></p></li>',
+    '</ol>',
+  ].join('');
+  const normalizedNotes = normalizeCustomFootnotesHtml(mammothNotes);
+  assert(normalizedNotes.includes('data-sv-footnote-ref="5"'), 'referência 5 vira nó de nota');
+  assert(normalizedNotes.includes('data-sv-footnote-ref="6"'), 'referência 6 vira nó de nota');
+  assert(!normalizedNotes.includes('↑'), 'setas técnicas do Mammoth não permanecem');
+  assert(!/id="doc-42-footnote-ref-/.test(normalizedNotes), 'IDs técnicos de navegação não ficam no HTML final');
+  assert(normalizedNotes.includes('Natureza jurídica: arras confirmatórias'), 'conteúdo jurídico da nota 5 preservado');
+  assert(
+    (normalizedNotes.match(/Área conforme memorial descritivo/g) || []).length === 2,
+    'notas semelhantes e distintas não são deduplicadas',
+  );
+  assert(normalizedNotes.includes('data-sv-footnote-store'), 'notas ficam no store lógico, não como lista no final visível');
+  assert(!normalizedNotes.includes('<ol>'), 'lista final do Mammoth é convertida');
+  assert(css.includes('font-size: 9pt') && css.includes('sv-page-footnotes'), 'notas usam fonte menor na base da folha');
+
+  {
+    const withNotes: A4LayoutUnit[] = [
+      { id: 'p', kind: 'paragraph', height: 70, keepTogether: false, keepWithNext: false, footnoteIds: ['5'] },
+      { id: 'q', kind: 'paragraph', height: 20, keepTogether: false, keepWithNext: false },
+    ];
+    const pages = planA4Pages(withNotes, 120, 18, (ids) => ids.length * 40);
+    assert(pages[0].footnoteIds.includes('5'), 'nota 5 fica na página da referência');
+    assert(pages.length === 1, 'notas não empurram o conteúdo — packing independente da reserva');
+    assert(pages[0].end === 1, 'os dois blocos permanecem na mesma folha');
+
+    const reserved = planA4Pages(withNotes, 120, 18, () => 9999);
+    const unreserved = planA4Pages(withNotes, 120, 18, () => 0);
+    assert(
+      a4PageIdentity(reserved) === a4PageIdentity(unreserved),
+      'altura da nota não altera a identidade das páginas',
+    );
+
+    const estrelaLike: A4LayoutUnit[] = Array.from({ length: 50 }, (_, i) => ({
+      id: `p${i}`,
+      kind: 'paragraph' as const,
+      height: 460,
+      keepTogether: false,
+      keepWithNext: false,
+      footnoteIds: i === 10 || i === 31 ? ['5'] : i === 22 ? ['6'] : undefined,
+    }));
+    const firstPack = planA4Pages(estrelaLike, 987, 18, () => 80);
+    let packStable = true;
+    for (let n = 0; n < 100; n += 1) {
+      const again = planA4Pages(estrelaLike, 987, 18, (ids) => (ids.length ? 80 + (n % 5) : 0));
+      if (a4PageIdentity(again) !== a4PageIdentity(firstPack) || again.length !== firstPack.length) {
+        packStable = false;
+        break;
+      }
+    }
+    assert(packStable, 'empacotador idempotente 100x com as mesmas dimensões');
+    assert(firstPack.length >= 20, 'documento longo (Estrela-like) gera dezenas de folhas A4');
+    assert(shouldExplodeTableByHeight(200, 987), 'tabela menor que a folha ainda quebra entre linhas');
+    assert(shouldExplodeTableByHeight(988, 987), 'tabela maior que a folha quebra entre linhas');
+
+    const finance: A4LayoutUnit[] = [
+      { id: 'h', kind: 'heading', height: 36, keepTogether: true, keepWithNext: false },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        id: `fin${i}`,
+        kind: 'tableRow' as const,
+        height: 40,
+        keepTogether: true,
+        keepWithNext: false,
+        tableId: 'finance',
+        isTableHeader: i === 0,
+      })),
+    ];
+    const financePages = planA4Pages(finance, 200, 18);
+    assert(financePages.length >= 2, 'tabela financeira atravessa duas páginas');
+    assert(financePages[0].end >= 1 && financePages[0].end < 8, 'algumas linhas ficam na página do título');
+    assert(financePages[1].start === financePages[0].end + 1, 'continuação começa na linha seguinte');
+
+    const five: A4LayoutUnit[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `r5-${i}`,
+      kind: 'tableRow' as const,
+      height: 40,
+      keepTogether: true,
+      keepWithNext: false,
+      tableId: 't5',
+    }));
+    assert(planA4Pages(five, 987, 18).length === 1, 'tabela de 5 linhas cabe em uma folha');
+
+    const twenty: A4LayoutUnit[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `r20-${i}`,
+      kind: 'tableRow' as const,
+      height: 70,
+      keepTogether: true,
+      keepWithNext: false,
+      tableId: 't20',
+      isTableHeader: i === 0,
+    }));
+    const twentyPages = planA4Pages(twenty, 200, 18);
+    assert(twentyPages.length >= 3, 'tabela de 20 linhas usa várias páginas');
+
+    const fifty: A4LayoutUnit[] = Array.from({ length: 50 }, (_, i) => ({
+      id: `r50-${i}`,
+      kind: 'tableRow' as const,
+      height: 40,
+      keepTogether: true,
+      keepWithNext: false,
+      tableId: 't50',
+      isTableHeader: i === 0,
+    }));
+    const fiftyPages = planA4Pages(fifty, 200, 18);
+    assert(fiftyPages.length >= 8, 'tabela de 50 linhas pagina por linhas');
+
+    const tallCell: A4LayoutUnit[] = [
+      { id: 'c1', kind: 'tableRow', height: 40, keepTogether: true, keepWithNext: false, tableId: 'tall' },
+      { id: 'c2', kind: 'tableRow', height: 220, keepTogether: true, keepWithNext: false, tableId: 'tall' },
+      { id: 'c3', kind: 'tableRow', height: 40, keepTogether: true, keepWithNext: false, tableId: 'tall' },
+    ];
+    const tallPlan = planA4Pages(tallCell, 200, 18);
+    assert(tallPlan.length >= 2, 'célula com texto grande empurra só as linhas seguintes');
+  }
+
+  assert(layoutLib.includes('a4PageIdentity'), 'identidade de página não inclui leftover');
+  assert(!layoutLib.includes('trialFn'), 'empacotador não reserva notas no espaço dos blocos');
+  assert(layoutLib.includes('tableContentHeight'), 'explode de tabela usa soma das linhas de conteúdo');
+  assert(layoutLib.includes('data-sv-a4-identity'), 'prévia congela identidade');
+  assert(a4Ext.includes('doc.eq'), 'repagina só quando o documento TipTap muda');
+  assert(!a4Ext.includes('ResizeObserver'), 'Editor não observa o DOM que a paginação muta');
+  assert(!previewHtml.includes('ResizeObserver'), 'Visualizar não reentra em loop de ResizeObserver');
+  assert(editorUi.includes('alreadyOpen'), 'hydrate não recarrega se o editor local já está aberto');
+  assert(editorUi.includes('não recarrega/hidrata'), 'autosave não dispara hydrate');
+  assert(css.includes('scrollbar-gutter: stable'), 'scrollbar estável não muda a largura A4');
+  assert(tiptap.includes('logoValue'), 'contexto de logo é memoizado');
+
+  console.log('\nOK — Editor CUSTOM A4');
+})().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});

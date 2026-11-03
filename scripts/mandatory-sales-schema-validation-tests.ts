@@ -111,6 +111,24 @@ function testForbiddenDetectorIncludesNotes() {
   console.log('OK testForbiddenDetectorIncludesNotes');
 }
 
+function testForbiddenDetectorIncludesLfSnapshot() {
+  const patch = buildOfficialSalesUpdatePatch({
+    customerId: 'c',
+    agreedPrice: 100,
+    lotPrice: 100,
+    discount: 0,
+    totalValue: 100,
+    paymentType: 'À vista',
+    downPayment: 0,
+    installmentsCount: 1,
+    brokerId: null,
+  });
+  assert(!('lf_contract_snapshot_json' in patch), 'snapshot LF fora do patch de edição');
+  const found = salePatchHasForbiddenFields({ lf_contract_snapshot_json: { version: 1 } });
+  assert(found.includes('lf_contract_snapshot_json'), 'detecta overwrite de snapshot LF');
+  console.log('OK testForbiddenDetectorIncludesLfSnapshot');
+}
+
 function main() {
   testOfficialUpdatePatchFields();
   testDiscountMappedToOfficialColumn();
@@ -118,6 +136,7 @@ function main() {
   testNotesNotInUpdatePatch();
   testOrphanDetector();
   testForbiddenDetectorIncludesNotes();
+  testForbiddenDetectorIncludesLfSnapshot();
   console.log('mandatory-sales-schema-validation-tests: all passed');
 }
 

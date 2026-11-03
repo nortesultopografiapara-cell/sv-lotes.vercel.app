@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { logRlsCompany, logRlsTenant } from '@/lib/rls';
 import { useRouter } from 'next/navigation';
+import {
+  PASSWORD_RECOVERY_RESET_PATH,
+  clearPasswordRecoveryLock,
+  hasPasswordRecoveryLock,
+  isPasswordRecoveryPublicPath,
+  looksLikeRecoveryCallback,
+  markPasswordRecoveryLock,
+} from '@/lib/auth/passwordRecovery';
 
 export interface UserProfile {
   id: string;
@@ -33,7 +41,11 @@ export function useAuth() {
                    document.cookie.includes('demo_mode=true') && 
                    !isSupabaseConfigured;
 
-    if (isDevPreview && process.env.NODE_ENV !== 'production') {
+    const onRecoveryPath =
+      typeof window !== 'undefined' &&
+      isPasswordRecoveryPublicPath(window.location.pathname);
+
+    if (!onRecoveryPath && isDevPreview && process.env.NODE_ENV !== 'production') {
       if (mounted) {
         Promise.resolve().then(() => {
           setUser({
@@ -138,14 +150,33 @@ export function useAuth() {
              localStorage.removeItem('contingency_auth');
              sessionStorage.clear();
            } catch(e) {}
-           if (window.location.pathname !== '/login') {
+           clearPasswordRecoveryLock();
+           if (
+             window.location.pathname !== '/login' &&
+             !isPasswordRecoveryPublicPath(window.location.pathname)
+           ) {
              window.location.assign('/login');
            }
          }
-       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-         getUser();
        } else if (event === 'PASSWORD_RECOVERY') {
-         // Let middleware handle any further redirect if necessary
+         markPasswordRecoveryLock();
+         if (window.location.pathname !== PASSWORD_RECOVERY_RESET_PATH) {
+           window.location.assign(PASSWORD_RECOVERY_RESET_PATH);
+         }
+       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+         const search = new URLSearchParams(window.location.search);
+         const hash = window.location.hash || '';
+         if (looksLikeRecoveryCallback(search, hash)) {
+           markPasswordRecoveryLock();
+         }
+         if (
+           hasPasswordRecoveryLock() &&
+           !isPasswordRecoveryPublicPath(window.location.pathname)
+         ) {
+           window.location.assign(PASSWORD_RECOVERY_RESET_PATH);
+           return;
+         }
+         getUser();
        }
     });
 

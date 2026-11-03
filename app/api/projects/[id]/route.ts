@@ -6,11 +6,15 @@ import {
 } from '@/lib/projects-update';
 import { mergeMundoNovoSellerPartyContacts } from '@/lib/mundoNovoContractSellers';
 import {
+  lfContractConfigPersistedEquals,
+  normalizeLfContractConfigForSave,
+} from '@/lib/lfImoveisContractConfig';
+import {
   createAdminSupabase,
   getRequestAuthUser,
   logSupabaseConfigDebug,
 } from '@/lib/supabase/server';
-import { getServerConfigErrorMessage } from '@/lib/supabase-config';
+import { getServerConfigErrorMessage } from '@/lib/supabase-config.server';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +34,8 @@ type UpdateProjectBody = {
     email?: string | null;
     phone?: string | null;
   }> | null;
+  lf_contract_config?: unknown;
+  lf_contract_config_json?: unknown;
 };
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -154,6 +160,20 @@ export async function PATCH(request: Request, context: RouteContext) {
   const location = [city, uf].filter(Boolean).join(' - ');
   const forumCity = body.forum_city?.trim() || city;
 
+  let lfContractConfigJson: unknown = undefined;
+  if (body.lf_contract_config !== undefined || body.lf_contract_config_json !== undefined) {
+    const normalized = normalizeLfContractConfigForSave(
+      body.lf_contract_config ?? body.lf_contract_config_json,
+    );
+    if (!normalized.ok) {
+      return NextResponse.json(
+        { error: normalized.error, code: 'VALIDATION' },
+        { status: 400 },
+      );
+    }
+    lfContractConfigJson = normalized.value;
+  }
+
   try {
     const { data, error } = await updateProjectWithFallback(admin, projectId, {
       name,
@@ -176,6 +196,7 @@ export async function PATCH(request: Request, context: RouteContext) {
               (existing as { seller_parties_json?: unknown }).seller_parties_json,
               body.seller_party_contacts,
             ),
+      lf_contract_config_json: lfContractConfigJson,
     });
 
     if (error) {
@@ -192,6 +213,34 @@ export async function PATCH(request: Request, context: RouteContext) {
         },
         { status: 422 },
       );
+    }
+
+    if (lfContractConfigJson !== undefined && data) {
+      if (!Object.prototype.hasOwnProperty.call(data, 'lf_contract_config_json')) {
+        return NextResponse.json(
+          {
+            error:
+              'A configuração contratual LF Imóveis ainda não está disponível neste banco. Aplique a migration no DEVELOP antes de salvar.',
+            code: 'LF_CONTRACT_CONFIG_COLUMN_MISSING',
+          },
+          { status: 422 },
+        );
+      }
+      if (
+        !lfContractConfigPersistedEquals(
+          (data as { lf_contract_config_json?: unknown }).lf_contract_config_json,
+          lfContractConfigJson,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'A configuração contratual LF Imóveis não foi gravada no projeto. Recarregue e tente salvar novamente.',
+            code: 'LF_CONTRACT_CONFIG_PERSIST',
+          },
+          { status: 422 },
+        );
+      }
     }
 
     console.log('[API PATCH /api/projects] Updated', { projectId, userId: user.id });

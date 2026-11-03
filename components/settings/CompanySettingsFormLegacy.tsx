@@ -4,7 +4,7 @@ import { Save, Upload, Loader2, ImagePlus, Building2, HardHat, FileText, Banknot
 import {
   normalizeSaleContractModel,
   SALE_CONTRACT_MODEL_LABELS,
-  SALE_CONTRACT_MODELS,
+  SALE_CONTRACT_MODEL_OPTIONS,
   type SaleContractModel,
 } from '@/lib/contractModel';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
@@ -140,11 +140,16 @@ export function CompanySettingsFormLegacy({
         <div className="max-w-md">
           <label className="sv-theme-label">Modelo de Contrato</label>
           <select name="contract_model" value={normalizeSaleContractModel(company.contract_model as string)} onChange={handleChange} className="sv-theme-field">
-            {SALE_CONTRACT_MODELS.map((model: SaleContractModel) => (
-              <option key={model} value={model} disabled={model === 'CUSTOM'}>
+            {SALE_CONTRACT_MODEL_OPTIONS.map((model: SaleContractModel) => (
+              <option key={model} value={model}>
                 {SALE_CONTRACT_MODEL_LABELS[model]}
               </option>
             ))}
+            {normalizeSaleContractModel(company.contract_model as string) === 'CUSTOM' ? (
+              <option value="CUSTOM" disabled>
+                {SALE_CONTRACT_MODEL_LABELS.CUSTOM}
+              </option>
+            ) : null}
           </select>
         </div>
       </div>

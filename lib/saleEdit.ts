@@ -34,6 +34,12 @@ import {
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import { resolveSaleContractModelFromContext } from '@/lib/contractModel';
+import {
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal,
+  resolvePersistInstallmentCorrectionType,
+  usesSplitDownPaymentFinance,
+} from '@/lib/saleFinanceConfig';
+import { buildSplitDownPaymentPersistFields } from '@/lib/recantoSignalRemaining';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import { cpfCnpjIlikePatterns, matchesCpfCnpj } from '@/lib/inputMasks';
@@ -414,7 +420,7 @@ export async function updateSaleFromEdit(
     throw new Error(`Erro ao atualizar cliente: ${custUpdErr.message}`);
   }
 
-  const isRecanto = contractModel === 'RECANTO_PRIMAVERA';
+  const isRecanto = usesSplitDownPaymentFinance(contractModel);
   const signalContractValue = isRecanto
     ? parseCurrencyBRLNumber(
         data.signal_contract_value || data.down_payment || '',
@@ -426,14 +432,6 @@ export async function updateSaleFromEdit(
     String(data.signal_paid_at_sale).trim() !== ''
       ? parseCurrencyBRLNumber(String(data.signal_paid_at_sale))
       : null;
-  const signalRemainingValue =
-    signalContractValue != null && signalPaidAtSale != null
-      ? Math.max(0, signalContractValue - signalPaidAtSale)
-      : null;
-  const signalRemainingMode =
-    isRecanto && signalRemainingValue != null && signalRemainingValue > 0
-      ? data.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS'
-      : null;
   const paymentMode = resolveSalePaymentMode({
     payment_type: data.payment_type,
     installments_count: data.installments_count,
@@ -442,19 +440,19 @@ export async function updateSaleFromEdit(
   const installmentsCount = paymentMode.isInstallment
     ? Number(data.installments_count) || 1
     : 1;
-  const signalRemainingInstallments =
-    signalRemainingMode === 'FIRST_INSTALLMENTS'
-      ? Number(data.signal_remaining_installments) || null
-      : signalRemainingMode === 'ALL_INSTALLMENTS'
-        ? installmentsCount
-        : null;
+  const splitPersist = buildSplitDownPaymentPersistFields({
+    enabled: isRecanto,
+    contractValue: signalContractValue,
+    paidAtSale: signalPaidAtSale,
+    paymentMode: data.signal_remaining_payment_mode || '',
+    remainingInstallments: Number(data.signal_remaining_installments) || null,
+    installmentsCount,
+  });
+  const signalRemainingValue = splitPersist.signalRemainingValue;
+  const signalRemainingMode = splitPersist.signalRemainingPaymentMode;
+  const signalRemainingInstallments = splitPersist.signalRemainingInstallments;
   const signalRemainingInstallmentValue =
-    signalRemainingValue != null &&
-    signalRemainingInstallments &&
-    signalRemainingInstallments > 0
-      ? Math.round((signalRemainingValue / signalRemainingInstallments) * 100) /
-        100
-      : null;
+    splitPersist.signalRemainingInstallmentValue;
 
   const financialAccountId =
     String(data.financial_account_id || saleBefore.financial_account_id || '').trim() || null;
@@ -482,7 +480,7 @@ export async function updateSaleFromEdit(
     const entryAmount = parseCurrencyBRLNumber(data.down_payment);
     const principal = resolveInstallmentPrincipal({
       totalValue: data.final_value,
-      downPayment: entryAmount,
+      downPayment: isRecanto ? signalContractValue ?? entryAmount : entryAmount,
       contractModel,
     });
     const balloonValidation = validateSaleBalloonConfiguration({
@@ -491,11 +489,13 @@ export async function updateSaleFromEdit(
       installmentsCount,
       principal,
       finalValue: data.final_value,
-      entryAmount: downPaymentReducesInstallmentBase(contractModel)
-        ? entryAmount
-        : 0,
+      entryAmount:
+        isRecanto || !downPaymentReducesInstallmentBase(contractModel)
+          ? 0
+          : parseCurrencyBRLNumber(data.down_payment),
       firstInstallmentDueDate: data.first_installment_due_date,
-      entryReducesPrincipal: downPaymentReducesInstallmentBase(contractModel),
+      entryReducesPrincipal:
+        !isRecanto && downPaymentReducesInstallmentBase(contractModel),
     });
     if (!balloonValidation.valid) {
       throw new Error(balloonValidation.message);
@@ -508,7 +508,13 @@ export async function updateSaleFromEdit(
   const recantoInstallmentSnapshot = buildRecantoInstallmentSalesSnapshot({
     contractModel,
     mode: data.installment_definition_mode,
-    lotValue: data.final_value,
+    lotValue: resolveInstallmentPrincipal({
+      totalValue: data.final_value,
+      downPayment: isRecanto
+        ? signalContractValue ?? parseCurrencyBRLNumber(data.down_payment)
+        : parseCurrencyBRLNumber(data.down_payment),
+      contractModel,
+    }),
     regularCount: installmentsCount,
     regularAmount: parseCurrencyBRLNumber(
       String(data.regular_installment_amount || ''),
@@ -586,6 +592,15 @@ export async function updateSaleFromEdit(
     throw new Error(scheduleLock.message || BALLOON_EDIT_LOCKED_MESSAGE);
   }
 
+  const installmentCorrectionType = resolvePersistInstallmentCorrectionType({
+    contractModel,
+    selected: data.installment_correction_type,
+  });
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal(
+    contractModel,
+    installmentCorrectionType,
+  );
+
   const salePatch = buildOfficialSalesUpdatePatch({
     customerId,
     agreedPrice: data.final_value,
@@ -595,12 +610,7 @@ export async function updateSaleFromEdit(
     paymentType: data.payment_type,
     downPayment: signalContractValue ?? parseCurrencyBRLNumber(data.down_payment),
     installmentsCount,
-    installmentCorrectionType:
-      contractModel === 'RECANTO_PRIMAVERA'
-        ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
-        : paymentMode.isInstallment
-          ? data.installment_correction_type
-          : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+    installmentCorrectionType,
     brokerId,
     financialAccountId,
     signalContractValue,

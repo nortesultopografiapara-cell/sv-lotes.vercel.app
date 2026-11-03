@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { assertSuperAdmin } from '@/lib/apiSuperAdmin';
 import { authorizeCompanyAdminRequest, type CompanyAdminAuthDeps } from '@/lib/companyAdminApiAuth';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+import { clearPrimaryAdminForCompanyTeardown } from '@/lib/companyPrimaryAdmin';
 
 const defaultDeps: CompanyAdminAuthDeps = {
   getRequestAuthUser,
@@ -102,7 +103,7 @@ async function executeCompanyDeleteTest(req: Request) {
     try { await supabase.from('projects').delete().eq('tenant_id', companyId); } catch(e) {}
 
     // 10. Users
-    // Get all users from this tenant
+    await clearPrimaryAdminForCompanyTeardown(supabase, companyId);
     const { data: users } = await supabase.from('users').select('id, role').eq('tenant_id', companyId);
     if (users && users.length > 0) {
        for (const u of users) {

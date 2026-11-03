@@ -5,4 +5,4 @@
 export const BROKERS_CONTRACT_SELECT = 'id, name, cpf, creci, role';
 
 export const BROKERS_COMMISSION_CONTRACT_SELECT =
-  `broker_id, brokers(${BROKERS_CONTRACT_SELECT})`;
+  `broker_id, amount, commission_fixed_amount, commission_mode, commission_percent, status, brokers(${BROKERS_CONTRACT_SELECT})`;

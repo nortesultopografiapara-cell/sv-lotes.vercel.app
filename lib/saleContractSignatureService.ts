@@ -15,6 +15,7 @@ import {
   logContractHtmlGlobal,
 } from '@/lib/contractHtmlGlobal';
 import { onlyDigits } from '@/lib/inputMasks';
+import { readBuyerRepresentatives } from '@/lib/buyerLegalEntity';
 import {
   isValidSignerEmail,
   normalizeSignerEmail,
@@ -199,7 +200,7 @@ function scheduleSignaturePostInsertWork(
   })();
 }
 
-async function uploadSignedSaleContractPdf(
+export async function uploadSignedSaleContractPdf(
   supabaseAdmin: SupabaseClient,
   tenantId: string,
   contractNumber: string,
@@ -618,6 +619,27 @@ export async function sendSaleContractForSignature(
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
   if (!tenantId) {
     throw new SaleContractSignatureError('Contrato sem tenant vinculado.');
+  }
+
+  const storedHtmlForLf = String(
+    resolveStoredContractHtmlMeta(contractRow).html || '',
+  );
+  if (storedHtmlForLf) {
+    const { isLfEstrelaCustomHtml } = await import('@/lib/lfEstrelaPrintCss');
+    if (isLfEstrelaCustomHtml(storedHtmlForLf)) {
+      const { loadLfEstrelaPhysicalPdfBytes, LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE } =
+        await import('@/lib/lfEstrelaSignedPdf');
+      const physical = await loadLfEstrelaPhysicalPdfBytes({
+        supabaseAdmin,
+        tenantId,
+        contractNumber: String(contractRow.contract_number || resolvedId),
+        contractId: resolvedId,
+        saleId: String(contractRow.sale_id || '').trim() || null,
+      });
+      if (!physical) {
+        throw new SaleContractSignatureError(LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE);
+      }
+    }
   }
 
   mark('validate_signature_parties');
@@ -1464,7 +1486,11 @@ export async function signSaleContractByVendor(
     });
   }
 
-  if (partiesForVendor.length > 0 && !vendorAlreadyOnParties) {
+  if (
+    partiesForVendor.length > 0 &&
+    !vendorAlreadyOnParties &&
+    !intervenientJustCompletedProcess
+  ) {
     await markVendorPartySigned(supabaseAdmin, partiesForVendor, {
       vendorName,
       vendorDocument,
@@ -1628,14 +1654,26 @@ export async function loadSaleContractHtmlForSign(
   supabaseAdmin: SupabaseClient,
   contractId: string,
 ): Promise<string> {
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: contractId,
+    lookupContractId: contractId,
+    signatureProcessId: null,
+    saleId: null,
+    physicalPdfContractId: contractId,
+    regeneratedFrom: null,
+    stage: 'physical_pdf_lookup',
+  });
+
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
     .select('*')
     .eq('id', contractId)
-    .single();
+    .maybeSingle();
 
   if (error || !contract) {
-    throw new SaleContractSignatureError('Contrato não encontrado.');
+    throw new SaleContractSignatureError(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. lookupContractId=${contractId} supabase=${error?.message || 'sem linha'}.`,
+    );
   }
 
   const contractRow = contract as Record<string, unknown>;
@@ -1706,6 +1744,19 @@ export async function loadSaleContractHtmlForSign(
   });
 }
 
+/**
+ * Função única de aquisição do instrumento-base + motor comum de PDF assinado.
+ *
+ * Recanto Primavera / Meneses / demais:
+ *   generated_html → carimbos HTML → certificado concatenado → Chromium
+ *   (`buildSaleContractPdfFromHtml`).
+ *
+ * LF ESTRELA:
+ *   company-assets/contracts/sale-physical/{tenant}/{numero}.pdf
+ *   (bytes html2pdf de 10 páginas) → overlay pdf-lib P2/P10 → certificado
+ *   anexado → `uploadSignedSaleContractPdf` (sale-signed + pdf_signed_url).
+ *   Nunca usa Chromium nem HTML para o instrumento-base.
+ */
 export async function loadSaleContractPdfForSign(
   supabaseAdmin: SupabaseClient,
   contractId: string,
@@ -1714,16 +1765,36 @@ export async function loadSaleContractPdfForSign(
     signContext?: Awaited<ReturnType<typeof loadSaleSignPageContext>> | null;
   },
 ): Promise<{ pdf: Uint8Array; contractNumber: string }> {
+  const signatureProcessId = String(options?.signature?.id || '').trim();
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: contractId,
+    lookupContractId: contractId,
+    signatureProcessId: signatureProcessId || null,
+    saleId: null,
+    physicalPdfContractId: contractId,
+    regeneratedFrom: null,
+    stage: 'physical_pdf_lookup',
+  });
+  if (signatureProcessId && contractId === signatureProcessId) {
+    throw new SaleContractSignatureError(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. loadSaleContractPdfForSign recebeu o ID do processo (${signatureProcessId}) como contracts.id.`,
+    );
+  }
+
   let html = await loadSaleContractHtmlForSign(supabaseAdmin, contractId);
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('contract_number, tenant_id, company_id, created_at, version')
+    .select(
+      'id, contract_number, tenant_id, company_id, created_at, version, sale_id, project_id, customer_id, block_id',
+    )
     .eq('id', contractId)
-    .single();
+    .maybeSingle();
 
   if (error || !contract) {
-    throw new SaleContractSignatureError('Contrato não encontrado.');
+    throw new SaleContractSignatureError(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. lookupContractId=${contractId} signatureProcessId=${signatureProcessId || 'n/a'} supabase=${error?.message || 'sem linha'}.`,
+    );
   }
 
   const contractRow = contract as Record<string, unknown>;
@@ -1749,6 +1820,14 @@ export async function loadSaleContractPdfForSign(
   const { isMundoNovoSaleContractModel } = await import(
     '@/lib/mundoNovoContractEsign'
   );
+  const { isEstrelaDoSulSaleContractModel, sortEstrelaDoSulVendorParties } = await import(
+    '@/lib/estrelaDoSulContractEsign'
+  );
+  const { isLfEstrelaCustomHtml } = await import('@/lib/lfEstrelaPrintCss');
+
+  const originalHtml = html;
+  const lfEstrela = isLfEstrelaCustomHtml(originalHtml);
+  let lfCertificateHtml = '';
 
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
@@ -1763,6 +1842,7 @@ export async function loadSaleContractPdfForSign(
       buildSaleContractSignatureCertificateHtmlWithQr,
       stripManualContractSignaturesForSignedPdf,
       extractContractInstitutionalFooter,
+      insertCertificateAfterEstrelaInstrumentPack,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
     const { resolveSaleContractCertificatePublicUrl } = await import(
@@ -1845,6 +1925,12 @@ export async function loadSaleContractPdfForSign(
     const useMundoNovoPersonVendors =
       isMundoNovoSaleContractModel(contractModelForCert) &&
       vendorParties.length > 0;
+    const useEstrelaPersonVendors =
+      isEstrelaDoSulSaleContractModel(contractModelForCert) &&
+      vendorParties.length > 0;
+    const estrelaVendorOrdered = useEstrelaPersonVendors
+      ? sortEstrelaDoSulVendorParties(vendorParties, company || tenant)
+      : vendorParties;
 
     const readPartyLocation = (p: (typeof parties)[number]) => {
       const data =
@@ -1904,6 +1990,21 @@ export async function loadSaleContractPdfForSign(
             device: readPartyUaField(p, 'device'),
             approxLocation: readPartyLocation(p),
           }))
+        : useEstrelaPersonVendors
+          ? estrelaVendorOrdered.slice(1).map((p) => ({
+              name: String(p.signer_name || ''),
+              cpf: p.signer_cpf,
+              email: p.signer_email || null,
+              phone: p.signer_phone,
+              signedAt: p.signed_at,
+              ipAddress: p.ip_address,
+              signatureHash: p.signature_hash,
+              signatureEventId: readPartySignatureEventId(p),
+              browser: readPartyUaField(p, 'browser'),
+              os: readPartyUaField(p, 'os'),
+              device: readPartyUaField(p, 'device'),
+              approxLocation: readPartyLocation(p),
+            }))
         : null;
 
     const intervenientParty = parties.find(
@@ -2019,7 +2120,9 @@ export async function loadSaleContractPdfForSign(
           signature.signature_status,
         );
 
-      if (useAraguaiaElectronicBlock) {
+      if (lfEstrela) {
+        // LF ESTRELA: carimbos são overlay no PDF físico. Não injetar HTML.
+      } else if (useAraguaiaElectronicBlock) {
         // ELECTRONIC_SIGNED: substitui linhas físicas; certificado detalhado à parte.
         const { applyAraguaiaElectronicSignaturesToContractHtml } =
           await import('@/lib/araguaiaContractElectronicSignatures');
@@ -2030,9 +2133,7 @@ export async function loadSaleContractPdfForSign(
         html = applyMundoNovoElectronicSignaturesToContractHtml(html, parties);
       } else {
         // Modelos clássicos / multi-party: selos sobre slots (sem alterar ARAGUAIA V2).
-        html = applyElectronicSignatureStampsToContractHtml(
-          html,
-          buildElectronicStampsFromSignatureParties({
+        let stamps = buildElectronicStampsFromSignatureParties({
             parties,
             buyerNameFallback: buyerParty?.signer_name || buyerName,
             vendorNameFallback:
@@ -2048,10 +2149,45 @@ export async function loadSaleContractPdfForSign(
               ) &&
               (String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
                 Boolean(signature.signed_at)),
-          }),
-        );
+          });
+        if (isEstrelaDoSulSaleContractModel(contractModelForCert) && estrelaVendorOrdered.length > 0) {
+          const vendorStamps = estrelaVendorOrdered.map((p, index) => ({
+            role: 'SELLER' as const,
+            roleMarker: 'VENDEDOR(A)',
+            slotClass: `signature-slot-vendor-${index + 1}`,
+            signerName: String(p.signer_name || '').trim(),
+            signedAt: p.signed_at,
+            signed:
+              String(p.status || '').toUpperCase() === 'SIGNED' &&
+              Boolean(p.signed_at),
+          }));
+          const witnessStamps = witnessParties.map((p) => {
+            const roleKey = String(p.role).toUpperCase();
+            const isSecond = roleKey.includes('2');
+            return {
+              role: 'WITNESS' as const,
+              roleMarker: isSecond ? 'TESTEMUNHA 2' : 'TESTEMUNHA 1',
+              slotClass: isSecond
+                ? 'signature-slot-witness-2'
+                : 'signature-slot-witness-1',
+              signerName: String(p.signer_name || '').trim(),
+              signedAt: p.signed_at,
+              signed:
+                String(p.status || '').toUpperCase() === 'SIGNED' &&
+                Boolean(p.signed_at),
+            };
+          });
+          stamps = stamps
+            .filter((s) => s.role !== 'SELLER')
+            .concat(vendorStamps, witnessStamps);
+        }
+        html = applyElectronicSignatureStampsToContractHtml(html, stamps);
+        if (isEstrelaDoSulSaleContractModel(contractModelForCert)) {
+          // Capa + instrumento: o stamper preenche o primeiro slot livre de cada papel.
+          html = applyElectronicSignatureStampsToContractHtml(html, stamps);
+        }
       }
-    } else {
+    } else if (!lfEstrela) {
       html = stripManualContractSignaturesForSignedPdf(html);
     }
 
@@ -2066,7 +2202,9 @@ export async function loadSaleContractPdfForSign(
       signature.vendor_signed_at,
     );
 
-    html += await buildSaleContractSignatureCertificateHtmlWithQr({
+    const companyVendorParty = useEstrelaPersonVendors ? estrelaVendorOrdered[0] || null : null;
+
+    const certificateHtml = await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
       projectName: String(
         project?.name || contractCtx?.project_name_snapshot || '',
@@ -2079,13 +2217,17 @@ export async function loadSaleContractPdfForSign(
       signerPhone: clientEvidence.phone !== 'Não informado' ? clientEvidence.phone : null,
       companyName,
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
-      representativeName: legacyAutoVendor
-        ? seller.representative
-        : signature.vendor_signer_name || seller.representative,
-      representativeCpf: legacyAutoVendor
-        ? seller.representativeCpf
-        : signature.vendor_signer_document || seller.representativeCpf,
-      vendorDocumentLabel: seller.representativeCpf ? 'CPF' : 'CNPJ',
+      representativeName: companyVendorParty
+        ? String(companyVendorParty.signer_name || seller.representative || '')
+        : legacyAutoVendor
+          ? seller.representative
+          : signature.vendor_signer_name || seller.representative,
+      representativeCpf: companyVendorParty
+        ? companyVendorParty.signer_cpf || seller.representativeCpf
+        : legacyAutoVendor
+          ? seller.representativeCpf
+          : signature.vendor_signer_document || seller.representativeCpf,
+      vendorDocumentLabel: companyVendorParty?.signer_cpf || seller.representativeCpf ? 'CPF' : 'CNPJ',
       signatureStatus: 'ASSINADO ELETRONICAMENTE',
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,
@@ -2095,13 +2237,21 @@ export async function loadSaleContractPdfForSign(
       device: clientEvidence.device,
       approxLocation: clientEvidence.location,
       signatureEventId: clientEvidence.signatureEventId,
-      vendorIpAddress: legacyAutoVendor
-        ? signature.ip_address
-        : signature.vendor_ip_address,
-      vendorSignedAt: legacyAutoVendor
-        ? signature.signed_at
-        : signature.vendor_signed_at,
-      vendorEmail: legacyAutoVendor ? null : signature.vendor_signer_email,
+      vendorIpAddress: companyVendorParty
+        ? companyVendorParty.ip_address
+        : legacyAutoVendor
+          ? signature.ip_address
+          : signature.vendor_ip_address,
+      vendorSignedAt: companyVendorParty
+        ? companyVendorParty.signed_at
+        : legacyAutoVendor
+          ? signature.signed_at
+          : signature.vendor_signed_at,
+      vendorEmail: companyVendorParty
+        ? companyVendorParty.signer_email
+        : legacyAutoVendor
+          ? null
+          : signature.vendor_signer_email,
       vendorPhone: legacyAutoVendor ? null : vendorEvidence.phone,
       vendorBrowser: legacyAutoVendor ? null : vendorEvidence.browser,
       vendorOs: legacyAutoVendor ? null : vendorEvidence.os,
@@ -2147,6 +2297,13 @@ export async function loadSaleContractPdfForSign(
         .map((p) => ({
           name: String(p.signer_name || ''),
           cpf: p.signer_cpf,
+          roleTitle:
+            readBuyerRepresentatives(
+              (ctx?.customer as Record<string, unknown> | null) || null,
+            ).find(
+              (rep) =>
+                onlyDigits(rep.cpf) === onlyDigits(String(p.signer_cpf || '')),
+            )?.role_title || null,
           email: p.signer_email,
           phone: p.signer_phone,
           signedAt: p.signed_at,
@@ -2159,35 +2316,87 @@ export async function loadSaleContractPdfForSign(
           approxLocation: readPartyLocation(p),
         })),
       personVendorCards,
+      keepCompanyVendorCard: useEstrelaPersonVendors,
       intervenientCard,
       witnessCards,
       omitPartyEvidenceCards: isMundoNovoSaleContractModel(contractModelForCert),
     });
+    if (lfEstrela) {
+      lfCertificateHtml = certificateHtml;
+    } else {
+      html = isEstrelaDoSulSaleContractModel(contractModelForCert)
+        ? insertCertificateAfterEstrelaInstrumentPack(html, certificateHtml)
+        : html + certificateHtml;
 
-    if (
-      isMundoNovoSaleContractModel(contractModelForCert) &&
-      html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
-    ) {
-      const { applyMundoNovoElectronicCertificateNewPage } = await import(
-        '@/lib/mundoNovoContractElectronicSignatures'
-      );
-      html = applyMundoNovoElectronicCertificateNewPage(html);
+      if (
+        isMundoNovoSaleContractModel(contractModelForCert) &&
+        html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+      ) {
+        const { applyMundoNovoElectronicCertificateNewPage } = await import(
+          '@/lib/mundoNovoContractElectronicSignatures'
+        );
+        html = applyMundoNovoElectronicCertificateNewPage(html);
+      }
+
+      // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.
+      const moved = extractContractInstitutionalFooter(html);
+      html = moved.html + (moved.footerHtml || '');
     }
-
-    // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.
-    const moved = extractContractInstitutionalFooter(html);
-    html = moved.html + (moved.footerHtml || '');
   }
 
   try {
     const { buildContractPdfChromeFromTenant } = await import(
       '@/lib/contractPdfPostProcess'
     );
+    const chromeTenant = isEstrelaDoSulSaleContractModel(contractModelForCert)
+      ? { ...(tenant || {}), contract_model: 'ESTRELA_DO_SUL' }
+      : tenant;
     const chrome = buildContractPdfChromeFromTenant(
-      tenant,
+      chromeTenant,
       contractNumber,
       logoBase64,
     );
+    if (lfEstrela) {
+      const { buildLfEstrelaSignedSaleContractPdf } = await import(
+        '@/lib/lfEstrelaSignedPdf'
+      );
+      const saleId = String(
+        contractRow.sale_id || options?.signContext?.contract?.sale_id || '',
+      ).trim();
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: 'physical_pdf_lookup',
+        requestedContractId: contractId,
+        lookupContractId: contractId,
+        signatureProcessId: signatureProcessId || null,
+        saleId: saleId || null,
+      });
+      const pdf = await buildLfEstrelaSignedSaleContractPdf({
+        supabaseAdmin,
+        contractId,
+        contractNumber,
+        tenantId,
+        tenant,
+        company:
+          (options?.signContext?.company as Record<string, unknown> | null) ||
+          tenant,
+        originalHtml,
+        chrome,
+        signature: options?.signature || null,
+        certificateHtml: lfCertificateHtml,
+        saleId,
+        version: Number(contractRow.version || 0) || null,
+        projectId: String(contractRow.project_id || '').trim() || null,
+        lotId: String(contractRow.block_id || '').trim() || null,
+        buyerId: String(contractRow.customer_id || '').trim() || null,
+      });
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: 'append',
+        requestedContractId: contractId,
+        pagesHint: pdf.byteLength,
+      });
+      return { pdf, contractNumber };
+    }
+
     const pdf =
       isMundoNovoSaleContractModel(contractModelForCert) &&
       html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
@@ -2207,20 +2416,31 @@ export async function getLatestSignedSaleSignature(
   supabaseAdmin: SupabaseClient,
   contractId: string,
 ): Promise<ContractSignatureRow | null> {
+  const { getContractSignedParties } = await import(
+    '@/lib/saleContractSignedParties'
+  );
   const { data } = await supabaseAdmin
-    .from('contract_signatures')
-    .select('*')
-    .eq('contract_id', contractId)
-    .eq('signature_status', 'SIGNED')
-    .order('signed_at', { ascending: false })
-    .limit(10);
-  const row = excludeTerminationSignatures((data || []) as ContractSignatureRow[])[0];
-  return row || null;
+    .from('contracts')
+    .select('id, sale_id, regenerated_from, contract_number')
+    .eq('id', contractId)
+    .maybeSingle();
+  const row = (data || {}) as {
+    sale_id?: string | null;
+    regenerated_from?: string | null;
+    contract_number?: string | null;
+  };
+  const resolved = await getContractSignedParties(supabaseAdmin, contractId, {
+    saleId: row.sale_id || null,
+    regeneratedFrom: row.regenerated_from || null,
+    contractNumber: row.contract_number || null,
+  });
+  return resolved.process;
 }
 
 export async function loadSaleSignPageContext(
   supabaseAdmin: SupabaseClient,
   signature: ContractSignatureRow,
+  options?: { documentContractId?: string | null },
 ): Promise<{
   contract: Record<string, unknown>;
   customer: Record<string, unknown> | null;
@@ -2228,14 +2448,42 @@ export async function loadSaleSignPageContext(
   project: Record<string, unknown> | null;
   company: Record<string, unknown> | null;
 }> {
-  const { data: contract } = await supabaseAdmin
+  const signatureProcessId = String(signature.id || '').trim();
+  const lookupContractId = String(
+    options?.documentContractId || signature.contract_id || '',
+  ).trim();
+
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: String(options?.documentContractId || signature.contract_id || ''),
+    lookupContractId,
+    signatureProcessId,
+    saleId: null,
+    physicalPdfContractId: lookupContractId,
+    regeneratedFrom: null,
+    stage: 'contract_lookup',
+  });
+
+  if (!lookupContractId) {
+    throw new SaleContractSignatureError(
+      `[stage=contract_lookup] Contrato não encontrado. lookupContractId vazio (signatureProcessId=${signatureProcessId}).`,
+    );
+  }
+  if (signatureProcessId && lookupContractId === signatureProcessId) {
+    throw new SaleContractSignatureError(
+      `[stage=contract_lookup] Contrato não encontrado. lookup usou o ID do processo de assinatura (${signatureProcessId}) em vez de contracts.id.`,
+    );
+  }
+
+  const { data: contract, error } = await supabaseAdmin
     .from('contracts')
     .select('*')
-    .eq('id', signature.contract_id)
-    .single();
+    .eq('id', lookupContractId)
+    .maybeSingle();
 
-  if (!contract) {
-    throw new SaleContractSignatureError('Contrato não encontrado.');
+  if (error || !contract) {
+    throw new SaleContractSignatureError(
+      `[stage=contract_lookup] Contrato não encontrado. lookupContractId=${lookupContractId} signatureProcessId=${signatureProcessId} supabase=${error?.message || 'sem linha'}.`,
+    );
   }
 
   const contractRow = contract as Record<string, unknown>;

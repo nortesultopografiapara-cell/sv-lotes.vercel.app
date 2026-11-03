@@ -13,5 +13,6 @@ tsconfig.tsbuildinfo
 
 # Local scratch / previews (não versionar)
 tmp/
+scripts/_fixtures/estrela-do-sul/contrato-real-*
 
 .env.company-export.apply

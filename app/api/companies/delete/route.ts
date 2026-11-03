@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { clearPrimaryAdminForCompanyTeardown } from '@/lib/companyPrimaryAdmin';
 
 export async function DELETE(request: Request) {
   try {
@@ -197,6 +198,7 @@ export async function DELETE(request: Request) {
     }
 
     // 10. Users da empresa
+    await clearPrimaryAdminForCompanyTeardown(supabaseAdmin, companyId);
     const { data: users } = await supabaseAdmin.from('users').select('id, role, email').eq('tenant_id', companyId);
     if (users && users.length > 0) {
        for (const u of users) {

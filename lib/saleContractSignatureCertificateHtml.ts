@@ -91,7 +91,8 @@ export type SaleContractSignatureCertificateInput = {
   omitPartyEvidenceCards?: boolean;
   /**
    * Cards PF de múltiplos VENDOR (ARAGUAIA).
-   * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE.
+   * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE
+   * — salvo keepCompanyVendorCard (LF: empresa + 2º vendedor).
    */
   personVendorCards?: Array<{
     name: string;
@@ -126,6 +127,11 @@ export type SaleContractSignatureCertificateInput = {
     approxLocation?: string | null;
     signatureEventId?: string | null;
   } | null;
+  /**
+   * LF Imóveis: mantém o card EMPRESA/REPRESENTANTE e acrescenta os
+   * personVendorCards (2º vendedor). Araguaia/Mundo Novo não usam.
+   */
+  keepCompanyVendorCard?: boolean;
   /** Cards TESTEMUNHA 1 / 2 (ARAGUAIA V2). */
   witnessCards?: Array<{
     role: 'WITNESS_1' | 'WITNESS_2' | string;
@@ -611,10 +617,12 @@ function buildVendorCardsHtml(input: SaleContractSignatureCertificateInput): str
   const personCards = Array.isArray(input.personVendorCards)
     ? input.personVendorCards.filter((c) => String(c?.name || '').trim())
     : [];
-  if (personCards.length > 0) {
-    return personCards.map((c) => buildPersonVendorCard(c)).join('\n');
+  const personsHtml = personCards.map((c) => buildPersonVendorCard(c)).join('\n');
+  if (personCards.length > 0 && !input.keepCompanyVendorCard) {
+    return personsHtml;
   }
-  return buildVendorCard(input);
+  const companyHtml = buildVendorCard(input);
+  return personsHtml ? `${companyHtml}\n${personsHtml}` : companyHtml;
 }
 
 function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
@@ -1030,4 +1038,42 @@ export function buildSaleContractSignatureCertificateHtml(
     </div>
     </div>
     </div>`;
+}
+
+/**
+ * LF assinado: coloca o certificado imediatamente após o fecho do instrumento,
+ * para o Chromium poder manter fecho + rastreabilidade na mesma página.
+ * Sem efeito no PDF físico (não há certificado).
+ */
+export function insertCertificateAfterEstrelaInstrumentPack(
+  html: string,
+  certHtml: string,
+): string {
+  if (!html.includes('sv-contract-estrela-do-sul') || !certHtml.trim()) {
+    return html + certHtml;
+  }
+  const start = html.lastIndexOf(
+    '<div class="contract-closing-and-signatures--estrela"',
+  );
+  if (start < 0) return html + certHtml;
+
+  let depth = 0;
+  let i = start;
+  while (i < html.length) {
+    const nextOpen = html.indexOf('<div', i);
+    const nextClose = html.indexOf('</div>', i);
+    if (nextClose < 0) break;
+    if (nextOpen >= 0 && nextOpen < nextClose) {
+      depth += 1;
+      i = nextOpen + 4;
+      continue;
+    }
+    depth -= 1;
+    const end = nextClose + 6;
+    if (depth === 0) {
+      return `${html.slice(0, end)}\n${certHtml}${html.slice(end)}`;
+    }
+    i = end;
+  }
+  return html + certHtml;
 }

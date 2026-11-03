@@ -21,13 +21,12 @@ import {
   createProjectThroughApi,
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
-import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route, ClipboardList } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
-import { ProjectRevenueSplitPanel } from '@/components/projects/ProjectRevenueSplitPanel';
+import { GisProjectFormModal } from '@/components/projects/GisProjectFormModal';
 import { MemorialGenerateModal } from '@/components/map/MemorialGenerateModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
@@ -53,11 +52,23 @@ import {
   projectToFormInitialData,
 } from '@/lib/project-form';
 import {
-  SALE_CONTRACT_MODEL_LABELS,
-  SALE_CONTRACT_MODEL_OPTIONS,
+  emptyLfContractConfigForm,
+  type LfContractConfigFormState,
+} from '@/lib/lfImoveisContractConfig';
+import {
   normalizeSaleContractModel,
   type SaleContractModel,
 } from '@/lib/contractModel';
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
+import {
+  engineContractModelForCustomOverlay,
+  formatProjectCustomContractValue,
+  parseProjectCustomContractModelId,
+  persistProjectCustomContractDefault,
+  queryPublishedCustomModelsLinkedToProject,
+  resolveProjectCompanyUuid,
+  type ProjectCustomContractOption,
+} from '@/lib/projectCustomContractModels';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
@@ -156,8 +167,9 @@ import {
 import {
   buildTxtImportAuditDescription,
   lotNumberKey,
-  parsePricePerM2Input,
   resolveImportedLotPrice,
+  resolveTxtImportPricingInput,
+  type TxtImportPricingMode,
 } from '@/lib/txtImportLotPricing';
 import {
   computeGisMapPageOverlayOpen,
@@ -384,6 +396,7 @@ export default function MapPage() {
       setGisSelectedProject({
         id: selectedProject.id,
         name: selectedProject.name,
+        contractModel: selectedProject.contract_model || selectedProject.contractModel || null,
       });
     } else {
       clearGisSelectedProject();
@@ -477,6 +490,9 @@ export default function MapPage() {
   const [importingTxt, setImportingTxt] = useState(false);
   const [importTxtUtmZone, setImportTxtUtmZone] = useState('22S');
   const [importTxtPricePerM2, setImportTxtPricePerM2] = useState('');
+  const [importTxtUnitPrice, setImportTxtUnitPrice] = useState('');
+  const [importTxtPricingMode, setImportTxtPricingMode] =
+    useState<TxtImportPricingMode>('AREA');
   const [importTxtOverwritePrices, setImportTxtOverwritePrices] = useState(false);
   const [importTxtIsReimport, setImportTxtIsReimport] = useState(false);
 
@@ -559,8 +575,12 @@ export default function MapPage() {
   const [mundoNovoSellerContacts, setMundoNovoSellerContacts] = useState<
     Array<{ order: number; name: string; email: string; phone: string }>
   >([]);
+  const [lfContractConfig, setLfContractConfig] = useState<LfContractConfigFormState>(
+    emptyLfContractConfigForm(),
+  );
   const [companyDefaultContractModel, setCompanyDefaultContractModel] =
     useState<SaleContractModel>('PADRAO');
+  const [companySecondVendorJson, setCompanySecondVendorJson] = useState<unknown>(null);
   const [projectFinancialAccounts, setProjectFinancialAccounts] = useState<
     Array<{
       id: string;
@@ -575,9 +595,12 @@ export default function MapPage() {
   >([]);
   const [projectFormSubmitting, setProjectFormSubmitting] = useState(false);
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
+  const [projectCustomContractModels, setProjectCustomContractModels] = useState<
+    ProjectCustomContractOption[]
+  >([]);
 
   useEffect(() => {
-    if (!isProjectFormOpen || !saasTenantId) return;
+    if (!isProjectFormOpen) return;
     let cancelled = false;
     void fetch('/api/finance/financial-accounts', { credentials: 'include' })
       .then((res) => res.json().catch(() => ({})))
@@ -588,24 +611,61 @@ export default function MapPage() {
       .catch(() => {
         if (!cancelled) setProjectFinancialAccounts([]);
       });
-    void supabase
-      .from('companies')
-      .select('contract_model')
-      .eq('id', saasTenantId)
-      .maybeSingle()
-      .then(({ data }) => {
+    if (saasTenantId) {
+      void supabase
+        .from('companies')
+        .select('contract_model, contract_second_vendor_json')
+        .eq('id', saasTenantId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled) return;
+          setCompanyDefaultContractModel(
+            normalizeSaleContractModel(data?.contract_model),
+          );
+          setCompanySecondVendorJson(data?.contract_second_vendor_json ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCompanyDefaultContractModel('PADRAO');
+            setCompanySecondVendorJson(null);
+          }
+        });
+    }
+    if (projectFormMode === 'edit' && editingProject?.id) {
+      const engineValue = String(editingProject.contract_model || '').trim();
+      const projectId = String(editingProject.id);
+      const projectCompanyUuid = resolveProjectCompanyUuid(editingProject);
+      void queryPublishedCustomModelsLinkedToProject(
+        supabase,
+        projectCompanyUuid,
+        projectId,
+      ).then((result) => {
         if (cancelled) return;
-        setCompanyDefaultContractModel(
-          normalizeSaleContractModel(data?.contract_model),
+        if (isDevelopHomologRuntime()) {
+          console.info('[CUSTOM CONTRACT MODELS]', {
+            projectId,
+            projectCompanyUuid,
+            saasTenantId,
+            rows: result.rows,
+            error: result.error,
+          });
+        }
+        setProjectCustomContractModels(result.rows);
+        const defaultCustom = result.rows.find((row) => row.isProjectDefault);
+        if (!defaultCustom) return;
+        setNewProjectContractModel((current) =>
+          current === engineValue || current === ''
+            ? formatProjectCustomContractValue(defaultCustom.id)
+            : current,
         );
-      })
-      .catch(() => {
-        if (!cancelled) setCompanyDefaultContractModel('PADRAO');
       });
+    } else {
+      setProjectCustomContractModels([]);
+    }
     return () => {
       cancelled = true;
     };
-  }, [isProjectFormOpen, saasTenantId]);
+  }, [isProjectFormOpen, saasTenantId, projectFormMode, editingProject]);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
   /** Patch in-place no GISMap após Identificar Frentes (sem refreshKey/fitBounds). */
@@ -905,6 +965,8 @@ export default function MapPage() {
     setImportTxtQuadra(normalizeQuadraBlockName(blockName));
     setImportTxtFile(null);
     setImportTxtPricePerM2('');
+    setImportTxtUnitPrice('');
+    setImportTxtPricingMode('AREA');
     setImportTxtOverwritePrices(false);
     setImportTxtIsReimport(true);
     setIsImportTxtModalOpen(true);
@@ -1886,6 +1948,7 @@ export default function MapPage() {
     setNewProjectFinancialAccountId(initialData.financial_account_id);
     setNewProjectContractModel(initialData.contract_model);
     setMundoNovoSellerContacts(initialData.seller_party_contacts || []);
+    setLfContractConfig(initialData.lf_contract_config || emptyLfContractConfigForm());
   };
 
   const resetProjectForm = () => {
@@ -1897,6 +1960,7 @@ export default function MapPage() {
     setProjectFormMode('create');
     setEditingProject(null);
     setProjectFeedback(null);
+    setProjectCustomContractModels([]);
     resetProjectForm();
   };
 
@@ -1978,6 +2042,14 @@ export default function MapPage() {
       const impersonatingTenantId =
         typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null;
 
+      const customModelId = parseProjectCustomContractModelId(newProjectContractModel);
+      const persistEngineModel = customModelId
+        ? engineContractModelForCustomOverlay(editingProject.contract_model)
+        : newProjectContractModel || null;
+      const effectiveEngineModel = normalizeSaleContractModel(
+        persistEngineModel || companyDefaultContractModel,
+      );
+
       const { project: saved } = await updateProjectThroughApi(editingProject.id, {
         name,
         city,
@@ -1988,14 +2060,24 @@ export default function MapPage() {
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
         financial_account_id: newProjectFinancialAccountId || null,
-        contract_model: newProjectContractModel || null,
+        contract_model: persistEngineModel,
         seller_party_contacts:
-          normalizeSaleContractModel(
-            newProjectContractModel || companyDefaultContractModel,
-          ) === 'MUNDO_NOVO'
-            ? mundoNovoSellerContacts
+          effectiveEngineModel === 'MUNDO_NOVO' ? mundoNovoSellerContacts : undefined,
+        lf_contract_config:
+          effectiveEngineModel === 'ESTRELA_DO_SUL' || Boolean(customModelId)
+            ? lfContractConfig
             : undefined,
       });
+
+      const companyIdForLink = resolveProjectCompanyUuid(editingProject) || String(saasTenantId || '');
+      const hadCustomDefault = projectCustomContractModels.some((row) => row.isProjectDefault);
+      if (companyIdForLink && (customModelId || hadCustomDefault)) {
+        await persistProjectCustomContractDefault(supabase, {
+          companyId: companyIdForLink,
+          projectId: String(editingProject.id),
+          customModelId,
+        });
+      }
 
       const updatedFields = {
         name: String(saved.name ?? name),
@@ -2015,6 +2097,12 @@ export default function MapPage() {
           (newProjectContractModel || null),
         seller_parties_json:
           saved.seller_parties_json ?? editingProject.seller_parties_json,
+        lf_contract_config_json: Object.prototype.hasOwnProperty.call(
+          saved,
+          'lf_contract_config_json',
+        )
+          ? saved.lf_contract_config_json
+          : editingProject.lf_contract_config_json,
       };
 
       setProjects((prev) =>
@@ -2097,6 +2185,12 @@ export default function MapPage() {
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
         contract_model: newProjectContractModel || null,
+        lf_contract_config:
+          normalizeSaleContractModel(
+            newProjectContractModel || companyDefaultContractModel,
+          ) === 'ESTRELA_DO_SUL'
+            ? lfContractConfig
+            : undefined,
       });
 
       await reloadSaas();
@@ -2375,13 +2469,17 @@ export default function MapPage() {
          return;
       }
 
-      const priceParse = parsePricePerM2Input(importTxtPricePerM2);
-      if (!priceParse.ok) {
-        alert(priceParse.error);
+      const pricingParse = resolveTxtImportPricingInput(
+        importTxtPricingMode,
+        importTxtPricePerM2,
+        importTxtUnitPrice,
+      );
+      if (!pricingParse.ok) {
+        alert(pricingParse.error);
         setImportingTxt(false);
         return;
       }
-      const pricePerM2 = priceParse.value;
+      const { pricingMode, pricePerM2, unitPrice } = pricingParse;
 
       const text = await importTxtFile.text();
       const zoneNum = parseInt(importTxtUtmZone.replace(/\D/g, ''));
@@ -2542,12 +2640,15 @@ export default function MapPage() {
         total: blocksParsed.length,
         comGeometria: lotsWithGeometry.length,
         semGeometria: lotsWithoutGeometry,
+        pricingMode,
         pricePerM2,
+        unitPrice,
         overwriteExistingPrices: importTxtOverwritePrices,
         isReimport,
       });
 
       let pricedFromM2Count = 0;
+      let pricedFromUnitCount = 0;
       let preservedPriceCount = 0;
 
       const blocksToInsert = blocksParsed.map((b) => {
@@ -2558,16 +2659,19 @@ export default function MapPage() {
           const finalPrice = resolveImportedLotPrice({
             areaM2: finalArea,
             pricePerM2,
+            unitPrice,
+            pricingMode,
             existingPrice,
             overwriteExistingPrices: importTxtOverwritePrices,
             hadExistingLot,
           });
 
-          if (
-            pricePerM2 != null &&
+          const appliedOfferedPrice =
             finalPrice != null &&
-            (!hadExistingLot || importTxtOverwritePrices || existingPrice == null)
-          ) {
+            (!hadExistingLot || importTxtOverwritePrices || existingPrice == null);
+          if (pricingMode === 'UNIT' && unitPrice != null && appliedOfferedPrice) {
+            pricedFromUnitCount += 1;
+          } else if (pricingMode === 'AREA' && pricePerM2 != null && appliedOfferedPrice) {
             pricedFromM2Count += 1;
           } else if (
             hadExistingLot &&
@@ -2690,14 +2794,18 @@ export default function MapPage() {
                   action: 'lot_created',
                   title: 'Lote importado (TXT Civil 3D)',
                   description:
-                    pricePerM2 != null
+                    pricingMode === 'UNIT' && unitPrice != null
+                      ? `Valor por unidade: ${Number(lotRow.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (independente da área de ${Number(lotRow.area).toLocaleString('pt-BR')} m²)`
+                      : pricePerM2 != null
                       ? `Valor calculado: ${Number(lotRow.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${Number(lotRow.area).toLocaleString('pt-BR')} m² × R$ ${pricePerM2.toFixed(2).replace('.', ',')}/m²)`
                       : 'Importado sem preço por m²',
                   newData: {
                     price: lotRow.price,
                     area: lotRow.area,
                     source_import: 'TXT_CIVIL3D',
+                    pricing_mode: pricingMode,
                     price_per_m2: pricePerM2,
+                    unit_price: unitPrice,
                   },
                   source: 'gis_map',
                 });
@@ -2716,10 +2824,13 @@ export default function MapPage() {
           description: buildTxtImportAuditDescription({
             quadraName,
             lotCount: blocksToInsert.length,
+            pricingMode,
             pricePerM2,
+            unitPrice,
             overwriteExistingPrices: importTxtOverwritePrices,
             isReimport,
             pricedFromM2Count,
+            pricedFromUnitCount,
             preservedPriceCount,
           }),
           reference_id: selectedProject.id,
@@ -2745,6 +2856,8 @@ export default function MapPage() {
       setImportTxtFile(null);
       setImportTxtQuadra('');
       setImportTxtPricePerM2('');
+      setImportTxtUnitPrice('');
+      setImportTxtPricingMode('AREA');
       setImportTxtOverwritePrices(false);
       setImportTxtIsReimport(false);
       setMapRefreshKey(prev => prev + 1);
@@ -3190,223 +3303,38 @@ export default function MapPage() {
   };
 
   const renderProjectFormModal = () => (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-        <div className={`bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col ${projectFormMode === 'edit' ? 'max-w-2xl' : 'max-w-lg'}`}>
-          <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-            <h3 className="font-bold text-[var(--text-primary)] text-lg">
-              {projectFormMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
-            </h3>
-            <button
-              type="button"
-              onClick={closeProjectForm}
-              className="text-[var(--color-text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="p-6 flex flex-col gap-4 overflow-y-auto">
-          <form onSubmit={handleProjectFormSubmit} className="flex flex-col gap-4">
-            {projectFeedback && (
-              <div
-                role="alert"
-                className={`rounded-lg border px-3 py-2 text-sm ${
-                  projectFeedback.type === 'success'
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-red-500/40 bg-red-500/10 text-red-300'
-                }`}
-              >
-                {projectFeedback.message}
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Nome do Projeto *
-              </label>
-              <input
-                type="text"
-                required
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Ex: Loteamento Bosque das Árvores"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                  Cidade *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newProjectCity}
-                  onChange={(e) => setNewProjectCity(e.target.value)}
-                  placeholder="Ex: Parauapebas"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                  UF *
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={2}
-                  value={newProjectUf}
-                  onChange={(e) => setNewProjectUf(e.target.value.toUpperCase())}
-                  placeholder="Ex: PA"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)] uppercase"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Bairro/Localidade
-              </label>
-              <input
-                type="text"
-                value={newProjectNbhd}
-                onChange={(e) => setNewProjectNbhd(e.target.value)}
-                placeholder="Ex: Centro"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Endereço/Referência
-              </label>
-              <input
-                type="text"
-                value={newProjectAddr}
-                onChange={(e) => setNewProjectAddr(e.target.value)}
-                placeholder="Endereço principal da área"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Município / Foro do Contrato
-              </label>
-              <input
-                type="text"
-                value={newProjectForum}
-                onChange={(e) => setNewProjectForum(e.target.value)}
-                placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Conta financeira padrão do empreendimento
-              </label>
-              <select
-                value={newProjectFinancialAccountId}
-                onChange={(e) => setNewProjectFinancialAccountId(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              >
-                <option value="">Usar conta padrão da empresa</option>
-                {projectFinancialAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {formatFinancialAccountLabel({
-                      name: account.name,
-                      accountType: (account.accountType as 'IMOBILIARIA') || 'IMOBILIARIA',
-                      beneficiaryName: account.beneficiaryName,
-                      provider: account.provider ?? null,
-                    })}
-                    {account.isDefault ? ' (Padrão)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Modelo de contrato padrão do empreendimento
-              </label>
-              <select
-                value={newProjectContractModel}
-                onChange={(e) => setNewProjectContractModel(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              >
-                <option value="">
-                  Usar modelo padrão da empresa (
-                  {SALE_CONTRACT_MODEL_LABELS[companyDefaultContractModel]})
-                </option>
-                {SALE_CONTRACT_MODEL_OPTIONS.map((model) => (
-                  <option key={model} value={model}>
-                    {SALE_CONTRACT_MODEL_LABELS[model]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {normalizeSaleContractModel(
-              newProjectContractModel || companyDefaultContractModel,
-            ) === 'MUNDO_NOVO' &&
-              mundoNovoSellerContacts.length > 0 && (
-              <div className="rounded-lg border border-[var(--color-border)] p-3 flex flex-col gap-3">
-                <p className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
-                  Contato dos PROMITENTES VENDEDORES (e-sign)
-                </p>
-                {mundoNovoSellerContacts.map((seller, idx) => (
-                  <div key={`${seller.order}-${seller.name}`} className="flex flex-col gap-2">
-                    <p className="text-sm font-semibold text-[var(--text-primary)]">
-                      {seller.name}
-                    </p>
-                    <input
-                      type="email"
-                      value={seller.email}
-                      onChange={(e) =>
-                        setMundoNovoSellerContacts((prev) =>
-                          prev.map((row, rowIdx) =>
-                            rowIdx === idx ? { ...row, email: e.target.value } : row,
-                          ),
-                        )
-                      }
-                      placeholder="E-mail"
-                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-                    />
-                    <input
-                      type="tel"
-                      value={seller.phone}
-                      onChange={(e) =>
-                        setMundoNovoSellerContacts((prev) =>
-                          prev.map((row, rowIdx) =>
-                            rowIdx === idx ? { ...row, phone: e.target.value } : row,
-                          ),
-                        )
-                      }
-                      placeholder="Telefone / WhatsApp"
-                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={projectFormSubmitting}
-              className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-primary)] font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
-            >
-              {projectFormSubmitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-                     ) : projectFormMode === 'edit' ? (
-                       'Salvar Alterações'
-                     ) : (
-                       'Criar Projeto'
-                     )}
-            </button>
-          </form>
-            {projectFormMode === 'edit' && editingProject?.id ? (
-              <ProjectRevenueSplitPanel
-                projectId={editingProject.id}
-                projectName={newProjectName}
-                accounts={projectFinancialAccounts}
-              />
-            ) : null}
-          </div>
-        </div>
-      </div>
+    <GisProjectFormModal
+      mode={projectFormMode}
+      feedback={projectFeedback}
+      submitting={projectFormSubmitting}
+      name={newProjectName}
+      city={newProjectCity}
+      uf={newProjectUf}
+      neighborhood={newProjectNbhd}
+      address={newProjectAddr}
+      forumCity={newProjectForum}
+      financialAccountId={newProjectFinancialAccountId}
+      contractModel={newProjectContractModel}
+      companyDefaultContractModel={companyDefaultContractModel}
+      customContractModels={projectCustomContractModels}
+      financialAccounts={projectFinancialAccounts}
+      mundoNovoSellerContacts={mundoNovoSellerContacts}
+      lfContractConfig={lfContractConfig}
+      companySecondVendorJson={companySecondVendorJson}
+      editingProjectId={editingProject?.id ?? null}
+      onClose={closeProjectForm}
+      onSubmit={handleProjectFormSubmit}
+      onNameChange={setNewProjectName}
+      onCityChange={setNewProjectCity}
+      onUfChange={setNewProjectUf}
+      onNeighborhoodChange={setNewProjectNbhd}
+      onAddressChange={setNewProjectAddr}
+      onForumCityChange={setNewProjectForum}
+      onFinancialAccountIdChange={setNewProjectFinancialAccountId}
+      onContractModelChange={setNewProjectContractModel}
+      onMundoNovoSellerContactsChange={setMundoNovoSellerContacts}
+      onLfContractConfigChange={setLfContractConfig}
+    />
   );
 
   const projectFormPortal =
@@ -4042,6 +3970,45 @@ export default function MapPage() {
 
                     <div>
                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                        Forma de precificação
+                      </label>
+                      <div
+                        role="radiogroup"
+                        aria-label="Forma de precificação"
+                        className="grid grid-cols-2 gap-2"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={importTxtPricingMode === 'AREA'}
+                          onClick={() => setImportTxtPricingMode('AREA')}
+                          className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                            importTxtPricingMode === 'AREA'
+                              ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--text-primary)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--text-secondary)] hover:bg-[var(--color-background)]/80'
+                          }`}
+                        >
+                          Por m²
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={importTxtPricingMode === 'UNIT'}
+                          onClick={() => setImportTxtPricingMode('UNIT')}
+                          className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                            importTxtPricingMode === 'UNIT'
+                              ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--text-primary)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--text-secondary)] hover:bg-[var(--color-background)]/80'
+                          }`}
+                        >
+                          Por unidade
+                        </button>
+                      </div>
+                    </div>
+
+                    {importTxtPricingMode === 'AREA' ? (
+                    <div>
+                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
                         Preço por m² (R$)
                       </label>
                       <input
@@ -4053,9 +4020,27 @@ export default function MapPage() {
                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
                       />
                       <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-relaxed">
-                        Se informado, o sistema calculará automaticamente o valor de cada lote com base na área importada.
+                        O valor de cada lote será calculado com base na área importada.
                       </p>
                     </div>
+                    ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                        Preço por unidade / lote (R$)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={importTxtUnitPrice}
+                        onChange={(e) => setImportTxtUnitPrice(e.target.value)}
+                        placeholder="Ex: 50.000,00"
+                        className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+                      />
+                      <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-relaxed">
+                        Todos os lotes importados receberão este mesmo valor, independentemente da área.
+                      </p>
+                    </div>
+                    )}
 
                     {importTxtIsReimport && (
                       <label className="flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 cursor-pointer">
@@ -4066,7 +4051,9 @@ export default function MapPage() {
                           className="mt-0.5"
                         />
                         <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                          Atualizar valores dos lotes existentes com o preço por m² informado
+                          {importTxtPricingMode === 'UNIT'
+                            ? 'Atualizar valores dos lotes existentes com o preço por unidade informado'
+                            : 'Atualizar valores dos lotes existentes com o preço por m² informado'}
                         </span>
                       </label>
                     )}

@@ -35,6 +35,8 @@ import {
   normalizeAsaasRemoteStatus,
   RECEIPT_CANCELLED_STATUS,
   SALE_CANCELLED_STATUS,
+  RELEASE_PREVIEW_BANK_STATUS_NOTICE,
+  RELEASE_PREVIEW_BANK_STATUS_SOURCE,
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
   summarizeReleaseCharges,
@@ -59,6 +61,7 @@ import {
   type ImprovementsRecord,
 } from '@/lib/contract-termination/improvements';
 import {
+  assertReusableCalculatedSettlement,
   isAbsentSettlementQueryError,
   isSaleReleaseSettlementOperation,
   loadActiveReleaseSettlement,
@@ -91,6 +94,26 @@ import {
   type TerminationDocumentSnapshot,
 } from '@/lib/termination-documents';
 import { resolveRefundSchedule } from '@/lib/termination-documents/refundSchedule';
+import {
+  BANK_CANCEL_IN_PROGRESS_CODE,
+  BANK_CANCEL_IN_PROGRESS_STATUS,
+  RELEASE_BANK_CANCEL_BUDGET_MS,
+  bankCancelInProgressMessage,
+  isAsaasAlreadyGoneMessage,
+  isAsaasNetworkOrTimeoutMessage,
+  isAsaasPaidForbiddenMessage,
+  isAsaasRateLimitMessage,
+  shouldYieldBankCancel,
+} from '@/lib/finance/releaseLotBankCancelBudget';
+import {
+  RELEASE_IN_PROGRESS_CODE,
+  RELEASE_IN_PROGRESS_STATUS,
+  buildReleaseExecLock,
+  isReleaseExecLockHeld,
+  readReleaseExecLock,
+  releaseInProgressMessage,
+  withoutReleaseExecLock,
+} from '@/lib/finance/releaseLotExecutionLock';
 
 export type { ReleaseLotPreview };
 export { resolveBlockLotLabel, resolveBlockQuadraLabel };
@@ -454,42 +477,64 @@ function assertCanReleaseLot(role?: string | null): void {
   );
 }
 
+function isMissingColumnError(error: { message?: string; code?: string } | null): boolean {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    code === '42703' ||
+    message.includes('does not exist') ||
+    message.includes('schema cache') ||
+    message.includes('could not find')
+  );
+}
+
 /**
  * Carrega o lote (registro em `blocks`) com colunas reais do schema.
  * Quadra = block_name || name; Lote = number || lot_number.
  * Não seleciona `blocks.block` (coluna inexistente).
+ * Fallback de colunas: mesmo padrão de sales/receipts/contracts neste serviço.
  */
 async function loadBlock(
   admin: SupabaseClient,
   lotId: string,
 ): Promise<BlockRow> {
-  const { data, error } = await admin
-    .from('blocks')
-    .select(
-      'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block_name, name, number, lot_number',
-    )
-    .eq('id', lotId)
-    .maybeSingle();
+  const attempts = [
+    'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block_name, name, number, lot_number',
+    'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block_name, name, number',
+    'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, name, number',
+  ];
+  let lastError: { message?: string; details?: string; hint?: string; code?: string } | null =
+    null;
 
-  if (error) {
-    console.error('[releaseLot] LOAD_LOT_FAILED', {
-      lotId: lotId.slice(0, 8),
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code,
-    });
-    throw releaseErr(
-      'Não foi possível carregar os dados do lote.',
-      500,
-      'LOT_CONTEXT_LOAD_FAILED',
-      'load_lot',
-    );
+  for (const cols of attempts) {
+    const { data, error } = await admin
+      .from('blocks')
+      .select(cols)
+      .eq('id', lotId)
+      .maybeSingle();
+    if (!error) {
+      if (!data) {
+        throw releaseErr('Lote não encontrado.', 404, 'LOT_NOT_FOUND', 'load_lot');
+      }
+      return data as unknown as BlockRow;
+    }
+    lastError = error;
+    if (!isMissingColumnError(error)) break;
   }
-  if (!data) {
-    throw releaseErr('Lote não encontrado.', 404, 'LOT_NOT_FOUND', 'load_lot');
-  }
-  return data as BlockRow;
+
+  console.error('[releaseLot] LOAD_LOT_FAILED', {
+    lotId: lotId.slice(0, 8),
+    message: lastError?.message,
+    details: lastError?.details,
+    hint: lastError?.hint,
+    code: lastError?.code,
+  });
+  throw releaseErr(
+    'Não foi possível carregar os dados do lote.',
+    500,
+    'LOT_CONTEXT_LOAD_FAILED',
+    'load_lot',
+  );
 }
 
 async function assertLotTenantAccess(
@@ -850,26 +895,34 @@ function buildPreviewFromContext(params: {
   const openCancelableCharges =
     chargeSummary.openAsaasCharges + interSummary.openInterCharges;
 
-  const settlementPreview = buildTerminationSettlementPreview({
-    saleSnapshot: sale?.termination_policy_snapshot,
-    contractSnapshot: contract?.termination_policy_snapshot,
-    salePersistSource:
-      sale?.termination_policy_source != null
-        ? String(sale.termination_policy_source)
-        : null,
-    contractPersistSource:
-      contract?.termination_policy_source != null
-        ? String(contract.termination_policy_source)
-        : null,
-    saleContractModel:
-      sale?.contract_model != null ? String(sale.contract_model) : null,
-    contractContractModel:
-      contract?.contract_model != null ? String(contract.contract_model) : null,
-    receipts,
-    hasImprovements: false,
-    destination: 'REFUND_CUSTOMER',
-    exceptionOverride: null,
-  });
+  let settlementPreview: ReleaseLotPreview['settlementPreview'] = null;
+  try {
+    settlementPreview = buildTerminationSettlementPreview({
+      saleSnapshot: sale?.termination_policy_snapshot,
+      contractSnapshot: contract?.termination_policy_snapshot,
+      salePersistSource:
+        sale?.termination_policy_source != null
+          ? String(sale.termination_policy_source)
+          : null,
+      contractPersistSource:
+        contract?.termination_policy_source != null
+          ? String(contract.termination_policy_source)
+          : null,
+      saleContractModel:
+        sale?.contract_model != null ? String(sale.contract_model) : null,
+      contractContractModel:
+        contract?.contract_model != null ? String(contract.contract_model) : null,
+      receipts,
+      hasImprovements: false,
+      destination: 'REFUND_CUSTOMER',
+      exceptionOverride: null,
+    });
+  } catch (err) {
+    console.error(
+      '[releaseLot] SETTLEMENT_PREVIEW_FAILED',
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   const inadimplenciaSnap = buildInadimplenciaDefaultSnapshot(receipts, saleStatus);
 
@@ -920,6 +973,8 @@ function buildPreviewFromContext(params: {
     unpaidReceiptIds,
     paidReceiptIds,
     settlementPreview,
+    bankStatusSource: RELEASE_PREVIEW_BANK_STATUS_SOURCE,
+    bankStatusNotice: RELEASE_PREVIEW_BANK_STATUS_NOTICE,
   };
 }
 
@@ -956,57 +1011,13 @@ export async function getReleaseLotPreview(
     documentsPreserved: ctx.documentsPreserved,
   });
 
-  // Sync Asaas: conta apenas cobranças realmente canceláveis (PENDING/OVERDUE remoto).
-  if (preview.openChargeIds.length > 0) {
-    const asaasPlan = await resolveAsaasChargesForRelease(
-      admin,
-      companyId,
-      preview.openChargeIds,
-      { executeCancel: false },
-    );
-    preview.openChargeIds = asaasPlan.cancelableIds;
-    preview.openAsaasCharges = asaasPlan.cancelableIds.length;
-    preview.paidAsaasCharges += asaasPlan.preservedPaid;
-    preview.alreadyCanceledAsaasCharges +=
-      asaasPlan.alreadyCancelled + asaasPlan.preservedRefunded;
-    preview.asaasBlockedCharges = asaasPlan.failed.length;
-    preview.asaasBlockedDetails = asaasPlan.failed.map((f) => ({
-      chargeId: f.chargeId,
-      error: f.error,
-      localStatus: f.localStatus ?? null,
-      remoteStatus: f.remoteStatus ?? null,
-    }));
-    if (asaasPlan.preservedPaid > 0) {
-      preview.hasPreservedPayments = true;
-    }
-  }
-
-  // Sync Inter: situacao remota antes de contar canceláveis.
-  if (preview.openInterChargeIds.length > 0) {
-    const interPlan = await resolveInterChargesForRelease(
-      admin,
-      companyId,
-      preview.openInterChargeIds,
-      { executeCancel: false },
-    );
-    preview.openInterChargeIds = interPlan.cancelableIds;
-    preview.openInterCharges = interPlan.cancelableIds.length;
-    preview.paidInterCharges += interPlan.preservedPaid;
-    preview.alreadyCanceledInterCharges += interPlan.alreadyCancelled;
-    preview.interBlockedCharges = interPlan.failed.length;
-    preview.interBlockedDetails = interPlan.failed.map((f) => ({
-      chargeId: f.chargeId,
-      error: f.error,
-      localStatus: f.localStatus ?? null,
-      remoteStatus: f.remoteStatus ?? null,
-    }));
-    if (interPlan.preservedPaid > 0) {
-      preview.hasPreservedPayments = true;
-    }
-  }
-
+  // Preview usa status local. Sync remoto + cancelamento ficam no POST execute.
+  // Vendas Inter/Asaas com dezenas de boletos no GET estouram o timeout (HTML 504)
+  // e a UI cai no fallback "Falha ao carregar a prévia da liberação".
   preview.openCancelableCharges =
     preview.openAsaasCharges + preview.openInterCharges;
+  preview.bankStatusSource = RELEASE_PREVIEW_BANK_STATUS_SOURCE;
+  preview.bankStatusNotice = RELEASE_PREVIEW_BANK_STATUS_NOTICE;
 
   return preview;
 }
@@ -1017,6 +1028,8 @@ type AsaasReleaseProcessResult = {
   preservedPaid: number;
   preservedRefunded: number;
   alreadyCancelled: number;
+  timedOut: boolean;
+  remainingIds: string[];
   failed: Array<{
     chargeId: string;
     error: string;
@@ -1038,30 +1051,71 @@ async function resolveAsaasChargesForRelease(
   admin: SupabaseClient,
   companyId: string,
   candidateIds: string[],
-  options?: { executeCancel?: boolean },
+  options?: { executeCancel?: boolean; startedAtMs?: number; saleId?: string | null },
 ): Promise<AsaasReleaseProcessResult> {
   const executeCancel = options?.executeCancel === true;
+  const startedAtMs = options?.startedAtMs ?? Date.now();
   const cancelableIds: string[] = [];
   const failed: AsaasReleaseProcessResult['failed'] = [];
+  const remainingIds: string[] = [];
+  let timedOut = false;
   let cancelled = 0;
   let preservedPaid = 0;
   let preservedRefunded = 0;
   let alreadyCancelled = 0;
 
-  for (const chargeId of candidateIds) {
+  for (let index = 0; index < candidateIds.length; index += 1) {
+    const chargeId = candidateIds[index];
+    if (
+      executeCancel &&
+      shouldYieldBankCancel(startedAtMs, Date.now(), RELEASE_BANK_CANCEL_BUDGET_MS)
+    ) {
+      timedOut = true;
+      remainingIds.push(...candidateIds.slice(index));
+      console.warn('[releaseLot][asaas] yield_budget', {
+        remaining: remainingIds.length,
+        cancelled,
+      });
+      break;
+    }
     const { data: localRow } = await admin
       .from('company_asaas_charges')
-      .select('id, status, asaas_payment_id')
+      .select('id, status, asaas_payment_id, company_id, sale_id')
       .eq('id', chargeId)
       .eq('company_id', companyId)
       .maybeSingle();
 
     if (!localRow) {
       alreadyCancelled += 1;
+      console.log('[releaseLot][asaas] missing_local', {
+        chargeId: chargeId.slice(0, 8),
+      });
       continue;
     }
 
+    const rowCompanyId = String((localRow as { company_id?: string }).company_id || '');
+    const rowSaleId = String((localRow as { sale_id?: string }).sale_id || '');
     const localBefore = String((localRow as { status?: string }).status || '');
+    if (rowCompanyId && rowCompanyId !== companyId) {
+      failed.push({
+        chargeId,
+        error: 'Cobrança Asaas não pertence à empresa do lote.',
+        localStatus: localBefore,
+        remoteStatus: null,
+        disposition: 'block_non_removable',
+      });
+      continue;
+    }
+    if (options?.saleId && rowSaleId && rowSaleId !== options.saleId) {
+      failed.push({
+        chargeId,
+        error: 'Cobrança Asaas não pertence à venda do lote.',
+        localStatus: localBefore,
+        remoteStatus: null,
+        disposition: 'block_non_removable',
+      });
+      continue;
+    }
     const asaasPaymentId = String(
       (localRow as { asaas_payment_id?: string }).asaas_payment_id || '',
     );
@@ -1083,7 +1137,10 @@ async function resolveAsaasChargesForRelease(
     let remoteStatus: string | null = null;
     let disposition: ReleaseAsaasDisposition = 'block_non_removable';
 
-    try {
+    if (executeCancel && isLocalAsaasCancelCandidateStatus(localBefore)) {
+      remoteStatus = normalizeAsaasRemoteStatus(localBefore);
+      disposition = 'cancel';
+    } else try {
       const synced = await getCompanyChargeStatus(admin, companyId, chargeId);
       remoteStatus =
         normalizeAsaasRemoteStatus(synced.asaasRemoteStatus) ||
@@ -1153,8 +1210,35 @@ async function resolveAsaasChargesForRelease(
     try {
       await cancelCompanyCharge(admin, companyId, chargeId);
       cancelled += 1;
+      console.log('[releaseLot][asaas] cancelled', {
+        chargeId: chargeId.slice(0, 8),
+        asaasPaymentId,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (isAsaasRateLimitMessage(msg) || isAsaasNetworkOrTimeoutMessage(msg)) {
+        timedOut = true;
+        remainingIds.push(chargeId, ...candidateIds.slice(index + 1));
+        console.warn('[releaseLot][asaas] yield_network_or_limit', {
+          remaining: remainingIds.length,
+          network: isAsaasNetworkOrTimeoutMessage(msg),
+        });
+        break;
+      }
+      if (isAsaasPaidForbiddenMessage(msg)) {
+        preservedPaid += 1;
+        console.log('[releaseLot][asaas] preserve_paid_delete_rejected', {
+          chargeId: chargeId.slice(0, 8),
+        });
+        continue;
+      }
+      if (isAsaasAlreadyGoneMessage(msg)) {
+        alreadyCancelled += 1;
+        console.log('[releaseLot][asaas] already_gone', {
+          chargeId: chargeId.slice(0, 8),
+        });
+        continue;
+      }
       // Não repetir DELETE: reconsultar Asaas e reclassificar uma vez.
       if (/não pode ser removida|nao pode ser removida|pendentes ou vencidas/i.test(msg)) {
         try {
@@ -1201,14 +1285,6 @@ async function resolveAsaasChargesForRelease(
             disposition: 'block_non_removable',
           });
         }
-      } else if (/404|not found/i.test(msg)) {
-        failed.push({
-          chargeId,
-          error: `Cobrança Asaas não encontrada ao cancelar (não marcar local). Local=${localBefore}. ${msg}`,
-          localStatus: localBefore,
-          remoteStatus,
-          disposition: 'block_non_removable',
-        });
       } else {
         failed.push({
           chargeId,
@@ -1227,6 +1303,8 @@ async function resolveAsaasChargesForRelease(
     preservedPaid,
     preservedRefunded,
     alreadyCancelled,
+    timedOut,
+    remainingIds,
     failed,
   };
 }
@@ -1533,6 +1611,30 @@ async function applyLocalRelease(
   return { cancelledUnpaidReceipts };
 }
 
+async function releaseLotExecutionLock(
+  admin: SupabaseClient,
+  settlementId: string,
+  saleId: string,
+): Promise<void> {
+  const { data } = await admin
+    .from('sale_release_settlements')
+    .select('calculation_snapshot')
+    .eq('id', settlementId)
+    .eq('sale_id', saleId)
+    .maybeSingle();
+  const raw = data?.calculation_snapshot;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+  await admin
+    .from('sale_release_settlements')
+    .update({
+      calculation_snapshot: withoutReleaseExecLock(raw as Record<string, unknown>),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', settlementId)
+    .eq('sale_id', saleId)
+    .in('status', ['CALCULATED', 'FAILED_DOCUMENT']);
+}
+
 export async function executeReleaseLot(
   admin: SupabaseClient,
   input: ReleaseLotExecuteInput,
@@ -1739,6 +1841,7 @@ export async function executeReleaseLot(
   let calculationStatus: string | null = existingSettlement?.calculation_status || null;
   let frozenSnapshot: TerminationDocumentSnapshot | null = null;
   let preparedSettlement: PreparedReleaseSettlement | null = null;
+  let execLockHeld = false;
 
   if (
     preview.saleId &&
@@ -1806,6 +1909,38 @@ export async function executeReleaseLot(
           'validate_motive',
         );
       }
+      const reuseCheck = assertReusableCalculatedSettlement({
+        existing: existingSettlement,
+        prepared,
+      });
+      if (!reuseCheck.ok) {
+        throw releaseErr(reuseCheck.error, 409, reuseCheck.code, 'persist_settlement');
+      }
+      if (reuseCheck.staleAmounts) {
+        console.warn('[releaseLot] settlement_stale_recalculated', {
+          saleId: preview.saleId.slice(0, 8),
+          storedPaid: existingSettlement?.total_paid ?? null,
+          freshPaid: prepared.settlement.totalPaid,
+        });
+      }
+      if (
+        isReleaseExecLockHeld(
+          readReleaseExecLock(existingSettlement?.calculation_snapshot),
+          Date.now(),
+        )
+      ) {
+        throw releaseErr(
+          releaseInProgressMessage(),
+          RELEASE_IN_PROGRESS_STATUS,
+          RELEASE_IN_PROGRESS_CODE,
+          'persist_settlement',
+        );
+      }
+      const execLock = buildReleaseExecLock({
+        token: `${preview.lotId}:${Date.now()}:${input.userId.slice(0, 8)}`,
+        ownerUserId: input.userId,
+        nowMs: Date.now(),
+      });
       const upserted = await upsertCalculatedReleaseSettlement(admin, {
         companyId: preview.companyId,
         saleId: preview.saleId,
@@ -1818,9 +1953,12 @@ export async function executeReleaseLot(
         idempotencyKey: preview.idempotencyKey,
         prepared: { ...prepared, refundSchedule: scheduleResult.schedule },
         existingId: existingSettlement?.id || null,
+        casUpdatedAt: existingSettlement?.updated_at || null,
+        execLock,
       });
       settlementId = upserted.id;
       settlementStatus = upserted.status;
+      execLockHeld = upserted.status !== 'EXECUTED';
       calculationStatus = prepared.calculationStatus;
       if (upserted.status === 'EXECUTED') {
         const docPartUpserted = await attachTerminationDocumentAfterExecuted(admin, {
@@ -1858,6 +1996,14 @@ export async function executeReleaseLot(
       }
     } catch (err) {
       if (err instanceof ReleaseLotError) throw err;
+      if (err instanceof Error && err.message === 'RELEASE_IN_PROGRESS') {
+        throw releaseErr(
+          releaseInProgressMessage(),
+          RELEASE_IN_PROGRESS_STATUS,
+          RELEASE_IN_PROGRESS_CODE,
+          'persist_settlement',
+        );
+      }
       throw releaseErr(
         'Não foi possível persistir o acerto financeiro na venda original.',
         500,
@@ -1868,6 +2014,7 @@ export async function executeReleaseLot(
     }
   }
 
+  try {
   if (
     shouldGenerateTerminationDocument(motive.motiveCode) &&
     settlementId &&
@@ -1899,6 +2046,8 @@ export async function executeReleaseLot(
     remoteStatus?: string | null;
   }> = [];
 
+  const bankCancelStartedAtMs = Date.now();
+
   if (preview.saleId && liveCtx) {
     const candidateIds = liveCtx.charges
       .filter((c) => isLocalAsaasCancelCandidateStatus(c.status))
@@ -1909,7 +2058,11 @@ export async function executeReleaseLot(
         admin,
         preview.companyId,
         candidateIds,
-        { executeCancel: true },
+        {
+          executeCancel: true,
+          startedAtMs: bankCancelStartedAtMs,
+          saleId: preview.saleId,
+        },
       );
       cancelledAsaasCharges = asaasResult.cancelled + asaasResult.alreadyCancelled;
       failedAsaasCharges = asaasResult.failed.map((f) => ({
@@ -1918,6 +2071,23 @@ export async function executeReleaseLot(
         localStatus: f.localStatus ?? null,
         remoteStatus: f.remoteStatus ?? null,
       }));
+
+      if (asaasResult.timedOut || asaasResult.remainingIds.length > 0) {
+        throw releaseErr(
+          bankCancelInProgressMessage({
+            provider: 'Asaas',
+            cancelled: cancelledAsaasCharges,
+            remaining: asaasResult.remainingIds.length,
+          }),
+          BANK_CANCEL_IN_PROGRESS_STATUS,
+          BANK_CANCEL_IN_PROGRESS_CODE,
+          'cancel_asaas',
+          {
+            remainingAsaas: asaasResult.remainingIds.length,
+            cancelledAsaas: cancelledAsaasCharges,
+          },
+        );
+      }
 
       if (failedAsaasCharges.length > 0) {
         throw releaseErr(
@@ -1942,6 +2112,8 @@ export async function executeReleaseLot(
         {
           executeCancel: true,
           motiveCode: motive.motiveCode,
+          startedAtMs: bankCancelStartedAtMs,
+          saleId: preview.saleId,
         },
       );
       cancelledInterCharges =
@@ -1952,6 +2124,23 @@ export async function executeReleaseLot(
         localStatus: f.localStatus ?? null,
         remoteStatus: f.remoteStatus ?? null,
       }));
+
+      if (interResult.timedOut || interResult.remainingIds.length > 0) {
+        throw releaseErr(
+          bankCancelInProgressMessage({
+            provider: 'Inter',
+            cancelled: cancelledInterCharges,
+            remaining: interResult.remainingIds.length,
+          }),
+          BANK_CANCEL_IN_PROGRESS_STATUS,
+          BANK_CANCEL_IN_PROGRESS_CODE,
+          'cancel_inter',
+          {
+            remainingInter: interResult.remainingIds.length,
+            cancelledInter: cancelledInterCharges,
+          },
+        );
+      }
 
       if (failedInterCharges.length > 0) {
         throw releaseErr(
@@ -1966,13 +2155,39 @@ export async function executeReleaseLot(
       }
     }
   } else if (preview.openChargeIds.length > 0) {
-    const asaasResult = await cancelOpenAsaasCharges(
+    const asaasResult = await resolveAsaasChargesForRelease(
       admin,
       preview.companyId,
       preview.openChargeIds,
+      {
+        executeCancel: true,
+        startedAtMs: bankCancelStartedAtMs,
+        saleId: preview.saleId,
+      },
     );
-    cancelledAsaasCharges = asaasResult.cancelled;
-    failedAsaasCharges = asaasResult.failed;
+    cancelledAsaasCharges = asaasResult.cancelled + asaasResult.alreadyCancelled;
+    failedAsaasCharges = asaasResult.failed.map((f) => ({
+      chargeId: f.chargeId,
+      error: f.error,
+      localStatus: f.localStatus ?? null,
+      remoteStatus: f.remoteStatus ?? null,
+    }));
+    if (asaasResult.timedOut || asaasResult.remainingIds.length > 0) {
+      throw releaseErr(
+        bankCancelInProgressMessage({
+          provider: 'Asaas',
+          cancelled: cancelledAsaasCharges,
+          remaining: asaasResult.remainingIds.length,
+        }),
+        BANK_CANCEL_IN_PROGRESS_STATUS,
+        BANK_CANCEL_IN_PROGRESS_CODE,
+        'cancel_asaas',
+        {
+          remainingAsaas: asaasResult.remainingIds.length,
+          cancelledAsaas: cancelledAsaasCharges,
+        },
+      );
+    }
     if (failedAsaasCharges.length > 0) {
       throw releaseErr(
         `Não foi possível concluir o Asaas para ${failedAsaasCharges.length} cobrança(s). A limpeza local não foi aplicada. Reprocesse após corrigir.`,
@@ -1980,6 +2195,32 @@ export async function executeReleaseLot(
         'ASAAS_CANCEL_FAILED',
         'cancel_asaas',
         { failedAsaasCharges },
+      );
+    }
+  }
+
+  if (preview.saleId) {
+    const leftoverCtx = await loadSaleContext(admin, preview.saleId, preview.companyId);
+    const leftoverAsaas = leftoverCtx.charges.filter((c) =>
+      isLocalAsaasCancelCandidateStatus(c.status),
+    );
+    const leftoverInter = leftoverCtx.interCharges.filter((c) =>
+      isLocalInterCancelCandidateStatus(c.status),
+    );
+    if (leftoverAsaas.length > 0 || leftoverInter.length > 0) {
+      throw releaseErr(
+        bankCancelInProgressMessage({
+          provider: leftoverAsaas.length > 0 ? 'Asaas' : 'Inter',
+          cancelled: cancelledAsaasCharges + cancelledInterCharges,
+          remaining: leftoverAsaas.length + leftoverInter.length,
+        }),
+        BANK_CANCEL_IN_PROGRESS_STATUS,
+        BANK_CANCEL_IN_PROGRESS_CODE,
+        leftoverAsaas.length > 0 ? 'cancel_asaas' : 'cancel_inter',
+        {
+          remainingAsaas: leftoverAsaas.length,
+          remainingInter: leftoverInter.length,
+        },
       );
     }
   }
@@ -2068,4 +2309,13 @@ export async function executeReleaseLot(
     keepModalOpen,
     terminationDocument,
   };
+  } finally {
+    if (execLockHeld && settlementId && preview.saleId) {
+      try {
+        await releaseLotExecutionLock(admin, settlementId, preview.saleId);
+      } catch (lockErr) {
+        console.warn('[releaseLot] release_exec_lock', lockErr);
+      }
+    }
+  }
 }

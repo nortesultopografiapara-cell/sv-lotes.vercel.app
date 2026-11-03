@@ -9,6 +9,7 @@ import {
   updateCompanyAdminUser,
   updateCompanyAdminUsersLimit,
 } from '@/lib/companyAdminUsers';
+import { companyAdminWriteHttpStatus } from '@/lib/companyPrimaryAdmin';
 
 export const runtime = 'nodejs';
 
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro na operação Master.';
-    const status = message.includes('Limite') ? 409 : 500;
+    const status = companyAdminWriteHttpStatus(message);
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -198,7 +199,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true, admin: updated, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao atualizar administrador.';
-    const status = message.includes('Limite') ? 409 : 500;
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = companyAdminWriteHttpStatus(message);
+    return NextResponse.json({ error: message }, { status });
   }
 }

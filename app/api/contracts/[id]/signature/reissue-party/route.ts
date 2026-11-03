@@ -96,8 +96,28 @@ export async function POST(
     });
 
     const parties = await listSignatureParties(supabase, signatureId);
-    const partyViews = toPublicPartyViews(parties, { includeUrls: true });
-    const reissuedView = toPublicPartyViews([result.party], { includeUrls: true })[0];
+    const tenantIdForViews = String(contract.tenant_id || contract.company_id || '');
+    let companyForViews: Record<string, unknown> | null = null;
+    if (tenantIdForViews) {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', tenantIdForViews)
+        .maybeSingle();
+      companyForViews = (company as Record<string, unknown>) || null;
+    }
+    const viewOpts = {
+      includeUrls: true as const,
+      contractModel: String(
+        contract.sale_contract_model ||
+          contract.contract_model ||
+          companyForViews?.contract_model ||
+          '',
+      ),
+      company: companyForViews,
+    };
+    const partyViews = toPublicPartyViews(parties, viewOpts);
+    const reissuedView = toPublicPartyViews([result.party], viewOpts)[0];
 
     return NextResponse.json({
       success: true,

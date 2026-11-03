@@ -1,16 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Loader2, Plus, Save, ShieldCheck, Star, Wallet } from 'lucide-react';
+import { Building2, Landmark, Loader2, Plus, Save, ShieldCheck, Star, Wallet } from 'lucide-react';
 import {
   COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS,
   COMPANY_FINANCIAL_ACCOUNT_TYPES,
   NEW_ASAAS_FINANCIAL_ACCOUNT_NAME,
   NEW_INTER_FINANCIAL_ACCOUNT_NAME,
+  isAsaasFinancialProvider,
   isInterFinancialProvider,
   type CompanyFinancialAccountResponse,
   type CompanyFinancialAccountType,
 } from '@/lib/finance/companyFinancialAccountTypes';
+import {
+  COMPANY_BANK_ACCOUNT_KIND_LABELS,
+  COMPANY_BANK_ACCOUNT_KINDS,
+  type CompanyBankAccountKind,
+} from '@/lib/finance/companyFinancialAccountBankIdentity';
 import { buildDefaultAsaasWebhookUrl } from '@/lib/finance/asaasIntegrationConfig';
 import { InterBankConfigPanel } from '@/components/finance/InterBankConfigPanel';
 
@@ -30,6 +36,12 @@ type FormState = {
   isDefault: boolean;
   active: boolean;
   notes: string;
+  bankName: string;
+  bankCode: string;
+  agency: string;
+  accountNumber: string;
+  accountDigit: string;
+  bankAccountKind: CompanyBankAccountKind | '';
   webhookUrl: string;
   sandboxApiKey: string;
   productionApiKey: string;
@@ -48,6 +60,12 @@ function emptyForm(): FormState {
     isDefault: false,
     active: true,
     notes: '',
+    bankName: '',
+    bankCode: '',
+    agency: '',
+    accountNumber: '',
+    accountDigit: '',
+    bankAccountKind: '',
     webhookUrl: '',
     sandboxApiKey: '',
     productionApiKey: '',
@@ -67,6 +85,12 @@ function accountToForm(account: CompanyFinancialAccountResponse): FormState {
     isDefault: account.isDefault,
     active: account.active,
     notes: account.notes || '',
+    bankName: account.bankName || '',
+    bankCode: account.bankCode || '',
+    agency: account.agency || '',
+    accountNumber: account.accountNumber || '',
+    accountDigit: account.accountDigit || '',
+    bankAccountKind: account.bankAccountKind || '',
     webhookUrl: '',
     sandboxApiKey: '',
     productionApiKey: '',
@@ -219,6 +243,12 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
             isDefault: form.isDefault,
             active: form.active,
             notes: form.notes,
+            bankName: form.bankName,
+            bankCode: form.bankCode,
+            agency: form.agency,
+            accountNumber: form.accountNumber,
+            accountDigit: form.accountDigit,
+            bankAccountKind: form.bankAccountKind,
           }
         : {
             ...form,
@@ -641,6 +671,110 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   ) : null}
                 </div>
               ) : null}
+
+              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                  <Landmark className="h-4 w-4 text-[var(--brand-primary)]" />
+                  Identificação bancária / conciliação
+                </div>
+                {showAsaasCredentials || isAsaasFinancialProvider(selectedAccount?.provider) ? (
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Dados bancários para identificação e conciliação. O destino técnico do split
+                    permanece a Wallet Asaas.
+                  </p>
+                ) : (
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Dados cadastrais da conta para conciliação. Não são credenciais de acesso.
+                  </p>
+                )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">
+                      Titular
+                    </label>
+                    <input
+                      value={form.beneficiaryName}
+                      disabled={readOnlyDemo}
+                      onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryName: e.target.value }))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                      Mesmo campo do responsável/beneficiário da conta.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Banco</label>
+                    <input
+                      value={form.bankName}
+                      disabled={readOnlyDemo}
+                      onChange={(e) => setForm((prev) => ({ ...prev, bankName: e.target.value }))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">
+                      Código do banco
+                    </label>
+                    <input
+                      value={form.bankCode}
+                      disabled={readOnlyDemo}
+                      inputMode="numeric"
+                      onChange={(e) => setForm((prev) => ({ ...prev, bankCode: e.target.value }))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Agência</label>
+                    <input
+                      value={form.agency}
+                      disabled={readOnlyDemo}
+                      onChange={(e) => setForm((prev) => ({ ...prev, agency: e.target.value }))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Conta</label>
+                    <input
+                      value={form.accountNumber}
+                      disabled={readOnlyDemo}
+                      onChange={(e) => setForm((prev) => ({ ...prev, accountNumber: e.target.value }))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Dígito</label>
+                    <input
+                      value={form.accountDigit}
+                      disabled={readOnlyDemo}
+                      onChange={(e) => setForm((prev) => ({ ...prev, accountDigit: e.target.value }))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">
+                      Tipo da conta
+                    </label>
+                    <select
+                      value={form.bankAccountKind}
+                      disabled={readOnlyDemo}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          bankAccountKind: e.target.value as CompanyBankAccountKind | '',
+                        }))
+                      }
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+                    >
+                      <option value="">Não informado</option>
+                      {COMPANY_BANK_ACCOUNT_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {COMPANY_BANK_ACCOUNT_KIND_LABELS[kind]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Observações</label>

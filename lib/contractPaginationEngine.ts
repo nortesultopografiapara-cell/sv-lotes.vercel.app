@@ -10,6 +10,11 @@
  * 3. Compactação leve de espaçamentos — sem alterar tipografia jurídica.
  * 4. Nova página só quando o bloco não cabe no espaço restante.
  */
+import {
+  ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX,
+  reportEstrelaCapaTwoPageOverflow,
+} from './estrelaDoSulHtml2PdfPagination';
+import { applyLfEstrelaGisPrintToCaptureElement } from './lfEstrelaPrintCss';
 
 /**
  * Margens Chromium/html2pdf alinhadas à altura real do header/footer template.
@@ -278,8 +283,9 @@ export const CONTRACT_SIGNATURE_SPACING = {
   blockMarginTopSv2: '18px',
   slotMarginBottomClassic: '0',
   slotMarginBottomLast: '0',
-  slotMarginBottomRecanto: '16px',
+  slotMarginBottomRecanto: '22px',
   slotMarginBottomRecantoLast: '6px',
+  recantoGridColumnGap: '28px',
   classicGridColumnGap: '12px',
   classicGridRowGap: '4px',
   sv2GridMarginTop: '16px',
@@ -429,7 +435,7 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
   .contract-signatures--recanto .signature-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: ${CONTRACT_SIGNATURE_SPACING.classicGridColumnGap};
+    column-gap: ${CONTRACT_SIGNATURE_SPACING.recantoGridColumnGap};
     row-gap: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomRecanto};
     align-items: start;
     justify-items: center;
@@ -465,15 +471,15 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     grid-row: 3;
     grid-column: 2;
   }
-  /* Linha de assinatura: respiro acima (assinatura) + gap curto até o rótulo. */
+  /* Linha de assinatura: mesma geometria do Araguaia (28px / 72% / 260px). */
   .contract-signatures--recanto .signature-slot .signature-line,
   .contract-signatures--recanto .signature-line {
     border-top: 1px solid #111 !important;
     border-bottom: none !important;
-    margin: 32px auto 0 auto !important;
+    margin: 28px auto 0 auto !important;
     padding: 0 !important;
-    width: 70% !important;
-    max-width: 240px !important;
+    width: 72% !important;
+    max-width: 260px !important;
     height: 12px !important;
     box-sizing: border-box !important;
     overflow: visible !important;
@@ -498,7 +504,14 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
   .contract-signatures--recanto .signature-slot-witness-1,
   .contract-signatures--recanto .signature-slot-witness-2 {
     min-height: 118px;
-    padding-bottom: 6px;
+    padding-top: 2px;
+    padding-bottom: 10px;
+    overflow: visible;
+    box-sizing: border-box;
+  }
+  .contract-signatures--recanto .signature-slot-witness-1 .signature-line,
+  .contract-signatures--recanto .signature-slot-witness-2 .signature-line {
+    margin-top: 18px !important;
   }
   .contract-signatures--recanto .signature-slot img {
     display: block;
@@ -683,19 +696,24 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
     break-after: avoid-page !important;
     margin-bottom: 0 !important;
   }
-  /* Compactação sob demanda — reduz levemente, sem esmagar testemunhas/cônjuge. */
+  /* Compactação sob demanda — piso Araguaia (não esmaga data/cônjuge/testemunhas). */
   .contract-signatures--recanto.sv-pagination-compact .signature-grid {
-    row-gap: 10px !important;
+    row-gap: 18px !important;
+    column-gap: 28px !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot-spouse {
-    padding-top: 14px !important;
+    padding-top: 18px !important;
     margin-top: 0 !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot .signature-line,
   .contract-signatures--recanto.sv-pagination-compact .signature-line {
-    height: 10px !important;
+    height: 12px !important;
     padding: 0 !important;
-    margin: 24px auto 0 auto !important;
+    margin: 28px auto 0 auto !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot-witness-1 .signature-line,
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot-witness-2 .signature-line {
+    margin-top: 18px !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot > p {
     margin-top: 2px !important;
@@ -708,8 +726,8 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot-witness-1,
   .contract-signatures--recanto.sv-pagination-compact .signature-slot-witness-2 {
-    min-height: 108px !important;
-    padding-bottom: 4px !important;
+    min-height: 118px !important;
+    padding-bottom: 10px !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot img {
     max-height: 28px !important;
@@ -738,15 +756,15 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
   .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-closing > p,
   .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-closing-date,
   .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-signatures--recanto {
-    page-break-inside: auto !important;
-    break-inside: auto !important;
-    page-break-before: auto !important;
-    break-before: auto !important;
-    page-break-after: auto !important;
-    break-after: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    page-break-before: avoid !important;
+    break-before: avoid-page !important;
   }
   .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-signatures--recanto {
-    margin-top: 8px !important;
+    margin-top: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 `.trim();
 
@@ -791,6 +809,43 @@ export function buildSv2ContractPaginationAddonCss(): string {
   return CONTRACT_SV2_CLAUSE_FLOW_CSS;
 }
 
+/**
+ * Last-wins Recanto: vence o compacto clássico (data 3px / linhas 2px)
+ * sem alterar o CSS compartilhado do Araguaia/Meneses.
+ * Espaçamento espelha o pack físico do Araguaia (18px data, grade 28×22).
+ */
+export const CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS = `
+  .sv-contract-recanto-primavera .contract-closing-and-signatures--recanto .contract-closing {
+    margin-top: 18px !important;
+    margin-bottom: 0 !important;
+  }
+  .sv-contract-recanto-primavera .contract-closing-and-signatures--recanto .recanto-closing-statement,
+  .sv-contract-recanto-primavera .contract-closing-and-signatures--recanto .contract-closing > p {
+    margin-bottom: 18px !important;
+  }
+  .sv-contract-recanto-primavera .contract-closing-and-signatures--recanto .contract-closing-date,
+  .sv-contract-recanto-primavera .contract-closing-and-signatures--recanto p.contract-closing-date {
+    display: block !important;
+    text-align: right !important;
+    font-weight: bold;
+    margin: 0 0 18px 0 !important;
+    padding: 0 !important;
+    line-height: 1.35 !important;
+  }
+  .sv-contract-recanto-primavera .contract-closing-and-signatures--recanto .contract-signatures--recanto {
+    margin-top: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .sv-contract-recanto-primavera .contract-signatures--recanto .signature-grid {
+    column-gap: 28px !important;
+    row-gap: 22px !important;
+  }
+  .sv-contract-recanto-primavera .contract-signatures--recanto .signature-slot-spouse {
+    padding-top: 22px !important;
+  }
+`.trim();
+
 /** CSS Recanto — mesma engine de assinatura/certificado (sem roots SV2). */
 export function buildRecantoContractPaginationCss(): string {
   return `<style type="text/css">
@@ -798,6 +853,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-recanto-primave
 ${CONTRACT_RECANTO_CLAUSE_FLOW_CSS}
 ${CONTRACT_SIGNATURE_PAGINATION_CSS}
 ${CONTRACT_CERTIFICATE_PAGINATION_CSS}
+${CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS}
 </style>`;
 }
 
@@ -809,11 +865,30 @@ ${CONTRACT_CERTIFICATE_PAGINATION_CSS}
  */
 export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
 (() => {
-  const PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
+  const CLASSIC_PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
+  const ESTRELA_PAGE_H = ${ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX};
   const FOOTER = ${CONTRACT_FOOTER_RESERVE_PX};
   const root = document;
-  const pack = root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
-  const sig = root.querySelector('.contract-signatures, .sv2-signatures');
+  const estrelaRoot = root.querySelector('.sv-contract-estrela-do-sul');
+  const estrelaInstrument = root.querySelector('.contract-closing-and-signatures--estrela');
+  const estrelaElectronic = !!(estrelaRoot && root.querySelector('.sv-contract-estrela-do-sul .sv-esign-stamp'));
+  const PAGE_H = estrelaRoot ? ESTRELA_PAGE_H : CLASSIC_PAGE_H;
+  const capa1 = root.querySelector('.estrela-capa-page-1');
+  const capa2 = root.querySelector('.estrela-capa-page-2');
+  if (capa1 && capa2) {
+    const h1 = Math.ceil(capa1.getBoundingClientRect().height || 0);
+    const h2 = Math.ceil(capa2.getBoundingClientRect().height || 0);
+    const capaOverflow = h1 > ESTRELA_PAGE_H + 12 || h2 > ESTRELA_PAGE_H + 12;
+    capa1.setAttribute('data-estrela-capa-overflow', capaOverflow ? 'true' : 'false');
+    capa2.setAttribute('data-estrela-capa-overflow', capaOverflow ? 'true' : 'false');
+    if (capaOverflow) {
+      console.warn('[ESTRELA_CAPA] Capa Resumo excedeu 2 páginas', { h1, h2, pageH: ESTRELA_PAGE_H });
+    }
+  }
+  const pack = estrelaInstrument || root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
+  const sig = estrelaInstrument
+    ? estrelaInstrument.querySelector('.contract-signatures, .sv2-signatures')
+    : root.querySelector('.contract-signatures, .sv2-signatures');
   const cert = root.querySelector('.sv-cert-official-block');
   const mundoNovoEsign = !!root.querySelector(
     '.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]',
@@ -898,7 +973,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
      * Encaixe: CSS break-inside:avoid no pack; force-break só se altura >
      * página útil (decideForceSignatureBreak acima).
      */
-    if (signature === 'new-page' && breakTarget) {
+    if (signature === 'new-page' && breakTarget && !mundoNovoEsign && !estrelaInstrument) {
       breakTarget.classList.add('sv-pagination-force-break');
     }
   }
@@ -917,7 +992,15 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
       remainingForCert = remainingAt(top);
     }
     certificate = decideBlock(remainingForCert, certH);
-    if (certificate === 'new-page' && !mundoNovoEsign) {
+    if (estrelaElectronic) {
+      const pairFitsFreshPage = sigH + certH <= Math.max(0, PAGE_H - FOOTER);
+      if (pairFitsFreshPage) {
+        certificate = 'same-page';
+      } else if (certH > 0) {
+        certificate = 'new-page';
+        cert.classList.add('sv-pagination-force-break');
+      }
+    } else if (certificate === 'new-page' && !mundoNovoEsign) {
       cert.classList.add('sv-pagination-force-break');
     }
     if (mundoNovoEsign) {
@@ -957,17 +1040,30 @@ export function applyContractPaginationBreaksToElement(
   sigH: number;
   certH: number;
 } {
-  const pageH = opts?.pageH ?? CONTRACT_PAGE_CONTENT_HEIGHT_PX;
   const footer = opts?.footerReservePx ?? CONTRACT_FOOTER_RESERVE_PX;
   const doc = (element as Element).ownerDocument || document;
   const win = doc.defaultView || window;
   const scrollY = win.scrollY || win.pageYOffset || 0;
 
-  const pack = element.querySelector(
-    '.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia',
+  const estrelaInstrument = element.querySelector(
+    '.contract-closing-and-signatures--estrela',
   ) as HTMLElement | null;
-  const sig = element.querySelector(
-    '.contract-signatures, .sv2-signatures',
+  const pageH =
+    opts?.pageH ??
+    (element.querySelector('.sv-contract-estrela-do-sul')
+      ? ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX
+      : CONTRACT_PAGE_CONTENT_HEIGHT_PX);
+  const estrelaElectronic = Boolean(
+    element.querySelector('.sv-contract-estrela-do-sul .sv-esign-stamp'),
+  );
+  const pack = (estrelaInstrument ||
+    element.querySelector(
+    '.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia',
+  )) as HTMLElement | null;
+  const sig = (
+    estrelaInstrument
+      ? estrelaInstrument.querySelector('.contract-signatures, .sv2-signatures')
+      : element.querySelector('.contract-signatures, .sv2-signatures')
   ) as HTMLElement | null;
   const cert = element.querySelector(
     '.sv-cert-official-block',
@@ -1047,20 +1143,29 @@ export function applyContractPaginationBreaksToElement(
   const signature = decisions.signature;
   const decisionsCert = decisions;
 
-  if (breakTarget && signature === 'new-page') {
+  if (breakTarget && signature === 'new-page' && !mundoNovoEsign && !estrelaInstrument) {
     breakTarget.classList.add('sv-pagination-force-break');
   } else if (sig && continuousWouldForce) {
     // Compactação já aplicada acima quando continuousLooksTight; reforça classe.
     // Araguaia: não força break por resto contínuo (evita página vazia antes do pack).
     sig.classList.add('sv-pagination-compact');
   }
-  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
+  let certificate = decisionsCert.certificate;
+  if (cert && estrelaElectronic) {
+    const pairFitsFreshPage = sigH + certH <= Math.max(0, pageH - footer);
+    if (pairFitsFreshPage) {
+      certificate = 'same-page';
+    } else if (certH > 0) {
+      certificate = 'new-page';
+      cert.classList.add('sv-pagination-force-break');
+    }
+  } else if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
     cert.classList.add('sv-pagination-force-break');
   }
 
   return {
     signature,
-    certificate: mundoNovoEsign ? 'same-page' : decisionsCert.certificate,
+    certificate: mundoNovoEsign ? 'same-page' : certificate,
     sigH,
     certH,
   };
@@ -1089,9 +1194,13 @@ export function prepareContractHtmlElementForPagination(
   }
 
   const result = applyContractPaginationBreaksToElement(element);
+  if (element.querySelector('.sv-contract-estrela-do-sul')) {
+    reportEstrelaCapaTwoPageOverflow(element);
+  }
 
   // Restaura layout imprimível — html2canvas captura a caixa visível do elemento.
   restoreContractElementStylesForHtml2PdfCapture(element);
+  applyLfEstrelaGisPrintToCaptureElement(element);
 
   return result;
 }
@@ -1109,9 +1218,14 @@ export function restoreContractElementStylesForHtml2PdfCapture(
   element.style.right = '';
   element.style.bottom = '';
   element.style.transform = '';
-  element.style.opacity = '';
+  element.style.opacity = '1';
   element.style.visibility = '';
   element.style.display = '';
+  element.style.color = '#000';
+  element.style.backgroundColor = '#ffffff';
+  if (typeof element.style.setProperty === 'function') {
+    element.style.setProperty('-webkit-text-fill-color', '#000');
+  }
   element.style.width = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
   element.style.maxWidth = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
   element.style.boxSizing = 'border-box';

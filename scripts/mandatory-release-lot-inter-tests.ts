@@ -499,6 +499,73 @@ async function testCancelHttpErrorShape() {
   assert((caught as InterCobrancaHttpError).status === 422, 'status 422');
 }
 
+async function testInterYieldAndSkipAlreadyCancelled() {
+  const state = {
+    charges: [
+      {
+        id: 'bc-open-1',
+        status: 'REGISTERED',
+        external_id: 'SOL-1',
+        integration_id: 'int-1',
+        financial_account_id: 'fa-1',
+        provider: 'INTER',
+        company_id: 'co-inter-release',
+      },
+      {
+        id: 'bc-open-2',
+        status: 'REGISTERED',
+        external_id: 'SOL-2',
+        integration_id: 'int-1',
+        financial_account_id: 'fa-1',
+        provider: 'INTER',
+        company_id: 'co-inter-release',
+      },
+      {
+        id: 'bc-done',
+        status: 'CANCELLED',
+        external_id: 'SOL-DONE',
+        integration_id: 'int-1',
+        financial_account_id: 'fa-1',
+        provider: 'INTER',
+        company_id: 'co-inter-release',
+      },
+    ] as BankChargeRow[],
+    updates: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+  };
+  const admin = makeMockAdmin(state);
+  const { fetchFn, cancelPosts } = makeInterFetch({ situacao: 'A_RECEBER' });
+  const yielded = await resolveInterChargesForRelease(
+    admin,
+    'co-inter-release',
+    ['bc-open-1', 'bc-open-2'],
+    {
+      executeCancel: true,
+      startedAtMs: Date.now() - 50_000,
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as any,
+    },
+  );
+  assert(yielded.timedOut === true, 'yield Inter quando orçamento esgota');
+  assert(yielded.remainingIds.length === 2, 'restantes persistidos para retomada');
+  assert(yielded.cancelled === 0, 'não cancelou após yield');
+  assert(cancelPosts.length === 0, 'não POST /cancelar após yield');
+  assert(state.charges[0].status === 'REGISTERED', 'lote local intacto no yield');
+
+  const skipped = await resolveInterChargesForRelease(
+    admin,
+    'co-inter-release',
+    ['bc-done'],
+    {
+      executeCancel: true,
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as any,
+    },
+  );
+  assert(skipped.alreadyCancelled === 1, 'CANCELLED local não recancela');
+  assert(skipped.cancelled === 0, 'sem novo cancel em já cancelada');
+  assert(cancelPosts.length === 0, 'sem POST /cancelar em já cancelada');
+}
+
 async function main() {
   testCanonicalReceiptPlan();
   testWiringSourceGuards();
@@ -508,6 +575,7 @@ async function main() {
   await testPreservePaidInterNeverCancelled();
   await testInterCancelApiFailureBlocksRelease();
   await testFullReleaseScenarioWithRealInterChargeShape();
+  await testInterYieldAndSkipAlreadyCancelled();
   console.log('\nALL mandatory-release-lot-inter-tests PASSED');
 }
 

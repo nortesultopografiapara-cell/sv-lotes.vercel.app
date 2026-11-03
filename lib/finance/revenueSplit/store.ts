@@ -1,3 +1,4 @@
+import type { RevenueSplitFinancialAccountFreezeSource, SaleRevenueSplitSnapshotBankIdentity } from './snapshotBankIdentity';
 import type {
   ChargeRevenueSplitLeg,
   ChargeRevenueSplitLegDraft,
@@ -40,6 +41,10 @@ export interface RevenueSplitStore {
   getSale(saleId: string): Promise<RevenueSplitSaleRecord | null>;
   getUser(userId: string): Promise<RevenueSplitUserRecord | null>;
   getFinancialAccount(accountId: string): Promise<RevenueSplitFinancialAccountRecord | null>;
+  listFinancialAccountsForSnapshotFreeze(
+    companyId: string,
+    financialAccountIds: string[],
+  ): Promise<RevenueSplitFinancialAccountFreezeSource[]>;
 
   getConfigByProject(projectId: string): Promise<ProjectRevenueSplitConfig | null>;
   getParticipants(configId: string): Promise<ProjectRevenueSplitParticipant[]>;
@@ -69,9 +74,13 @@ export interface RevenueSplitStore {
       createdAt?: string;
     };
     participants: Array<
-      Omit<SaleRevenueSplitSnapshotParticipant, 'id' | 'snapshotId' | 'createdAt'> & {
-        id?: string;
-      }
+      Omit<
+        SaleRevenueSplitSnapshotParticipant,
+        'id' | 'snapshotId' | 'createdAt' | keyof SaleRevenueSplitSnapshotBankIdentity
+      > &
+        Partial<SaleRevenueSplitSnapshotBankIdentity> & {
+          id?: string;
+        }
     >;
   }): Promise<{
     snapshot: SaleRevenueSplitSnapshot;

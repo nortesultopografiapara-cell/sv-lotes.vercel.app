@@ -140,8 +140,14 @@ export function useCompanySettingsForm({
 
       if (!error && data) {
         const row = data as Record<string, unknown>;
+        const creciRes = await supabase
+          .from('companies')
+          .select('creci')
+          .eq('id', companyId)
+          .maybeSingle();
         setCompany({
           ...row,
+          ...(creciRes.error ? {} : { creci: String(creciRes.data?.creci || '') }),
           contract_second_vendor_json: parseContractSecondVendorJson(
             row.contract_second_vendor_json,
           ),
@@ -315,14 +321,31 @@ export function useCompanySettingsForm({
       .select(COMPANY_SETTINGS_COLUMNS)
       .single();
 
-    if (updateError) {
+    let saved = updateData;
+    if (updateError && /creci/i.test(String(updateError.message || ''))) {
+      const { creci: _creci, ...withoutCreci } = payload;
+      void _creci;
+      const retry = await supabase
+        .from('companies')
+        .update(withoutCreci)
+        .eq('id', companyId)
+        .select(COMPANY_SETTINGS_COLUMNS)
+        .single();
+      if (retry.error) {
+        console.error('[settings] erro no update', retry.error);
+        setSubmitting(false);
+        alert('Erro ao salvar: ' + retry.error.message);
+        return;
+      }
+      saved = retry.data;
+    } else if (updateError) {
       console.error('[settings] erro no update', updateError);
       setSubmitting(false);
       alert('Erro ao salvar: ' + updateError.message);
       return;
     }
 
-    if (!updateData) {
+    if (!saved) {
       setSubmitting(false);
       alert('Nenhuma linha atualizada em companies (verifique RLS ou company_id).');
       return;

@@ -9,8 +9,8 @@ function toTitleCase(str: string): string {
   return toContractTitleCase(str);
 }
 
-/** Corrige endereços colados sem vírgulas e ", S" → ", S/N". */
-export function normalizeCompanyAddressLine(address: string): string {
+/** Limpa logradouro colado (Quadra/Lote). Não decide S/N. */
+export function cleanCompanyAddressLine(address: string): string {
   let s = String(address || "").trim();
   if (!s) return "";
 
@@ -23,11 +23,19 @@ export function normalizeCompanyAddressLine(address: string): string {
   s = s.replace(/\s+/g, " ").replace(/,\s*,/g, ", ");
   s = s.replace(/,\s*$/g, "");
 
-  if (!/S\/N/i.test(s)) {
-    s = `${s}, S/N`;
-  }
-
   return s;
+}
+
+/**
+ * Helper compartilhado (PADRAO e demais): se o cadastro não traz S/N, acrescenta.
+ * Modelos com regra própria (LF/Estrela, Araguaia, Mundo Novo) não devem depender
+ * deste append cego quando o endereço já tem número.
+ */
+export function normalizeCompanyAddressLine(address: string): string {
+  const s = cleanCompanyAddressLine(address);
+  if (!s) return "";
+  if (/S\/N/i.test(s)) return s;
+  return `${s}, S/N`;
 }
 
 export function getCompanyDisplayName(

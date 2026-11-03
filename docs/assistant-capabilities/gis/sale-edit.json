@@ -1,0 +1,42 @@
+{
+  "id": "sale.edit",
+  "title": "Editar Venda do lote vendido",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "editar venda",
+    "edito a venda",
+    "editar venda do lote",
+    "alterar venda concluída",
+    "corrigir cadastro da venda"
+  ],
+  "summary": "Reabrir o formulário da venda concluída no mapa para corrigir dados. Não encerra a venda nem libera o lote.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Lote vendido com venda vinculada."],
+  "controls": [
+    { "label": "Editar Venda", "kind": "button" },
+    { "label": "Editar Venda do Lote", "kind": "modal" }
+  ],
+  "sequence": [
+    "Abra o lote vendido no Mapa GIS, aba Comercial.",
+    "Clique em Editar Venda. Apenas administradores editam vendas concluídas.",
+    "Ajuste os dados no formulário Editar Venda do Lote e confirme na tela. Depois pode ser necessário Regenerar contrato."
+  ],
+  "conclusion": "Salvar a edição na tela da venda",
+  "result": "Venda atualizada; contrato pode ficar marcado para regenerar.",
+  "related": ["sale.release", "contract.regenerate", "gis.sold.view_contract"],
+  "restrictions": [
+    "Corretor não edita venda concluída.",
+    "Erro de cadastro se corrige aqui, não no card Encerrar venda.",
+    "O assistente não grava a edição."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "components/map/GISMap.tsx",
+    "components/map/CustomerLotFormModal.tsx",
+    "lib/saleEdit.ts"
+  ]
+}

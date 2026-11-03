@@ -1,0 +1,43 @@
+{
+  "id": "finance-baixa-manual",
+  "title": "Baixa manual com autorização",
+  "module": "finance",
+  "routes": ["/finance"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["baixa manual", "autorizacao", "administrador principal", "registrar pagamento"],
+  "objective": "Registrar pagamento de parcela no Financeiro quando a tela pedir autorização.",
+  "prerequisites": [
+    "Parcela na aba Parcelas.",
+    "OWNER não registra pagamento."
+  ],
+  "navigationPath": [
+    "Financeiro",
+    "Parcelas",
+    "Registrar pagamento",
+    "Autorização do Administrador Principal"
+  ],
+  "steps": [
+    "Abra Financeiro → Parcelas e localize a parcela.",
+    "Clique em Registrar pagamento.",
+    "Se abrir Autorização do Administrador Principal, o Administrador Principal confirma na própria tela (o assistente não pede nem guarda essa senha).",
+    "Clique em Autorizar e registrar pagamento."
+  ],
+  "expectedResult": "Pagamento registrado com sucesso e parcela atualizada.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente apenas explica. Ele não dá baixa e não usa senha."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/finance/page.tsx",
+    "components/finance/ManualPaymentAuthModal.tsx",
+    "components/finance/FinancePremiumUI.tsx"
+  ],
+  "uiLabels": [
+    "Registrar pagamento",
+    "Autorização do Administrador Principal",
+    "Autorizar e registrar pagamento",
+    "Parcelas"
+  ]
+}

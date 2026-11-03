@@ -235,9 +235,12 @@ function testVendorSignUiAndApiWiring() {
 
   const route = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
   assert(route.includes('export async function POST'), 'rota POST exportada');
-  assert(route.includes('signSaleContractByVendor'), 'serviço bilateral chamado');
-  assert(route.includes('resolveCallerProfile'), 'valida perfil');
-  assert(route.includes('OWNER'), 'bloqueia OWNER');
+  assert(route.includes('authorizeAndExecuteInternalVendorSign'), 'serviço autorizado chamado');
+  assert(route.includes('stripClientVendorSignIdentity'), 'ignora identidade do client');
+  const authLib = read('lib/saleContractVendorSignAuth.ts');
+  assert(authLib.includes('OWNER'), 'bloqueia OWNER');
+  assert(authLib.includes('BROKER'), 'bloqueia BROKER');
+  assert(authLib.includes('kind: \'intervenient\''), 'INTERVENIENT separado');
 
   const service = read('lib/saleContractSignatureService.ts');
   assert(service.includes("signature_status: 'SIGNED'"), 'sign-vendor muda para SIGNED');

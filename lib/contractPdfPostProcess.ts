@@ -7,7 +7,7 @@ import {
   formatCompanyAddressForHeader,
   getCompanyDisplayName,
 } from "@/lib/contractCompanyDisplay";
-import { isAraguaiaContractModel, isMundoNovoContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import { isAraguaiaContractModel, isEstrelaDoSulContractModel, isMundoNovoContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import {
   buildClassicContractPaginationCss,
   buildRecantoContractPaginationCss,
@@ -18,12 +18,18 @@ import {
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
+import {
+  ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID,
+  ESTRELA_DO_SUL_PDF_MARGIN_MM,
+} from "@/lib/estrelaDoSulHtml2PdfPagination";
 import { resolveMundoNovoHtml2pdfAvoid } from "@/lib/mundoNovoHtml2PdfPagination";
 import { mundoNovoPdfChromeLogoSizeMm } from "@/lib/mundoNovoContractPdf";
 import { formatMundoNovoSeatAddressParts } from "@/lib/mundoNovoContractQualification";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
+import { buildEstrelaDoSulPdfChrome } from "@/lib/estrelaDoSulContractPdf";
+import { applyLfEstrelaGisPrintToCaptureElement, isLfEstrelaCustomHtml, LF_ESTRELA_CUSTOM_PDF_MARGIN_MM } from "@/lib/lfEstrelaPrintCss";
 
 export type ContractPdfChromeInput = {
   tenantName: string;
@@ -40,8 +46,8 @@ export type ContractPdfChromeInput = {
   logoHeightMm?: number;
   /** Variante visual do cabeçalho/rodapé PDF. */
   printStyle?: 'default' | 'sv-lotes-2';
-  /** Cabeçalho 3 colunas — só PDF ELECTRONIC_SIGNED MUNDO_NOVO. */
-  headerVariant?: 'mundo-novo-electronic';
+  /** Cabeçalho 3 colunas — MUNDO_NOVO eletrônico ou LF/Estrela. */
+  headerVariant?: 'mundo-novo-electronic' | 'estrela-do-sul';
   /** SV LOTES 2.0 — contato no cabeçalho institucional PDF. */
   tenantPhone?: string;
   tenantEmail?: string;
@@ -71,6 +77,8 @@ export type ContractHtml2pdfOptions = {
     /** Largura do documento = área útil A4 (evita corte à direita). */
     windowWidth?: number;
     width?: number;
+    backgroundColor?: string;
+    onclone?: (doc: Document, element?: HTMLElement) => void;
   };
   jsPDF: { unit: string; format: string; orientation: string };
   pagebreak: ContractHtml2pdfPagebreakOptions;
@@ -105,11 +113,47 @@ export function getContractHtml2pdfOptions(
       logging: false,
       windowWidth: CONTRACT_PDF_CONTENT_WIDTH_PX,
       width: CONTRACT_PDF_CONTENT_WIDTH_PX,
+      backgroundColor: "#ffffff",
+      onclone(clonedDoc: Document, clonedElement?: HTMLElement) {
+        clonedDoc.documentElement.style.color = "#000";
+        clonedDoc.documentElement.style.backgroundColor = "#ffffff";
+        clonedDoc.body.style.color = "#000";
+        clonedDoc.body.style.backgroundColor = "#ffffff";
+        clonedDoc.body.style.opacity = "1";
+        clonedDoc.body.style.setProperty("-webkit-text-fill-color", "#000");
+        if (clonedElement) applyLfEstrelaGisPrintToCaptureElement(clonedElement);
+      },
     },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     pagebreak: {
       mode: ["css", "legacy"],
       avoid: [...CONTRACT_HTML2PDF_AVOID_SELECTORS],
+    },
+  };
+}
+
+export function getLfEstrelaCustomHtml2pdfOptions(
+  filename: string,
+): ContractHtml2pdfOptions {
+  return {
+    ...getContractHtml2pdfOptions(filename),
+    margin: [
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.top,
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.right,
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.bottom,
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.left,
+    ],
+    pagebreak: {
+      mode: ['css'],
+      avoid: [
+        '.sv-lf-sign',
+        '.lf-estrela-signatures',
+        '.sv-lf-keep-with-next',
+        '.sv-lf-keep-para',
+        '.sv-lf-51-tail',
+        '.sv-lf-widow-pair',
+        '.sv-company-logo',
+      ],
     },
   };
 }
@@ -135,6 +179,9 @@ export function resolveContractHtml2pdfOptions(
   filename: string,
   html?: string | null,
 ): ContractHtml2pdfOptions {
+  if (isLfEstrelaCustomHtml(html)) {
+    return getLfEstrelaCustomHtml2pdfOptions(filename);
+  }
   if (isRecantoPrimaveraContractModel(tenant)) {
     return getRecantoContractHtml2pdfOptions(filename);
   }
@@ -153,6 +200,21 @@ export function resolveContractHtml2pdfOptions(
       pagebreak: {
         mode: ['css', 'legacy'],
         avoid: [...resolveMundoNovoHtml2pdfAvoid(html)],
+      },
+    };
+  }
+  if (isEstrelaDoSulContractModel(tenant)) {
+    return {
+      ...getContractHtml2pdfOptions(filename),
+      margin: [
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.top,
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.right,
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.bottom,
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.left,
+      ],
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: [...ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID],
       },
     };
   }
@@ -357,6 +419,10 @@ export function buildContractPdfChromeFromTenant(
 
   if (isSvLotes2ContractModel(row)) {
     return buildSvLotes2PdfChrome(row, contractNumber, logoBase64);
+  }
+
+  if (isEstrelaDoSulContractModel(row)) {
+    return buildEstrelaDoSulPdfChrome(row, contractNumber, logoBase64);
   }
 
   if (isAraguaiaContractModel(row)) {

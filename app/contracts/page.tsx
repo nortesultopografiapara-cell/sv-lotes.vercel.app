@@ -32,7 +32,9 @@ import {
 } from "lucide-react";
 import "./contracts-mobile.css";
 import "./contracts-workspace.css";
-import { ContractGenerator } from "@/components/contracts/ContractGenerator";
+import {
+  CONTRACT_MODELS_CENTRAL_PATH,
+} from '@/lib/contractModelCentral';
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import { canShowMobileVendorSignAction } from "@/lib/saleContractBilateralSignature";
 import { openWhatsApp } from "@/lib/whatsapp/clickToChat";
@@ -50,6 +52,11 @@ import {
   displayContractNumber,
   isValidStoredContractNumber,
 } from "@/lib/contractNumber";
+import {
+  isCurrentContractVersion,
+  resolveContractVersionHtml,
+  sortContractVersionsNewestFirst,
+} from "@/lib/contractVersionSelect";
 import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
 import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
@@ -71,6 +78,7 @@ import {
   type SaleContractSignatureSectionHandle,
 } from "@/components/contracts/SaleContractSignatureSection";
 import { LegacyContractDocumentsSection } from "@/components/contracts/LegacyContractDocumentsSection";
+import { AssistantContractUiBridge } from "@/components/assistant/AssistantContractUiBridge";
 import { TerminationOperationDocumentsSection } from "@/components/sales/TerminationOperationDocumentsSection";
 import {
   canResendSaleSignature,
@@ -96,6 +104,14 @@ import {
   loadContractsListForTenant,
 } from "@/lib/contractsListService";
 import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
+import { isLfEstrelaCustomHtml, prepareLfEstrelaGisFinalHtml } from "@/lib/lfEstrelaPrintCss";
+import { isDevelopHomologRuntime } from "@/lib/homolog/env";
+import {
+  ensureLfEstrelaPhysicalFrozenForSignature,
+  freezeLfEstrelaPhysicalPdfBlob,
+  generateLfEstrelaPhysicalPdfBlob,
+  LF_ESTRELA_SIGNATURE_PREPARE_FAILED_MESSAGE,
+} from "@/lib/lfEstrelaPhysicalPdfClient";
 import {
   CONTRACT_FINANCE_RECEIPTS_SELECT,
   contractReceiptStatusClassName,
@@ -109,6 +125,23 @@ import {
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
 async function loadPdfChromeLogoBase64(src: string): Promise<string | null> {
+  const url = String(src || "").trim();
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { mode: "cors", cache: "no-store" });
+    if (res.ok) {
+      const blob = await res.blob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("file-reader"));
+        reader.readAsDataURL(blob);
+      });
+      if (dataUrl.startsWith("data:")) return dataUrl;
+    }
+  } catch {
+    /* canvas fallback */
+  }
   try {
     return await new Promise<string>((resolve, reject) => {
       const img = new Image();
@@ -126,11 +159,22 @@ async function loadPdfChromeLogoBase64(src: string): Promise<string | null> {
         }
       };
       img.onerror = reject;
-      img.src = src;
+      img.src = url;
     });
   } catch {
     return null;
   }
+}
+
+async function loadCompanyPdfChromeLogo(
+  tenantLogoUrl?: string | null,
+): Promise<string | null> {
+  const tenantUrl = String(tenantLogoUrl || "").trim();
+  if (tenantUrl) {
+    const loaded = await loadPdfChromeLogoBase64(tenantUrl);
+    if (loaded) return loaded;
+  }
+  return loadPdfChromeLogoBase64(getReportHeaderLogoUrl(null));
 }
 
 type PromissoryNoteDocumentView = {
@@ -241,6 +285,15 @@ async function fetchContractHtmlFromApi(
     error: error || data?.error,
   });
   return null;
+}
+
+function downloadPdfBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 /** @deprecated use loadContractsListForTenant — mantido para reload inline. */
@@ -558,6 +611,7 @@ export default function ContractsPage() {
   const [receipts, setReceipts] = useState<any[]>([]);
   const [receiptsLoadError, setReceiptsLoadError] = useState<string | null>(null);
   const [contractVersions, setContractVersions] = useState<any[]>([]);
+  const [viewedVersionId, setViewedVersionId] = useState<string | null>(null);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regeneratingContract, setRegeneratingContract] = useState(false);
   const [contractToast, setContractToast] = useState<string | null>(null);
@@ -875,27 +929,17 @@ export default function ContractsPage() {
     return st ? st.charAt(0).toUpperCase() + st.slice(1) : "Ativo";
   };
 
-  const visibleContractVersions = (
+  const visibleContractVersions = sortContractVersionsNewestFirst(
     contractVersions.length > 0
       ? [...contractVersions]
       : selectedContract
         ? [selectedContract]
-        : []
-  ).sort(
-    (a: any, b: any) =>
-      Number(a.version ?? 1) - Number(b.version ?? 1) ||
-      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+        : [],
   );
 
-  const contractVersionNote = (ver: any) => {
-    const isCurrent =
-      ver?.is_current === true || ver?.id === selectedContract?.id;
-    if (isCurrent) return "Atual";
-    if (ver?.regenerated_from) return "Regenerado";
-    const st = normalizeContractStatus(ver?.status);
-    if (st === "superseded") return "Substituído";
-    return getStatusLabel(ver?.status);
-  };
+  const displayedContractVersion =
+    visibleContractVersions.find((ver: any) => ver.id === viewedVersionId) ||
+    selectedContract;
 
   const isSupersededContract = (c: any) =>
     normalizeContractStatus(c?.status) === "superseded";
@@ -919,6 +963,7 @@ export default function ContractsPage() {
     setContractViewNeedsRegenerar(false);
     setContractViewLoading(false);
     setCustomerContractValidation(null);
+    setViewedVersionId(null);
     // Retry key não deve forçar rebuild eterno entre contratos.
     setContractHtmlRetryKey(0);
   }, [selectedContract?.id]);
@@ -1037,12 +1082,22 @@ export default function ContractsPage() {
       return;
     }
     try {
+      const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
+      if (isLfEstrelaCustomHtml(ver.generated_html)) {
+        const generated = await generateLfEstrelaPhysicalPdfBlob({
+          html: ver.generated_html,
+          filename: pdfFilename,
+          contractNumber: ver.contract_number,
+          tenant: tenantData || {},
+        });
+        downloadPdfBlob(generated.blob, generated.filename);
+        return;
+      }
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
       element.innerHTML = ver.generated_html;
       prepareContractHtmlElementForPagination(element);
       assertContractElementReadyForHtml2PdfCapture(element);
-      const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
       const htmlLooksRecanto = String(ver.generated_html || '').includes(
         'sv-contract-recanto-primavera',
       );
@@ -1052,12 +1107,17 @@ export default function ContractsPage() {
       const htmlLooksMundoNovo = String(ver.generated_html || '').includes(
         'sv-contract-mundo-novo',
       );
+      const htmlLooksEstrela = String(ver.generated_html || '').includes(
+        'sv-contract-estrela-do-sul',
+      );
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
           ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : htmlLooksEstrela
+            ? { ...(tenantData || {}), contract_model: 'ESTRELA_DO_SUL' }
           : tenantData || {};
-      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo
+      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo || htmlLooksEstrela
         ? resolveContractHtml2pdfOptions(
             pdfChromeTenant,
             pdfFilename,
@@ -1069,7 +1129,7 @@ export default function ContractsPage() {
 
       const versionLogoBase64 = htmlLooksMundoNovo
         ? await loadPdfChromeLogoBase64(MUNDO_NOVO_LOGO_PATH)
-        : null;
+        : await loadCompanyPdfChromeLogo(tenantData?.logo_url);
 
       try {
         await html2pdf()
@@ -1110,41 +1170,61 @@ export default function ContractsPage() {
     }
   };
 
+  const closeContractVersionSelect = (event: { currentTarget: EventTarget }) => {
+    const target = event.currentTarget as HTMLElement | null;
+    const details = target?.closest("details");
+    if (details instanceof HTMLDetailsElement) details.open = false;
+  };
+
+  const handleSelectContractVersion = (
+    ver: any,
+    event?: { currentTarget: EventTarget },
+  ) => {
+    if (event) closeContractVersionSelect(event);
+    if (!ver?.id || !selectedContract) return;
+    setActiveTab("Visualização");
+    setViewedVersionId(String(ver.id));
+    const storedHtml = resolveContractVersionHtml(ver);
+    if (storedHtml) {
+      setContractViewHtml(storedHtml);
+      setContractViewError(null);
+      setContractViewLoading(false);
+      return;
+    }
+    if (ver.id === selectedContract.id) {
+      setContractHtmlRetryKey((k) => k + 1);
+      return;
+    }
+    void (async () => {
+      setContractViewLoading(true);
+      const htmlBody = await fetchContractHtmlFromApi(String(ver.id), user, {
+        refresh: false,
+      });
+      setContractViewLoading(false);
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+        return;
+      }
+      setContractViewError("Esta versão não possui conteúdo para visualizar.");
+    })();
+  };
+
   const handleBaixarPDF = async () => {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
-    try {
-      const isElectronicallySigned = isSaleContractFullySigned(selectedContract);
-
-      if (isElectronicallySigned) {
-        const res = await fetchWithTimeout(
-          `/api/contracts/${selectedContract.id}/pdf?download=1`,
-          { credentials: "include" },
-          CONTRACTS_FETCH_TIMEOUT_MS,
-        );
-        if (res.ok) {
-          const blob = await res.blob();
-          const disposition = res.headers.get('Content-Disposition') || '';
-          const match = disposition.match(/filename="([^"]+)"/);
-          const filename =
-            match?.[1] ||
-            `contrato-assinado_${selectedContract.contract_number || selectedContract.id}.pdf`;
-          const url = URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.download = filename;
-          anchor.click();
-          URL.revokeObjectURL(url);
-          return;
-        }
-        alert('Não foi possível baixar o PDF assinado. Tente novamente ou use Abrir PDF Assinado.');
+    const viewingHistorical =
+      Boolean(viewedVersionId) && viewedVersionId !== selectedContract.id;
+    if (viewingHistorical) {
+      const ver = visibleContractVersions.find(
+        (row: any) => row.id === viewedVersionId,
+      );
+      if (ver) {
+        await handleDownloadVersion(ver);
         return;
       }
-
-      const { default: html2pdf } = await import("html2pdf.js");
-      const element = document.createElement("div");
-
-      // Preferir HTML persistido da versão ativa; rebuild só se needs_regenerar.
+    }
+    try {
       const mustRefresh = Boolean(
         (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
       );
@@ -1165,6 +1245,36 @@ export default function ContractsPage() {
         return;
       }
 
+      const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
+      if (isLfEstrelaCustomHtml(htmlBody)) {
+        const generated = await generateLfEstrelaPhysicalPdfBlob({
+          html: htmlBody,
+          filename: pdfFilename,
+          contractNumber: selectedContract.contract_number,
+          tenant: tenantData || {},
+        });
+        downloadPdfBlob(generated.blob, generated.filename);
+        try {
+          await freezeLfEstrelaPhysicalPdfBlob(
+            selectedContract.id,
+            generated.blob,
+            generated.pageCount,
+          );
+          if (isDevelopHomologRuntime()) {
+            alert("PDF físico congelado para assinatura.");
+          }
+        } catch (freezeErr) {
+          const message =
+            freezeErr instanceof Error ? freezeErr.message : String(freezeErr);
+          console.error("[contracts] freeze physical LF ESTRELA failed", freezeErr);
+          alert(message);
+        }
+        return;
+      }
+
+      const { default: html2pdf } = await import("html2pdf.js");
+      const element = document.createElement("div");
+
       if (isRecantoPrimaveraContractModel(tenantData || {})) {
         htmlBody = await embedRecantoContractSignatureInHtml(
           htmlBody,
@@ -1182,22 +1292,24 @@ export default function ContractsPage() {
       const htmlLooksMundoNovo = String(htmlBody || '').includes(
         'sv-contract-mundo-novo',
       );
+      const htmlLooksEstrela = String(htmlBody || '').includes(
+        'sv-contract-estrela-do-sul',
+      );
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
           ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : htmlLooksEstrela
+            ? { ...(tenantData || {}), contract_model: 'ESTRELA_DO_SUL' }
           : tenantData || {};
 
       let logoBase64: string | null = null;
       if (htmlLooksMundoNovo) {
         logoBase64 = await loadPdfChromeLogoBase64(MUNDO_NOVO_LOGO_PATH);
-      } else if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-        logoBase64 = await loadPdfChromeLogoBase64(
-          getReportHeaderLogoUrl(tenantData?.logo_url),
-        );
+      } else {
+        logoBase64 = await loadCompanyPdfChromeLogo(tenantData?.logo_url);
       }
 
-      const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
       const opt = resolveContractHtml2pdfOptions(
         pdfChromeTenant,
         pdfFilename,
@@ -1205,22 +1317,21 @@ export default function ContractsPage() {
       );
 
       try {
-        await html2pdf()
+        const pdf = await html2pdf()
           .from(element)
           .set(opt)
           .toPdf()
-          .get("pdf")
-          .then((pdf: any) => {
-            applyContractPdfChrome(
-              pdf,
-              buildContractPdfChromeFromTenant(
-                pdfChromeTenant,
-                String(selectedContract.contract_number || ""),
-                logoBase64,
-              ),
-            );
-          })
-          .save();
+          .get("pdf");
+        applyContractPdfChrome(
+          pdf,
+          buildContractPdfChromeFromTenant(
+            pdfChromeTenant,
+            String(selectedContract.contract_number || ""),
+            logoBase64,
+          ),
+        );
+        const pdfBlob = pdf.output("blob") as Blob;
+        downloadPdfBlob(pdfBlob, pdfFilename);
       } finally {
         element.remove();
       }
@@ -1232,10 +1343,19 @@ export default function ContractsPage() {
     }
   };
 
-  const handleImprimir = async () => {
+  const handleEnsureLfEstrelaPhysicalBeforeSend = async () => {
     if (!selectedContract) return;
-    if (!ensureCustomerValidForContractAction(selectedContract)) return;
-    // Mesma regra do Baixar PDF: versão ativa persistida; rebuild só se needs_regenerar.
+    const storedHtml = String(
+      (selectedContract as { generated_html?: string | null }).generated_html || "",
+    );
+    const viewHtml = String(resolvedContractHtml || "");
+    if (
+      (storedHtml || viewHtml) &&
+      !isLfEstrelaCustomHtml(storedHtml) &&
+      !isLfEstrelaCustomHtml(viewHtml)
+    ) {
+      return;
+    }
     const mustRefresh = Boolean(
       (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
     );
@@ -1248,17 +1368,94 @@ export default function ContractsPage() {
     } else {
       htmlBody = resolvedContractHtml;
     }
+    if (!isLfEstrelaCustomHtml(htmlBody || "") && !isLfEstrelaCustomHtml(storedHtml)) {
+      return;
+    }
+    if (!htmlBody?.trim()) {
+      throw new Error(LF_ESTRELA_SIGNATURE_PREPARE_FAILED_MESSAGE);
+    }
+    await ensureLfEstrelaPhysicalFrozenForSignature({
+      contractId: selectedContract.id,
+      html: htmlBody,
+      filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
+      contractNumber: selectedContract.contract_number,
+      tenant: tenantData || {},
+    });
+  };
+
+  const handleBaixarPDFAssinado = async () => {
+    if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) return;
+    try {
+      const res = await fetchWithTimeout(
+        `/api/contracts/${selectedContract.id}/pdf?download=1`,
+        { credentials: "include" },
+        CONTRACTS_FETCH_TIMEOUT_MS,
+      );
+      if (res.ok) {
+        const blob = await res.blob();
+        const disposition = res.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/);
+        const filename =
+          match?.[1] ||
+          `contrato-assinado_${selectedContract.contract_number || selectedContract.id}.pdf`;
+        downloadPdfBlob(blob, filename);
+        return;
+      }
+      const payload = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      alert(
+        payload?.error ||
+          "Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.",
+      );
+    } catch (err) {
+      console.error(err);
+      alert(
+        "Não foi possível baixar o PDF assinado. Tente novamente depois de gerar o PDF físico.",
+      );
+    }
+  };
+
+  const handleImprimir = async () => {
+    if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) return;
+    const viewingHistorical =
+      Boolean(viewedVersionId) && viewedVersionId !== selectedContract.id;
+    let htmlBody: string | null = null;
+    if (viewingHistorical) {
+      htmlBody = resolvedContractHtml;
+    } else {
+      // Mesma regra do Baixar PDF: versão ativa persistida; rebuild só se needs_regenerar.
+      const mustRefresh = Boolean(
+        (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
+      );
+      htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
+        refresh: mustRefresh,
+      });
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+      } else {
+        htmlBody = resolvedContractHtml;
+      }
+    }
     if (!htmlBody?.trim()) {
       alert("Não foi possível carregar o conteúdo do contrato para impressão.");
       return;
     }
     const printWindow = window.open("", "_blank");
     if (printWindow) {
+      const printable = prepareLfEstrelaGisFinalHtml(htmlBody);
       printWindow.document.write(`
               <html>
-                  <head><title>Imprimir Contrato - ${selectedContract.contract_number || ""}</title></head>
-                  <body style="font-family: sans-serif; padding: 20px;">
-                      ${htmlBody}
+                  <head><title>Imprimir Contrato - ${selectedContract.contract_number || ""}</title>
+                  <style>
+                    html, body { color: #000; background: #fff; opacity: 1; -webkit-text-fill-color: #000; }
+                  </style>
+                  </head>
+                  <body style="font-family: 'Times New Roman', Times, serif; padding: 20px; color: #000; background: #fff;">
+                      ${printable}
                       <script>window.onload = function() { window.print(); }</script>
                   </body>
               </html>
@@ -2005,6 +2202,7 @@ export default function ContractsPage() {
         selectedContract ? "contracts-page--contract-selected" : ""
       }`}
     >
+      <AssistantContractUiBridge contractId={selectedContract?.id || null} />
       {/* Mobile: busca + ações em massa (antes dos indicadores) */}
       <div className="contracts-mobile-top md:hidden">
         <div className="relative">
@@ -2421,7 +2619,7 @@ export default function ContractsPage() {
                           Novo Contrato
                         </a>
                         <a
-                          href="/contracts/templates"
+                          href={CONTRACT_MODELS_CENTRAL_PATH}
                           className="block px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--color-primary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)]/50"
                         >
                           Modelos
@@ -2465,7 +2663,7 @@ export default function ContractsPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              void handleBaixarPDF();
+                              void handleBaixarPDFAssinado();
                             }}
                             className="flex items-center gap-2 px-4 py-2 bg-emerald-700/90 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
                           >
@@ -2485,6 +2683,7 @@ export default function ContractsPage() {
                   loggedInUserEmail={user?.email}
                   authUser={user}
                   compact
+                  onBeforeSendForSignature={handleEnsureLfEstrelaPhysicalBeforeSend}
                   onCapabilitiesChange={setSignatureCaps}
                   onSigned={async () => {
                     const rows = await reloadContractsList();
@@ -3065,9 +3264,11 @@ export default function ContractsPage() {
                   color="purple"
                 />
                 <ActionBtn
-                  onClick={() => setActiveTab("Templates")}
+                  onClick={() => {
+                    window.location.assign(CONTRACT_MODELS_CENTRAL_PATH);
+                  }}
                   icon={<Edit />}
-                  label="Editar Modelo"
+                  label="Modelos de Contrato"
                   color="warning"
                 />
                 {canShowRegenerateContract && (
@@ -3101,14 +3302,15 @@ export default function ContractsPage() {
                   <details className="contracts-version-select">
                     <summary>
                       <Layers className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                      Versão {selectedContract.version ?? 1}
+                      Versão {displayedContractVersion?.version ?? 1}
                       <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                     </summary>
-                    <div className="contracts-version-menu">
+                    <div className="contracts-version-menu" role="menu">
                       {visibleContractVersions.map((ver: any) => {
-                        const isCurrent =
-                          ver.is_current === true ||
-                          ver.id === selectedContract.id;
+                        const isCurrent = isCurrentContractVersion(
+                          ver,
+                          selectedContract.id,
+                        );
                         const dateLabel = new Date(
                           ver.regenerated_at || ver.created_at,
                         ).toLocaleDateString("pt-BR");
@@ -3116,8 +3318,11 @@ export default function ContractsPage() {
                           <button
                             key={ver.id}
                             type="button"
+                            role="menuitem"
                             className="contracts-version-row"
-                            onClick={() => void handleDownloadVersion(ver)}
+                            onClick={(event) =>
+                              handleSelectContractVersion(ver, event)
+                            }
                           >
                             <span
                               className={`contracts-version-dot ${isCurrent ? "is-current" : ""}`}
@@ -3125,9 +3330,10 @@ export default function ContractsPage() {
                             <span>
                               <span className="contracts-version-name">
                                 Versão {ver.version ?? 1}
+                                {isCurrent ? " — Atual" : ""}
                               </span>
                               <span className="contracts-version-sub">
-                                {dateLabel} — {contractVersionNote(ver)}
+                                {dateLabel}
                               </span>
                             </span>
                           </button>
@@ -3219,7 +3425,7 @@ export default function ContractsPage() {
                 Carnê
               </button>
               <a
-                href="/contracts/templates"
+                href={CONTRACT_MODELS_CENTRAL_PATH}
                 className="contracts-mobile-action-btn"
               >
                 <Edit />
@@ -3285,14 +3491,13 @@ export default function ContractsPage() {
                   {mobileSignatureLabel}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setActiveTab("Templates")}
+              <a
+                href={CONTRACT_MODELS_CENTRAL_PATH}
                 className="contracts-mobile-action-btn"
               >
                 <Edit />
-                Editar modelo
-              </button>
+                Modelos de Contrato
+              </a>
               <button
                 type="button"
                 onClick={handleCancelar}
@@ -3304,12 +3509,14 @@ export default function ContractsPage() {
               <details className="contracts-version-select contracts-mobile-version-select">
                 <summary className="contracts-mobile-action-btn">
                   <Layers />
-                  Versão {selectedContract.version ?? 1}
+                  Versão {displayedContractVersion?.version ?? 1}
                 </summary>
-                <div className="contracts-version-menu">
+                <div className="contracts-version-menu" role="menu">
                   {visibleContractVersions.map((ver: any) => {
-                    const isCurrent =
-                      ver.is_current === true || ver.id === selectedContract.id;
+                    const isCurrent = isCurrentContractVersion(
+                      ver,
+                      selectedContract.id,
+                    );
                     const dateLabel = new Date(
                       ver.regenerated_at || ver.created_at,
                     ).toLocaleDateString("pt-BR");
@@ -3317,8 +3524,11 @@ export default function ContractsPage() {
                       <button
                         key={ver.id}
                         type="button"
+                        role="menuitem"
                         className="contracts-version-row"
-                        onClick={() => void handleDownloadVersion(ver)}
+                        onClick={(event) =>
+                          handleSelectContractVersion(ver, event)
+                        }
                       >
                         <span
                           className={`contracts-version-dot ${isCurrent ? "is-current" : ""}`}
@@ -3326,9 +3536,10 @@ export default function ContractsPage() {
                         <span>
                           <span className="contracts-version-name">
                             Versão {ver.version ?? 1}
+                            {isCurrent ? " — Atual" : ""}
                           </span>
                           <span className="contracts-version-sub">
-                            {dateLabel} — {contractVersionNote(ver)}
+                            {dateLabel}
                           </span>
                         </span>
                       </button>

@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { CALLER_PROFILE_SELECT, getRequestAuthUser } from '@/lib/supabase/server';
+import {
+  PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE,
+  decidePublicSignAccess,
+  resolvePublicSignSessionLookup,
+} from '@/lib/saleContractPublicVendorSignGuard';
+import { persistPublicVendorAdminBlockedAudit } from '@/lib/saleContractVendorSignAuthServer';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import {
   createSaleContractHtmlPreviewResponse,
@@ -33,6 +40,7 @@ import {
 } from '@/lib/saleContractSignatureParties';
 import { markPartyOrLegacyViewed } from '@/lib/saleContractSignaturePartyFlow';
 import { saleSignaturePartyRoleLabel } from '@/lib/saleContractSignaturePartyTypes';
+import { isEstrelaInternalCompanyVendorParty } from '@/lib/estrelaDoSulContractEsign';
 import {
   computeAggregateSaleSignatureStatus,
   toPartyStatusSnapshots,
@@ -96,6 +104,32 @@ export async function GET(
 
   const ctx = await loadSaleSignPageContext(supabaseAdmin, signature);
   const { contract, customer, block, project, company } = ctx;
+
+  const publicParty = await getPartyByPublicToken(supabaseAdmin, token);
+  if (publicParty && publicParty.contract_signature_id === signature.id) {
+    const partiesForGuard = await listSignatureParties(
+      supabaseAdmin,
+      signature.id,
+    );
+    const contractModel = String(
+      contract.sale_contract_model ||
+        contract.contract_model ||
+        project?.contract_model ||
+        (company as Record<string, unknown> | null)?.contract_model ||
+        '',
+    );
+    if (
+      isEstrelaInternalCompanyVendorParty(publicParty, partiesForGuard, {
+        contractModel,
+        company: (company as Record<string, unknown>) || null,
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'Link inválido ou expirado.' },
+        { status: 404 },
+      );
+    }
+  }
 
   if (pdf) {
     const contractNumber = String(contract.contract_number || '');
@@ -391,6 +425,46 @@ export async function POST(
   }
 
   const { token } = await params;
+  const party = await getPartyByPublicToken(supabaseAdmin, token);
+  const signatureForGuard = await getSaleSignatureByToken(supabaseAdmin, token);
+  const tenantId = String(
+    signatureForGuard?.tenant_id || party?.company_id || '',
+  ).trim();
+  const session = await resolvePublicSignSessionLookup({
+    getAuthUser: () => getRequestAuthUser(request),
+    resolveProfile: async (userId) => {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select(CALLER_PROFILE_SELECT)
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data;
+    },
+  });
+  const decision = decidePublicSignAccess({
+    partyRole: party?.role || null,
+    contractTenantId: tenantId,
+    session,
+  });
+  if (decision.block) {
+    if (decision.reason === 'evaluation_error') {
+      console.warn('[public-sign] sessão administrativa não avaliada');
+    }
+    await persistPublicVendorAdminBlockedAudit(supabaseAdmin, {
+      tenantId,
+      contractId: String(party?.contract_id || signatureForGuard?.contract_id || ''),
+      partyId: String(party?.id || signatureForGuard?.id || ''),
+      requestedBy: decision.requestedBy,
+    });
+    return NextResponse.json(
+      { ok: false, error: PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE },
+      { status: 403 },
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
 
   try {

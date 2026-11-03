@@ -7,6 +7,7 @@ import {
   resolveCompanyAdminContextFromRequest,
   updateCompanyAdminUser,
 } from '@/lib/companyAdminUsers';
+import { companyAdminWriteHttpStatus } from '@/lib/companyPrimaryAdmin';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { rejectIfDemoCaller } from '@/lib/demoServerGuard';
 
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao cadastrar administrador.';
-    const status = message.includes('Limite') ? 409 : 500;
+    const status = companyAdminWriteHttpStatus(message);
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -155,7 +156,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true, admin: updated, meta });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao atualizar administrador.';
-    const status = message.includes('Limite') ? 409 : 500;
+    const status = companyAdminWriteHttpStatus(message);
     return NextResponse.json({ error: message }, { status });
   }
 }

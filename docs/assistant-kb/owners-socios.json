@@ -1,0 +1,41 @@
+{
+  "id": "owners-socios",
+  "title": "Sócios / Proprietários",
+  "module": "settings",
+  "routes": ["/owners"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["socios", "proprietarios", "novo socio", "acesso por empreendimento"],
+  "objective": "Cadastrar sócio ou proprietário e configurar o acesso por empreendimento.",
+  "prerequisites": [
+    "ADMIN da empresa. Corretor e o próprio perfil OWNER não gerenciam esta tela."
+  ],
+  "navigationPath": [
+    "Sócios / Proprietários",
+    "Novo Sócio / Proprietário",
+    "Configurar acesso"
+  ],
+  "steps": [
+    "Abra Sócios / Proprietários.",
+    "Clique em Novo Sócio / Proprietário. Preencha Nome, E-mail, Telefone, Tipo (Sócio, Proprietário, Investidor ou Dono da área) e Status. Salvar.",
+    "Nas Ações use Editar, Configurar acesso, Participação financeira, Ativar ou Inativar.",
+    "Em Configurar acesso por empreendimento defina Empreendimentos e permissões."
+  ],
+  "expectedResult": "Sócio/proprietário ativo com acesso limitado aos empreendimentos liberados.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não cria usuário.",
+    "Não cole senha provisória no chat."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/owners/page.tsx"
+  ],
+  "uiLabels": [
+    "Sócios / Proprietários",
+    "Novo Sócio / Proprietário",
+    "Configurar acesso",
+    "Participação financeira",
+    "Salvar"
+  ]
+}

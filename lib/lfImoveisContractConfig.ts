@@ -1,0 +1,621 @@
+/**
+ * Configuração contratual LF Imóveis por empreendimento.
+ * Coluna: projects.lf_contract_config_json
+ *
+ * Isolado do Mundo Novo e do Split de Recebimentos.
+ * Não armazena wallet, conta bancária nem gateway.
+ */
+
+import {
+  CONTRACT_SECOND_VENDOR_EMPTY,
+  emptyContractSecondVendorFields,
+  isContractSecondVendorComplete,
+  isContractSecondVendorFieldsEmpty,
+  mergeContractSecondVendorFields,
+  normalizeContractSecondVendorForSave,
+  parseContractSecondVendorJson,
+  type ContractSecondVendorFields,
+} from '@/lib/contractSecondVendor';
+import {
+  ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT,
+  ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT,
+} from '@/lib/estrelaDoSulContractConstants';
+import {
+  parseInstallmentCorrectionType,
+  type InstallmentCorrectionType,
+} from '@/lib/installmentCorrectionType';
+import {
+  buildLfContractSnapshotPayload,
+  parseLfContractSnapshotJson,
+  readSaleLfSnapshotRaw,
+} from '@/lib/lfImoveisContractSnapshot';
+
+export const LF_CONTRACT_CONFIG_COLUMN = 'lf_contract_config_json';
+
+/**
+ * Somente leitura de contratos/vendas antigas sem snapshot e sem percentuais
+ * no empreendimento. Não usar para criar venda nova.
+ */
+export const LF_PARTICIPATION_FALLBACK = {
+  firstVendorPercent: ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT,
+  secondVendorPercent: ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT,
+} as const;
+
+export const LF_PARTICIPATION_INCOMPLETE_MESSAGE =
+  'A configuração contratual do empreendimento está incompleta: informe os percentuais de participação dos vendedores (soma 100%) em Editar empreendimento.';
+
+export type LfContractParticipation = {
+  firstVendorPercent: number;
+  secondVendorPercent: number;
+};
+
+export type LfContractConfigParsed = {
+  secondVendor: ContractSecondVendorFields;
+  participation: LfContractParticipation | null;
+  installmentCorrectionType: InstallmentCorrectionType | null;
+  allowSplitDownPayment: boolean | null;
+};
+
+export type LfSecondVendorSource = 'sale' | 'project' | 'company' | 'none';
+export type LfParticipationSource = 'sale' | 'project' | 'fallback';
+
+export type LfResolvedContractConfig = {
+  secondVendor: ContractSecondVendorFields;
+  hasSecondVendor: boolean;
+  secondVendorSource: LfSecondVendorSource;
+  firstVendorPercent: number;
+  secondVendorPercent: number;
+  participationSource: LfParticipationSource;
+  usingCompanySecondVendorFallback: boolean;
+  usingPercentFallback: boolean;
+};
+
+export type LfContractConfigFormState = {
+  secondVendor: ContractSecondVendorFields;
+  firstVendorPercent: string;
+  secondVendorPercent: string;
+  /** Vazio = padrão do modelo (Estrela do Sul = IGP-M). */
+  installmentCorrectionType: string;
+  /** Preserva override já gravado; null = não definido no JSON. */
+  allowSplitDownPayment: boolean | null;
+};
+
+const FORBIDDEN_CONFIG_KEYS = [
+  'wallet',
+  'walletId',
+  'wallet_id',
+  'asaasWallet',
+  'financialAccountId',
+  'financial_account_id',
+  'accountId',
+  'bankAccount',
+  'gateway',
+] as const;
+
+function clean(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function asRecord(raw: unknown): Record<string, unknown> | null {
+  if (raw == null || raw === '') return null;
+  let parsed: unknown = raw;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+export function emptyLfContractConfigForm(): LfContractConfigFormState {
+  return {
+    secondVendor: emptyContractSecondVendorFields(),
+    firstVendorPercent: '',
+    secondVendorPercent: '',
+    installmentCorrectionType: '',
+    allowSplitDownPayment: null,
+  };
+}
+
+export function parseLfPercent(raw: unknown): number | null {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? raw : null;
+  }
+  const text = String(raw).trim().replace('%', '').replace(',', '.');
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Percentuais >= 0 que totalizam exatamente 100% (centésimos). */
+export function isLfParticipationValid(
+  first: number | null | undefined,
+  second: number | null | undefined,
+): boolean {
+  if (first == null || second == null) return false;
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return false;
+  if (first < 0 || second < 0) return false;
+  if (first > 100 || second > 100) return false;
+  return Math.round(first * 100) + Math.round(second * 100) === 10000;
+}
+
+export function formatLfPercentLabel(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  if (Number.isInteger(rounded)) return `${rounded}%`;
+  return `${String(rounded).replace('.', ',')}%`;
+}
+
+export function parseLfContractConfigJson(raw: unknown): LfContractConfigParsed {
+  const empty = {
+    secondVendor: emptyContractSecondVendorFields(),
+    participation: null,
+    installmentCorrectionType: null as InstallmentCorrectionType | null,
+    allowSplitDownPayment: null as boolean | null,
+  };
+  const obj = asRecord(raw);
+  if (!obj) {
+    return empty;
+  }
+
+  const vendorRaw =
+    obj.secondVendor ??
+    obj.second_vendor ??
+    obj.segundoVendedor ??
+    obj.vendor;
+  const secondVendor = parseContractSecondVendorJson(vendorRaw);
+
+  const partRaw =
+    obj.participation ?? obj.participacao ?? obj.percentages ?? obj;
+  const partObj = asRecord(partRaw) || obj;
+  const first = parseLfPercent(
+    partObj.firstVendorPercent ??
+      partObj.first_vendor_percent ??
+      partObj.lfPercent ??
+      partObj.primeiro,
+  );
+  const second = parseLfPercent(
+    partObj.secondVendorPercent ??
+      partObj.second_vendor_percent ??
+      partObj.segundoPercent ??
+      partObj.segundo,
+  );
+  const participation =
+    first != null && second != null
+      ? { firstVendorPercent: first, secondVendorPercent: second }
+      : null;
+
+  const finance =
+    asRecord(obj.sale_finance_config) || asRecord(obj.saleFinanceConfig) || obj;
+  const installmentCorrectionType = parseInstallmentCorrectionType(
+    finance.installment_correction_type ?? finance.installmentCorrectionType,
+  );
+  const allowSplitRaw =
+    finance.allow_split_down_payment ?? finance.allowSplitDownPayment;
+  const allowSplitDownPayment =
+    allowSplitRaw === true ||
+    allowSplitRaw === 1 ||
+    allowSplitRaw === 'true' ||
+    allowSplitRaw === 'TRUE'
+      ? true
+      : allowSplitRaw === false ||
+          allowSplitRaw === 0 ||
+          allowSplitRaw === 'false' ||
+          allowSplitRaw === 'FALSE'
+        ? false
+        : null;
+
+  return {
+    secondVendor,
+    participation,
+    installmentCorrectionType,
+    allowSplitDownPayment,
+  };
+}
+
+/** Compara o JSON pedido no save com o valor lido de projects.lf_contract_config_json. */
+export function lfContractConfigPersistedEquals(
+  written: unknown,
+  wanted: unknown,
+): boolean {
+  if (wanted == null || wanted === '') {
+    return written == null || written === '';
+  }
+  if (written == null || written === '') return false;
+  const a = parseLfContractConfigJson(written);
+  const b = parseLfContractConfigJson(wanted);
+  const keys: Array<keyof ContractSecondVendorFields> = [
+    'name',
+    'cpf',
+    'rg',
+    'rgIssuer',
+    'rgUf',
+    'nationality',
+    'maritalStatus',
+    'profession',
+    'email',
+    'phone',
+    'address',
+  ];
+  for (const key of keys) {
+    if (clean(a.secondVendor[key]) !== clean(b.secondVendor[key])) return false;
+  }
+  const partA = a.participation;
+  const partB = b.participation;
+  if ((partA == null) !== (partB == null)) return false;
+  if (
+    partA &&
+    partB &&
+    (partA.firstVendorPercent !== partB.firstVendorPercent ||
+      partA.secondVendorPercent !== partB.secondVendorPercent)
+  ) {
+    return false;
+  }
+  if (a.installmentCorrectionType !== b.installmentCorrectionType) return false;
+  if (a.allowSplitDownPayment !== b.allowSplitDownPayment) return false;
+  return true;
+}
+
+export function lfConfigToFormState(raw: unknown): LfContractConfigFormState {
+  const parsed = parseLfContractConfigJson(raw);
+  return {
+    secondVendor: { ...parsed.secondVendor },
+    firstVendorPercent:
+      parsed.participation && isLfParticipationValid(
+        parsed.participation.firstVendorPercent,
+        parsed.participation.secondVendorPercent,
+      )
+        ? String(parsed.participation.firstVendorPercent)
+        : parsed.participation
+          ? String(parsed.participation.firstVendorPercent)
+          : '',
+    secondVendorPercent:
+      parsed.participation && isLfParticipationValid(
+        parsed.participation.firstVendorPercent,
+        parsed.participation.secondVendorPercent,
+      )
+        ? String(parsed.participation.secondVendorPercent)
+        : parsed.participation
+          ? String(parsed.participation.secondVendorPercent)
+          : '',
+    installmentCorrectionType: parsed.installmentCorrectionType || '',
+    allowSplitDownPayment: parsed.allowSplitDownPayment,
+  };
+}
+
+function stripForbiddenKeys(obj: Record<string, unknown>): void {
+  for (const key of FORBIDDEN_CONFIG_KEYS) {
+    delete obj[key];
+  }
+}
+
+/**
+ * Normaliza para save em projects.lf_contract_config_json.
+ * Tudo vazio → null (segundo vendedor da empresa; percentuais ausentes).
+ */
+export function normalizeLfContractConfigForSave(
+  input: unknown,
+):
+  | { ok: true; value: Record<string, unknown> | null }
+  | { ok: false; error: string } {
+  const obj = asRecord(input) || {};
+  stripForbiddenKeys(obj);
+
+  const vendorInput =
+    obj.secondVendor ??
+    obj.second_vendor ??
+    (typeof input === 'object' && input && 'name' in (input as object)
+      ? input
+      : undefined);
+  const vendorNorm = normalizeContractSecondVendorForSave(
+    vendorInput ?? CONTRACT_SECOND_VENDOR_EMPTY,
+  );
+  if (!vendorNorm.ok) {
+    return {
+      ok: false,
+      error: vendorNorm.error.replace(
+        'Segundo Promitente Vendedor',
+        'Segundo vendedor/proprietário (LF Imóveis)',
+      ),
+    };
+  }
+
+  const formLike = input && typeof input === 'object' ? (input as Record<string, unknown>) : obj;
+  const firstRaw =
+    formLike.firstVendorPercent ??
+    formLike.first_vendor_percent ??
+    asRecord(formLike.participation)?.firstVendorPercent;
+  const secondRaw =
+    formLike.secondVendorPercent ??
+    formLike.second_vendor_percent ??
+    asRecord(formLike.participation)?.secondVendorPercent;
+
+  const firstEmpty = clean(firstRaw) === '' && firstRaw !== 0;
+  const secondEmpty = clean(secondRaw) === '' && secondRaw !== 0;
+  const bothPercentsEmpty = firstEmpty && secondEmpty;
+
+  let participation: LfContractParticipation | null = null;
+  if (!bothPercentsEmpty) {
+    const first = parseLfPercent(firstRaw);
+    const second = parseLfPercent(secondRaw);
+    if (!isLfParticipationValid(first, second)) {
+      return {
+        ok: false,
+        error:
+          'Participação LF Imóveis: informe percentuais maiores ou iguais a 0 que somem exatamente 100%.',
+      };
+    }
+    participation = {
+      firstVendorPercent: first as number,
+      secondVendorPercent: second as number,
+    };
+  }
+
+  const value: Record<string, unknown> = {};
+  if (vendorNorm.value) {
+    value.secondVendor = vendorNorm.value;
+  }
+  if (participation) {
+    value.participation = participation;
+  }
+
+  const correction = parseInstallmentCorrectionType(
+    formLike.installmentCorrectionType ??
+      formLike.installment_correction_type ??
+      asRecord(formLike.sale_finance_config)?.installment_correction_type,
+  );
+  const allowSplitRaw =
+    formLike.allowSplitDownPayment ??
+    formLike.allow_split_down_payment ??
+    asRecord(formLike.sale_finance_config)?.allow_split_down_payment;
+  const allowSplit =
+    allowSplitRaw === true ||
+    allowSplitRaw === 1 ||
+    allowSplitRaw === 'true' ||
+    allowSplitRaw === 'TRUE'
+      ? true
+      : allowSplitRaw === false ||
+          allowSplitRaw === 0 ||
+          allowSplitRaw === 'false' ||
+          allowSplitRaw === 'FALSE'
+        ? false
+        : null;
+
+  const saleFinanceConfig: Record<string, unknown> = {};
+  if (correction) {
+    saleFinanceConfig.installment_correction_type = correction;
+  }
+  if (allowSplit != null) {
+    saleFinanceConfig.allow_split_down_payment = allowSplit;
+  }
+  if (Object.keys(saleFinanceConfig).length > 0) {
+    value.sale_finance_config = saleFinanceConfig;
+  }
+
+  if (!vendorNorm.value && !participation && !value.sale_finance_config) {
+    return { ok: true, value: null };
+  }
+
+  return { ok: true, value };
+}
+
+export function resolveLfSecondVendor(input: {
+  sale?: Record<string, unknown> | null;
+  project?: Record<string, unknown> | null;
+  company?: Record<string, unknown> | null;
+}): {
+  vendor: ContractSecondVendorFields;
+  complete: boolean;
+  source: LfSecondVendorSource;
+} {
+  const saleSnap = parseLfContractSnapshotJson(readSaleLfSnapshotRaw(input.sale));
+  const saleVendor =
+    saleSnap?.hasSecondVendor ? saleSnap.secondVendor : emptyContractSecondVendorFields();
+
+  const projectParsed = parseLfContractConfigJson(
+    input.project?.[LF_CONTRACT_CONFIG_COLUMN] ??
+      input.project?.lf_contract_config,
+  );
+  const partyVendor = parseProjectSellerPartyVendor(input.project, 1);
+  const companyVendor = parseContractSecondVendorJson(
+    input.company?.contract_second_vendor_json,
+  );
+
+  const vendor = mergeContractSecondVendorFields(
+    saleVendor,
+    projectParsed.secondVendor,
+    partyVendor,
+    companyVendor,
+  );
+
+  let source: LfSecondVendorSource = 'none';
+  if (isContractSecondVendorComplete(saleVendor)) source = 'sale';
+  else if (
+    isContractSecondVendorComplete(projectParsed.secondVendor) ||
+    isContractSecondVendorComplete(partyVendor)
+  ) {
+    source = 'project';
+  } else if (isContractSecondVendorComplete(companyVendor)) source = 'company';
+
+  return {
+    vendor,
+    complete: isContractSecondVendorComplete(vendor),
+    source,
+  };
+}
+
+function parseProjectSellerPartyVendor(
+  project: Record<string, unknown> | null | undefined,
+  index: number,
+): ContractSecondVendorFields {
+  const raw = project?.seller_parties_json;
+  let rows: unknown[] = [];
+  if (Array.isArray(raw)) rows = raw;
+  else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) rows = parsed;
+    } catch {
+      rows = [];
+    }
+  }
+  const row = rows[index];
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return emptyContractSecondVendorFields();
+  }
+  return parseContractSecondVendorJson(row);
+}
+
+/**
+ * Resolução para renderizar contrato.
+ * Venda com snapshot válido → snapshot (imutável).
+ * Senão, percentuais válidos do empreendimento.
+ * Fallback 30/70: somente contratos/vendas antigas sem snapshot e sem config.
+ * Não usar esta função para gravar snapshot de venda nova.
+ */
+export function resolveLfParticipation(input: {
+  sale?: Record<string, unknown> | null;
+  project?: Record<string, unknown> | null;
+}): {
+  firstVendorPercent: number;
+  secondVendorPercent: number;
+  source: LfParticipationSource;
+} {
+  const saleSnap = parseLfContractSnapshotJson(readSaleLfSnapshotRaw(input.sale));
+  if (
+    saleSnap?.participation &&
+    isLfParticipationValid(
+      saleSnap.participation.firstVendorPercent,
+      saleSnap.participation.secondVendorPercent,
+    )
+  ) {
+    return {
+      firstVendorPercent: saleSnap.participation.firstVendorPercent,
+      secondVendorPercent: saleSnap.participation.secondVendorPercent,
+      source: 'sale',
+    };
+  }
+
+  const parsed = parseLfContractConfigJson(
+    input.project?.[LF_CONTRACT_CONFIG_COLUMN] ??
+      input.project?.lf_contract_config,
+  );
+  if (
+    parsed.participation &&
+    isLfParticipationValid(
+      parsed.participation.firstVendorPercent,
+      parsed.participation.secondVendorPercent,
+    )
+  ) {
+    return {
+      firstVendorPercent: parsed.participation.firstVendorPercent,
+      secondVendorPercent: parsed.participation.secondVendorPercent,
+      source: 'project',
+    };
+  }
+  return {
+    firstVendorPercent: LF_PARTICIPATION_FALLBACK.firstVendorPercent,
+    secondVendorPercent: LF_PARTICIPATION_FALLBACK.secondVendorPercent,
+    source: 'fallback',
+  };
+}
+
+export function resolveLfContractConfig(input: {
+  sale?: Record<string, unknown> | null;
+  project?: Record<string, unknown> | null;
+  company?: Record<string, unknown> | null;
+}): LfResolvedContractConfig {
+  const vendor = resolveLfSecondVendor(input);
+  const percents = resolveLfParticipation(input);
+  return {
+    secondVendor: vendor.vendor,
+    hasSecondVendor: vendor.complete,
+    secondVendorSource: vendor.source,
+    firstVendorPercent: percents.firstVendorPercent,
+    secondVendorPercent: percents.secondVendorPercent,
+    participationSource: percents.source,
+    usingCompanySecondVendorFallback: vendor.source === 'company',
+    usingPercentFallback: percents.source === 'fallback',
+  };
+}
+
+export function formatLfPartnershipNote(params: {
+  companyName: string;
+  secondVendorName: string;
+  firstVendorPercent: number;
+  secondVendorPercent: number;
+}): string {
+  return `Será repassado ao primeiro vendedor, ${params.companyName || 'o VENDEDOR'}, ${formatLfPercentLabel(params.firstVendorPercent)} do valor e ${formatLfPercentLabel(params.secondVendorPercent)} ao segundo vendedor, ${params.secondVendorName}, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.`;
+}
+
+export function isLfContractConfigFieldsEmpty(
+  fields: LfContractConfigFormState,
+): boolean {
+  return (
+    isContractSecondVendorFieldsEmpty(fields.secondVendor) &&
+    !clean(fields.firstVendorPercent) &&
+    !clean(fields.secondVendorPercent) &&
+    !clean(fields.installmentCorrectionType) &&
+    fields.allowSplitDownPayment == null
+  );
+}
+
+/** Percentuais válidos gravados no empreendimento — sem fallback 30/70. */
+export function readProjectLfParticipation(
+  project?: Record<string, unknown> | null,
+): LfContractParticipation | null {
+  const parsed = parseLfContractConfigJson(
+    project?.[LF_CONTRACT_CONFIG_COLUMN] ?? project?.lf_contract_config,
+  );
+  if (
+    parsed.participation &&
+    isLfParticipationValid(
+      parsed.participation.firstVendorPercent,
+      parsed.participation.secondVendorPercent,
+    )
+  ) {
+    return parsed.participation;
+  }
+  return null;
+}
+
+export function assertLfParticipationConfiguredForNewSale(
+  project?: Record<string, unknown> | null,
+): LfContractParticipation {
+  const participation = readProjectLfParticipation(project);
+  if (!participation) {
+    throw new Error(LF_PARTICIPATION_INCOMPLETE_MESSAGE);
+  }
+  return participation;
+}
+
+/**
+ * Congela a config do empreendimento na venda nova.
+ * Percentuais: somente os do projeto (nunca o fallback histórico 30/70).
+ * Segundo vendedor: resolução vigente (projeto → empresa).
+ */
+export function captureLfContractSnapshotForSale(input: {
+  project?: Record<string, unknown> | null;
+  company?: Record<string, unknown> | null;
+  capturedAt?: string;
+}): Record<string, unknown> {
+  const participation = assertLfParticipationConfiguredForNewSale(input.project);
+  const resolved = resolveLfContractConfig({
+    project: input.project,
+    company: input.company,
+  });
+  return buildLfContractSnapshotPayload({
+    secondVendor: resolved.secondVendor,
+    firstVendorPercent: participation.firstVendorPercent,
+    secondVendorPercent: participation.secondVendorPercent,
+    secondVendorSource: resolved.secondVendorSource,
+    participationSource: 'project',
+    project: input.project,
+    capturedAt: input.capturedAt,
+  });
+}

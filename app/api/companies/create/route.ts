@@ -16,6 +16,7 @@ import { describeCompanyAsaasProvision } from '@/lib/finance/companyAsaasAccess'
 import { assertSuperAdmin } from '@/lib/apiSuperAdmin';
 import { authorizeCompanyAdminRequest, type CompanyAdminAuthDeps } from '@/lib/companyAdminApiAuth';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+import { assignFirstCompanyPrimaryAdmin } from '@/lib/companyPrimaryAdmin';
 
 const defaultDeps: CompanyAdminAuthDeps = {
   getRequestAuthUser,
@@ -223,6 +224,19 @@ async function executeCompanyCreate(req: Request) {
     }
 
     console.log(`[SUCESSO] Perfil criado em public.users e vinculado à empresa!`);
+
+    try {
+      await assignFirstCompanyPrimaryAdmin(supabaseAdmin, newCompanyId, authUserId);
+      console.log(`[SUCESSO] Administrador Principal gravado: ${authUserId}`);
+    } catch (primaryErr: any) {
+      const msg = String(primaryErr?.message || primaryErr);
+      if (/primary_admin_user_id ausente/i.test(msg)) {
+        console.warn('[AVISO] Migration primary_admin_user_id ainda não aplicada. Empresa criada sem autoridade crítica.');
+      } else {
+        console.error('[ERRO] Falha ao gravar primary_admin_user_id:', msg);
+        throw new Error(`Falha ao gravar Administrador Principal: ${msg}`);
+      }
+    }
 
     if (!companyPayload.is_test_company && newCompany) {
       console.log('[ETAPA 4] Provisionando assinatura SaaS e contrato...');

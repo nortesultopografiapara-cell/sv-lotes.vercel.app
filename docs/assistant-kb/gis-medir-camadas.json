@@ -1,0 +1,44 @@
+{
+  "id": "gis-medir-camadas",
+  "title": "Medir, GPS e camadas do mapa",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "read",
+  "tags": ["medir distancia", "medir area", "gps", "camadas", "google satelite", "centralizar gps"],
+  "objective": "Usar as ferramentas de visualização e medição da barra do mapa.",
+  "prerequisites": [
+    "Empreendimento aberto no Mapa GIS."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Medir Distância / Medir Área / Centralizar GPS / Camadas do Mapa"
+  ],
+  "steps": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Centralizar GPS liga a localização no mapa.",
+    "Medir Distância: clique os pontos, use Finalizar e Limpar Medição no painel Medição.",
+    "Medir Área: clique os vértices, use Finalizar; Exportar PDF pede Nome da propriedade e Nome do proprietário e gera o PDF.",
+    "Camadas do Mapa troca a base: Google Satélite, Google Híbrido, Esri Satélite ou OpenStreetMap."
+  ],
+  "expectedResult": "Medição visível no mapa e, se exportar área, PDF gerado. Camada de fundo alterada.",
+  "commonErrors": [],
+  "limitations": [
+    "A medição de área/distância não grava geometria do lote."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/DistanceMeasureTool.tsx",
+    "components/map/AreaMeasureTool.tsx",
+    "lib/gisBaseLayers.ts"
+  ],
+  "uiLabels": [
+    "Centralizar GPS",
+    "Medir Distância",
+    "Medir Área",
+    "Camadas do Mapa",
+    "Google Satélite",
+    "Exportar PDF"
+  ]
+}

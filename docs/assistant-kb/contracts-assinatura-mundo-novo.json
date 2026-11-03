@@ -1,0 +1,60 @@
+{
+  "id": "contracts-assinatura-mundo-novo",
+  "title": "Assinatura eletrônica — Chacreamento Mundo Novo",
+  "module": "contracts",
+  "routes": ["/contracts", "/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["mundo novo", "promitente", "vendedor", "e-sign", "seller_parties"],
+  "contractModels": ["MUNDO_NOVO"],
+  "objective": "Orientar a assinatura do modelo Chacreamento Mundo Novo, cujos promitentes vendedores já estão no JSON do empreendimento.",
+  "prerequisites": [
+    "Empreendimento com modelo Chacreamento Mundo Novo.",
+    "Pelo menos dois promitentes vendedores PF completos (nome + CPF) em projects.seller_parties_json.",
+    "Na ficha do projeto, apenas os contatos e-sign (E-mail e Telefone / WhatsApp) desses vendedores já definidos."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Editar Projeto",
+    "Contrato / Proprietário",
+    "Contato dos PROMITENTES VENDEDORES (e-sign)",
+    "Contratos",
+    "Enviar para assinatura"
+  ],
+  "steps": [
+    "Não cadastre vendedores novos no empreendimento nem use Representante Legal ou Configurações da empresa como fallback.",
+    "Em Mapa GIS, use Editar no loteamento (Editar Projeto).",
+    "Na coluna Contrato / Proprietário, se o modelo for Chacreamento Mundo Novo, ajuste só E-mail e Telefone / WhatsApp em Contato dos PROMITENTES VENDEDORES (e-sign).",
+    "Conclua a venda no mapa (Comercial → Vender → Confirmar Venda).",
+    "Abra Contratos → Enviar para assinatura.",
+    "Distribua o Link individual de cada parte (Copiar link / Enviar por WhatsApp) e acompanhe as assinaturas."
+  ],
+  "expectedResult": "Contrato Mundo Novo com os dois promitentes do JSON do projeto e assinaturas disparadas pelos links individuais.",
+  "commonErrors": [
+    "Tentar completar vendedor pelo Representante Legal da empresa — o fluxo homologado não usa esse fallback.",
+    "Menos de dois PF com nome + CPF no JSON do projeto — a geração do contrato falha."
+  ],
+  "limitations": [
+    "Não reimplementar cadastro completo de vendedores no empreendimento.",
+    "O assistente não altera seller_parties_json."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["MUNDO_NOVO"],
+      "note": "Promitentes somente de seller_parties_json do projeto. UI do empreendimento: só contatos e-sign."
+    }
+  ],
+  "sourceOfTruth": [
+    "lib/mundoNovoContractSellers.ts",
+    "components/projects/GisProjectFormModal.tsx",
+    "lib/contractModel.ts",
+    "components/contracts/SaleContractSignatureSection.tsx"
+  ],
+  "uiLabels": [
+    "Chacreamento Mundo Novo",
+    "Contato dos PROMITENTES VENDEDORES (e-sign)",
+    "Editar Projeto",
+    "Enviar para assinatura",
+    "Telefone / WhatsApp"
+  ]
+}

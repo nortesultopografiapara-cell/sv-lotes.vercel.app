@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { Bell, CalendarDays, CircleHelp, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Bell, CalendarDays, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { MasterUserMenu } from './MasterUserMenu';
+import { HelpCenterHeaderButton } from '@/components/ui/HelpCenterHeaderButton';
 import styles from './masterExecutiveLayout.module.css';
 
 type MasterExecutiveHeaderProps = {
@@ -149,14 +149,7 @@ export function MasterExecutiveHeader({
           </button>
         </div>
 
-        <Link
-          href="/manual"
-          className={styles.iconBtn}
-          aria-label="Ajuda"
-          title="Central de Ajuda"
-        >
-          <CircleHelp width={16} height={16} aria-hidden />
-        </Link>
+        <HelpCenterHeaderButton variant={mobile ? 'mobile' : 'desktop'} />
 
         <MasterUserMenu user={user} onLogout={onLogout} />
       </div>

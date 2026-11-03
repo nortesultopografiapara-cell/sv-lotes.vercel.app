@@ -1,0 +1,41 @@
+{
+  "id": "client_portal.access",
+  "title": "Portal do Cliente (acesso do comprador)",
+  "module": "settings",
+  "routes": ["/portal-cliente"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR", "OWNER"],
+  "access": "read",
+  "aliases": [
+    "portal do cliente",
+    "acesso do comprador",
+    "cliente consultar parcelas",
+    "painel do cliente"
+  ],
+  "summary": "O comprador consulta contratos e parcelas em /portal-cliente. Não existe tela administrativa desse portal no app operador.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Portal habilitado na empresa."],
+  "controls": [
+    { "label": "Portal do Cliente", "kind": "tab" },
+    { "label": "Continuar", "kind": "button" }
+  ],
+  "sequence": [
+    "Não há cadastro administrativo do Portal do Cliente no menu operador.",
+    "Oriente o comprador a abrir Portal do Cliente em /portal-cliente, informar o documento e continuar.",
+    "A confirmação é por código no WhatsApp; o painel é somente leitura."
+  ],
+  "conclusion": "Continuar no Portal do Cliente",
+  "result": "Comprador acessa o painel público somente leitura.",
+  "related": [],
+  "restrictions": [
+    "Não invente tela admin de portal no GIS ou Configurações.",
+    "O assistente não envia OTP nem consulta o painel do cliente."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "app/portal-cliente/page.tsx",
+    "app/portal-cliente/confirmar/page.tsx",
+    "app/portal-cliente/painel/page.tsx",
+    "lib/portal-cliente/config.ts"
+  ]
+}

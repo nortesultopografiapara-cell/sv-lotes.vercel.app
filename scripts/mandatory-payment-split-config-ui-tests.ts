@@ -176,11 +176,17 @@ function testUiAndApiFiles() {
   const ownersUi = read('app/owners/page.tsx');
   const ownersModal = read('components/owners/OwnerRevenueSplitModal.tsx');
   const mapPage = read('app/map/page.tsx');
+  const formModal = read('components/projects/GisProjectFormModal.tsx');
   const projectApi = read('app/api/projects/[id]/revenue-split/route.ts');
   const destApi = read('app/api/finance/revenue-split/destinations/route.ts');
   const ownerApi = read('app/api/owners/[id]/revenue-split/route.ts');
 
-  assert(mapPage.includes('ProjectRevenueSplitPanel'), 'painel no empreendimento');
+  assert(
+    mapPage.includes('ProjectRevenueSplitPanel') || formModal.includes('ProjectRevenueSplitPanel'),
+    'painel no empreendimento',
+  );
+  assert(mapPage.includes('GisProjectFormModal'), 'Split permanece no formulário compartilhado do GIS');
+  assert(formModal.includes('gis-project-col-financeiro'), 'Split na coluna Financeiro');
   assert(mapPage.includes('Distribuição') || panel.includes('Distribuição de Recebimentos'), 'bloco no empreendimento');
   assert(panel.includes('Adicionar participante'), 'lista dinâmica');
   assert(panel.includes('Salvar rascunho'), 'ação draft');

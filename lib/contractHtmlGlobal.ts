@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isAraguaiaContractModel,
+  isEstrelaDoSulContractModel,
   isMundoNovoContractModel,
   isRecantoPrimaveraContractModel,
 } from '@/lib/contractModel';
@@ -44,7 +45,8 @@ export function shouldLoadProjectBlocksForContract(
   return (
     isRecantoPrimaveraContractModel(tenant) ||
     isAraguaiaContractModel(tenant) ||
-    isMundoNovoContractModel(tenant)
+    isMundoNovoContractModel(tenant) ||
+    isEstrelaDoSulContractModel(tenant)
   );
 }
 

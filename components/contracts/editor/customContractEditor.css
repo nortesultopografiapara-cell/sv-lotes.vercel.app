@@ -1,0 +1,864 @@
+.sv-a4-editor,
+.sv-a4-sheet,
+.sv-editor-preview-doc {
+  --paper-width: 210mm;
+  --paper-height: 297mm;
+  --paper-pad: 15mm;
+  --page-gap: 18px;
+}
+
+.sv-a4-stack {
+  width: var(--paper-width);
+  margin: 0 auto 32px;
+}
+
+.sv-a4-sheet {
+  width: var(--paper-width);
+  min-height: var(--paper-height);
+  margin: 0 auto 32px;
+  background-color: transparent;
+  color: #111;
+  padding: 0;
+  box-shadow: none;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 12.5pt;
+  line-height: 1.45;
+}
+
+.sv-a4-scroll {
+  scrollbar-gutter: stable;
+}
+
+.sv-a4-sheet .ProseMirror,
+.sv-a4-prose {
+  outline: none;
+  overflow-x: hidden;
+  overflow-y: visible;
+  min-height: var(--paper-height);
+  padding: var(--paper-pad);
+  box-sizing: border-box;
+  background-color: #ffffff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  max-width: var(--paper-width);
+}
+
+.sv-a4-sheet .ProseMirror h1,
+.sv-a4-prose h1 {
+  font-size: 18pt;
+  text-align: center;
+  margin: 0 0 18px;
+  text-transform: uppercase;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .ProseMirror h2,
+.sv-a4-prose h2 {
+  font-size: 13pt;
+  margin: 22px 0 10px;
+  border-bottom: 1px solid #111;
+  padding-bottom: 3px;
+  text-transform: uppercase;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .ProseMirror h3,
+.sv-a4-prose h3 {
+  font-size: 12pt;
+  margin: 16px 0 8px;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .ProseMirror p,
+.sv-a4-prose p {
+  margin: 0 0 10px;
+  orphans: 2;
+  widows: 2;
+}
+
+.sv-a4-sheet .ProseMirror ul,
+.sv-a4-sheet .ProseMirror ol,
+.sv-a4-prose ul,
+.sv-a4-prose ol {
+  margin: 0 0 10px 22px;
+}
+
+.sv-contract-placeholder,
+.sv-ph-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #e8eefc;
+  color: #1e3a8a;
+  border: 1px solid #93c5fd;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  vertical-align: baseline;
+}
+
+.sv-contract-placeholder--preview {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.sv-page-break,
+.sv-a4-flow-gap {
+  page-break-after: always;
+  break-after: page;
+  height: var(--page-gap, 18px);
+  margin: 12px calc(0px - var(--paper-pad, 15mm));
+  border: 0;
+  background: #2a2d36;
+  position: relative;
+  pointer-events: none;
+}
+
+.sv-page-break::after,
+.sv-a4-flow-gap::after {
+  content: "Página seguinte";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #2a2d36;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-family: Inter, system-ui, sans-serif;
+  padding: 0 8px;
+}
+
+.sv-a4-flow-gap-row,
+.sv-a4-flow-gap-cell {
+  background: #2a2d36 !important;
+  border: 0 !important;
+  padding: 0 !important;
+  pointer-events: none;
+}
+
+.sv-a4-sheet .ProseMirror table,
+.sv-editor-preview-doc table,
+.sv-a4-sheet .ProseMirror .estrela-table,
+.sv-editor-preview-doc .estrela-table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 12px;
+  table-layout: fixed;
+  box-sizing: border-box;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.sv-a4-sheet .ProseMirror .tableWrapper,
+.sv-editor-preview-doc .tableWrapper,
+.sv-a4-sheet .estrela-lead-table,
+.sv-editor-preview-doc .estrela-lead-table,
+.sv-a4-sheet .estrela-clause,
+.sv-editor-preview-doc .estrela-clause,
+.sv-a4-sheet .estrela-clause-keep,
+.sv-editor-preview-doc .estrela-clause-keep,
+.sv-a4-sheet .contract-clause,
+.sv-editor-preview-doc .contract-clause {
+  position: relative;
+  max-width: 100%;
+  overflow-x: hidden;
+  margin: 0 0 12px;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.sv-a4-sheet .ProseMirror .tableWrapper table {
+  margin: 0;
+}
+
+.sv-a4-sheet .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 20;
+  background-color: #38bdf8;
+  pointer-events: auto;
+  cursor: col-resize;
+}
+
+.sv-a4-sheet .ProseMirror thead,
+.sv-editor-preview-doc thead {
+  display: table-header-group;
+}
+
+.sv-a4-repeated-header {
+  background: #fff;
+}
+
+.sv-a4-sheet .ProseMirror td[data-min-height],
+.sv-a4-sheet .ProseMirror th[data-min-height],
+.sv-a4-sheet .ProseMirror tr[data-min-height],
+.sv-editor-preview-doc td[data-min-height],
+.sv-editor-preview-doc th[data-min-height],
+.sv-editor-preview-doc tr[data-min-height] {
+  height: auto;
+}
+
+@media print {
+  /* Autoridade única de quebra: spacers do A4Pagination. O data-sv-page-break
+     já foi consumido pelo empacotador; não pode gerar uma segunda folha. */
+  .sv-page-break {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  .sv-a4-flow-gap,
+  .sv-a4-flow-gap-row {
+    height: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .sv-a4-flow-gap::after,
+  .sv-page-break::after {
+    display: none;
+  }
+
+  .sv-a4-repeated-header {
+    display: none !important;
+  }
+
+  .sv-a4-sheet .ProseMirror,
+  .sv-a4-prose,
+  .sv-editor-preview-doc {
+    box-shadow: none !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .sv-a4-sheet.sv-a4-prose {
+    width: var(--paper-width) !important;
+    max-width: 100% !important;
+    padding: var(--paper-pad) !important;
+    box-sizing: border-box !important;
+  }
+
+  .sv-lf-estrela .sv-lf-note,
+  .sv-lf-estrela .sv-lf-footnote,
+  .sv-lf-estrela .lf-estrela-footnote {
+    font-size: 7pt !important;
+    line-height: 1.1 !important;
+  }
+
+  .sv-lf-estrela .sv-lf-sign,
+  .sv-lf-estrela .lf-estrela-signatures,
+  .sv-lf-estrela .sv-lf-sign td,
+  .sv-lf-estrela .sv-lf-sign-slot {
+    border: 0 !important;
+    outline: none !important;
+  }
+
+  .sv-table-layout-bar,
+  .sv-logo-layout-bar,
+  .sv-fn-layout-bar {
+    display: none !important;
+  }
+}
+
+.sv-a4-sheet .ProseMirror tr,
+.sv-a4-sheet .ProseMirror th,
+.sv-a4-sheet .ProseMirror td,
+.sv-editor-preview-doc tr,
+.sv-editor-preview-doc th,
+.sv-editor-preview-doc td {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  position: relative;
+}
+
+.sv-a4-sheet .ProseMirror th,
+.sv-a4-sheet .ProseMirror td,
+.sv-editor-preview-doc th,
+.sv-editor-preview-doc td {
+  border: 1px solid #111;
+  padding: 4px 6px;
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
+.sv-a4-sheet .ProseMirror table.sv-table-borderless th,
+.sv-a4-sheet .ProseMirror table.sv-table-borderless td,
+.sv-a4-sheet .ProseMirror table[data-sv-table-borders="none"] th,
+.sv-a4-sheet .ProseMirror table[data-sv-table-borders="none"] td,
+.sv-editor-preview-doc table.sv-table-borderless th,
+.sv-editor-preview-doc table.sv-table-borderless td,
+.sv-editor-preview-doc table[data-sv-table-borders="none"] th,
+.sv-editor-preview-doc table[data-sv-table-borders="none"] td {
+  border: 0 !important;
+}
+
+.sv-fn-ref {
+  font-size: 0.65em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: super;
+  color: #111;
+}
+
+.sv-footnote-store {
+  position: absolute;
+  left: -12000px;
+  width: calc(var(--paper-width) - (var(--paper-pad) * 2));
+  visibility: hidden;
+  pointer-events: none;
+  height: auto;
+}
+
+.sv-page-footnotes {
+  margin: 16px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid #111;
+  font-size: 9pt;
+  line-height: 1.35;
+  color: #111;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-page-footnote {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.sv-fn-mark {
+  font-size: 9pt;
+  font-weight: 700;
+  min-width: 1.2em;
+}
+
+.sv-fn-body,
+.sv-fn-body p {
+  font-size: 9pt;
+  margin: 0;
+}
+
+.sv-page-footnotes-cell {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 8px 0 0 !important;
+  vertical-align: top;
+}
+
+.sv-company-logo,
+.sv-a4-keep {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-company-logo-img {
+  width: var(--sv-logo-width, 180px);
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: top;
+}
+
+.sv-company-logo-empty {
+  display: inline-block;
+  padding: 10px 14px;
+  border: 1px dashed #94a3b8;
+  color: #475569;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f8fafc;
+}
+
+.sv-a4-sheet .ProseMirror img:not(.sv-company-logo-img),
+.sv-editor-preview-doc img:not(.sv-company-logo-img) {
+  max-width: 180px;
+  max-height: 80px;
+  object-fit: contain;
+}
+
+.sv-missing-placeholder {
+  display: inline;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px dashed #ef4444;
+  padding: 0 5px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sv-filled-placeholder {
+  background: #ecfdf5;
+  padding: 0 2px;
+}
+
+.sv-editor-preview-doc .sv-a4-sheet {
+  pointer-events: none;
+}
+
+.sv-logo-layout-bar,
+.sv-table-layout-bar,
+.sv-fn-layout-bar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.sv-fn-edit {
+  min-width: 220px;
+  max-width: 360px;
+  min-height: 28px;
+  max-height: 72px;
+  overflow: auto;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #1b1d22;
+  color: #e5e7eb;
+}
+
+/* Visual do contrato oficial ESTRELA no editor CUSTOM — sem travar tabela como bloco. */
+.sv-a4-sheet .sv-contract-estrela-do-sul,
+.sv-editor-preview-doc .sv-contract-estrela-do-sul {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111;
+  text-align: justify;
+}
+
+.sv-a4-sheet .estrela-capa,
+.sv-editor-preview-doc .estrela-capa {
+  font-size: 9pt;
+  line-height: 1.22;
+}
+
+.sv-a4-sheet .estrela-capa h2,
+.sv-editor-preview-doc .estrela-capa h2 {
+  font-size: 11pt;
+  margin: 0 0 2px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .estrela-capa h3,
+.sv-editor-preview-doc .estrela-capa h3 {
+  font-size: 10pt;
+  margin: 0 0 3px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .estrela-capa .estrela-table,
+.sv-editor-preview-doc .estrela-capa .estrela-table,
+.sv-a4-sheet .estrela-infra-page .estrela-table,
+.sv-editor-preview-doc .estrela-infra-page .estrela-table {
+  font-size: 8.5pt;
+  margin: 3px 0 5px;
+}
+
+.sv-a4-sheet .estrela-capa .estrela-section-title,
+.sv-editor-preview-doc .estrela-capa .estrela-section-title,
+.sv-a4-sheet .estrela-capa-section-4-title,
+.sv-editor-preview-doc .estrela-capa-section-4-title {
+  display: block;
+  font-size: 9pt;
+  margin: 6px 0 0;
+  padding: 0 0 3px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.sv-a4-sheet .estrela-clause-title,
+.sv-editor-preview-doc .estrela-clause-title {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 10px 0 4px;
+}
+
+.sv-a4-sheet .estrela-footnote,
+.sv-editor-preview-doc .estrela-footnote {
+  font-size: 8pt;
+  margin: 0 0 3px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .signature-grid--estrela,
+.sv-editor-preview-doc .signature-grid--estrela {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 0;
+  align-items: start;
+  width: 100%;
+}
+
+.sv-a4-sheet .estrela-sign-col,
+.sv-editor-preview-doc .estrela-sign-col {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sv-a4-sheet .estrela-sign-col--left,
+.sv-editor-preview-doc .estrela-sign-col--left {
+  grid-column: 1;
+}
+
+.sv-a4-sheet .estrela-sign-col--right,
+.sv-editor-preview-doc .estrela-sign-col--right {
+  grid-column: 2;
+}
+
+.sv-a4-sheet .estrela-sign-slot .signature-line,
+.sv-editor-preview-doc .estrela-sign-slot .signature-line {
+  display: block;
+  margin: 16px auto 0;
+  width: 72%;
+  max-width: 260px;
+  height: 1px;
+  border-top: 1px solid #111;
+}
+
+/* LF ESTRELA — hierarquia tipográfica das 10 páginas de referência (não compactar tudo) */
+.sv-a4-sheet .sv-lf-estrela,
+.sv-a4-prose .sv-lf-estrela,
+.sv-editor-preview-doc .sv-lf-estrela {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 10.5pt;
+  line-height: 1.28;
+  color: #111;
+  text-align: justify;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-cover-title,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-title,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-cover-title,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-title {
+  font-size: 12pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 2px 0 4px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-instrument-title,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-instrument-title {
+  font-size: 15pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 4px 0 6px;
+  line-height: 1.15;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-green,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-green {
+  color: #1b7a3d;
+  text-align: center;
+  font-size: 11pt;
+  margin: 0 0 6px;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-subtitle,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-subtitle {
+  text-align: center;
+  font-size: 10pt;
+  margin: 0 0 8px;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-section,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-section {
+  font-size: 11pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 4px 0 2mm;
+  border-bottom: 0;
+  padding-bottom: 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-section + table.sv-lf-table,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-section + table.sv-lf-table {
+  margin-top: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-keep-para,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-keep-para {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-clause,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-clause-title,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-clause,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-clause-title {
+  font-size: 11pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 8px 0 0;
+  border-bottom: 0;
+  padding-bottom: 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-clause-sub,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-clause-sub {
+  font-size: 10.5pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela p,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-body,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-body,
+.sv-editor-preview-doc .sv-lf-estrela p,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-body,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-body {
+  font-size: 10.5pt;
+  line-height: 1.28;
+  margin: 0 0 5px;
+  text-align: justify;
+  orphans: 2;
+  widows: 2;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-51-head,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-51-head {
+  margin-bottom: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-51-tail,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-widow-pair,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-51-tail,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-widow-pair {
+  display: block;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  orphans: 2;
+  widows: 2;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-51-tail,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-51-tail {
+  margin-top: 5mm;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date {
+  text-align: center;
+  font-size: 10.5pt;
+  margin: 18px 0 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date + .sv-lf-sign,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date + .lf-estrela-signatures,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date + .sv-lf-sign,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date + .lf-estrela-signatures {
+  margin-top: 20mm;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-keep-with-next,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-keep-with-next {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-keep-with-next + p,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-keep-with-next + p {
+  break-before: avoid;
+  page-break-before: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-footnotes,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-footnotes {
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-note,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-footnote,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-footnote,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-note,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-footnote,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-footnote {
+  font-size: 7pt !important;
+  line-height: 1.1 !important;
+  text-align: justify;
+  margin: 0 0 1px;
+  padding: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-capa,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-capa,
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-table,
+.sv-a4-sheet .sv-lf-estrela table.lf-estrela-table,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table,
+.sv-editor-preview-doc .sv-lf-estrela table.lf-estrela-table {
+  font-size: 8pt;
+  line-height: 1.2;
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 2px 0 6px;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-table th,
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-table td,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table th,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table td {
+  border: 1px solid #111;
+  padding: 2px 5px 8px;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-table th,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table th {
+  font-weight: 700;
+  background: #fff;
+}
+
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-sign,
+.sv-a4-sheet .sv-lf-estrela table.lf-estrela-signatures,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-signatures,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign,
+.sv-editor-preview-doc .sv-lf-estrela table.lf-estrela-signatures,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-signatures {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  width: 100%;
+  border: 0 !important;
+  outline: none;
+  background: transparent;
+  margin: 8px 0 0;
+  padding: 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date + .sv-lf-sign .sv-lf-sign-row:first-child .sv-lf-sign-line,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date + .sv-lf-sign .sv-lf-sign-row:first-child .sv-lf-sign-line {
+  margin-top: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-row,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-row {
+  display: flex;
+  gap: 36px;
+  width: 100%;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-col,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-sign td,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-slot,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign td,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-slot {
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  text-align: center;
+  vertical-align: top;
+  padding: 4px 8px;
+  font-size: 9pt;
+  background: transparent;
+  flex: 1;
+  min-width: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-empty,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-empty {
+  min-height: 0;
+  padding: 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-sign p,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-slot p,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign p,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-slot p {
+  margin: 0;
+  text-align: center;
+  font-size: 9pt;
+  line-height: 1.15;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-line,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-line {
+  margin: 28px 6% 4px;
+  border: 0;
+  border-bottom: 1px solid #111 !important;
+  height: 0;
+  padding: 0;
+  line-height: 1;
+  font-size: 1px;
+  text-align: center;
+  color: transparent;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-company-logo,
+.sv-editor-preview-doc .sv-lf-estrela .sv-company-logo {
+  text-align: center;
+  margin: 0 0 8px;
+}

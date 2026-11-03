@@ -62,6 +62,7 @@ function testModelGating() {
   assert(supportsSpouseElectronicSignature('MENESES'), 'meneses ok');
   assert(supportsSpouseElectronicSignature('SV_LOTES_2'), 'sv2 ok');
   assert(supportsSpouseElectronicSignature('PADRAO'), 'padrao ok');
+  assert(supportsSpouseElectronicSignature('ESTRELA_DO_SUL'), 'estrela ok');
   assert(!supportsSpouseElectronicSignature('ARAGUAIA'), 'araguaia sem party SPOUSE');
 
   assert(
@@ -440,11 +441,11 @@ function testShareMessagesDistinct() {
   assert(spouseMsg.includes('Empreendimento: Recanto'), 'empreendimento spouse');
   assert(buyerMsg.includes('Quadra: 01') && buyerMsg.includes('Lote: 02'), 'quadra/lote buyer');
   assert(spouseMsg.includes('Contrato: 000000001/2026'), 'contrato spouse');
-  assert(buyerMsg.includes('https://www.svlotes.com.br/sign/sale/'), 'domínio oficial buyer');
-  assert(spouseMsg.includes('https://www.svlotes.com.br/sign/sale/'), 'domínio oficial spouse');
+  assert(buyerMsg.includes('https://example.com/sign/sale/token-buyer'), 'link comprador no host informado');
+  assert(spouseMsg.includes('https://example.com/sign/sale/token-spouse'), 'link cônjuge no host informado');
   assert(buyerMsg.startsWith('SV LOTES'), 'header SV LOTES');
-  assert(!buyerMsg.includes('example.com'), 'sem host exemplo no buyer');
-  assert(!spouseMsg.includes('example.com'), 'sem host exemplo no spouse');
+  assert(buyerMsg.includes('example.com/sign/sale/token-buyer'), 'preserva host da party buyer');
+  assert(spouseMsg.includes('example.com/sign/sale/token-spouse'), 'preserva host da party spouse');
 
   console.log('OK testShareMessagesDistinct');
 }
@@ -545,7 +546,7 @@ function testMigrationAndWiring() {
   assert(storage.includes('getSaleContractBucket'), 'getSaleContractBucket');
   assert(storage.includes('assertSaleContractBucketReady'), 'assert bucket');
 
-  const signVendor = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
+  const signVendor = read('lib/saleContractVendorSignAuthServer.ts');
   assert(signVendor.includes('signSaleContractByVendor'), 'sign-vendor wiring');
 
   const mw = read('middleware.ts');

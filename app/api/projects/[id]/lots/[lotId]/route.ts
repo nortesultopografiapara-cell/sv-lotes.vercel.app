@@ -13,7 +13,7 @@ import {
   logSupabaseConfigDebug,
   resolveCallerProfile,
 } from '@/lib/supabase/server';
-import { getServerConfigErrorMessage } from '@/lib/supabase-config';
+import { getServerConfigErrorMessage } from '@/lib/supabase-config.server';
 
 export const runtime = 'nodejs';
 

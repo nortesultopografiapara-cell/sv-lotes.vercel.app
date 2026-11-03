@@ -22,7 +22,7 @@ import {
 import {
   normalizeSaleContractModel,
   SALE_CONTRACT_MODEL_LABELS,
-  SALE_CONTRACT_MODELS,
+  SALE_CONTRACT_MODEL_OPTIONS,
   type SaleContractModel,
 } from '@/lib/contractModel';
 import {
@@ -35,7 +35,9 @@ import {
 } from '@/lib/saasContractCompanyProfile';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
+import { PrimaryAdminVerifyPanel } from '@/components/settings/PrimaryAdminVerifyPanel';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import {
@@ -159,7 +161,7 @@ function hashToTab(hash: string): CompanySettingsV2Tab | null {
   if (h === 'contratos') return 'contratos';
   if (h === 'tecnico') return 'tecnico';
   if (h === 'avancado') return 'avancado';
-  if (h === 'financeiro' || h === 'integracao-financeira' || h === 'bancario' || h === 'integracao-bancaria') {
+  if (h === 'financeiro' || h.startsWith('financeiro-') || h === 'integracao-financeira' || h === 'bancario' || h === 'integracao-bancaria') {
     return 'financeiro';
   }
   return null;
@@ -374,6 +376,9 @@ export function CompanySettingsV2Shell({
 
             {activeTab === 'administradores' && adminPanelProps ? (
               <div className="space-y-6">
+                {isDevelopHomologRuntime() && !adminPanelProps.readOnlyDemo ? (
+                  <PrimaryAdminVerifyPanel />
+                ) : null}
                 <div className="sv-theme-card p-6 rounded-xl shadow-lg border space-y-6">
                   <div>
                     <h2 className="sv-theme-heading flex items-center gap-2">
@@ -439,6 +444,10 @@ export function CompanySettingsV2Shell({
                     <div>
                       <label className="sv-theme-label">CPF/CNPJ *</label>
                       <input type="text" required name="cnpj" value={documentRaw} onChange={handleChange} className="sv-theme-field" />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">CRECI</label>
+                      <input type="text" name="creci" value={String(company.creci || '')} onChange={handleChange} className="sv-theme-field" placeholder="Ex.: J1233-PA" />
                     </div>
                     <div>
                       <label className="sv-theme-label">Telefone *</label>
@@ -667,11 +676,16 @@ export function CompanySettingsV2Shell({
                 <div className="max-w-md">
                   <label className="sv-theme-label">Modelo de contrato padrão</label>
                   <select name="contract_model" value={contractModel} onChange={handleChange} className="sv-theme-field">
-                    {SALE_CONTRACT_MODELS.map((model: SaleContractModel) => (
-                      <option key={model} value={model} disabled={model === 'CUSTOM'}>
+                    {SALE_CONTRACT_MODEL_OPTIONS.map((model: SaleContractModel) => (
+                      <option key={model} value={model}>
                         {SALE_CONTRACT_MODEL_LABELS[model]}
                       </option>
                     ))}
+                    {contractModel === 'CUSTOM' ? (
+                      <option value="CUSTOM" disabled>
+                        {SALE_CONTRACT_MODEL_LABELS.CUSTOM}
+                      </option>
+                    ) : null}
                   </select>
                 </div>
 

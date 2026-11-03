@@ -28,19 +28,26 @@ import {
 } from '@/lib/saleInstallmentCalc';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
-import { resolveOrCreateCustomer } from '@/lib/customerIdentity';
+import { resolveOrCreateCustomer, customerPatchFromForm } from '@/lib/customerIdentity';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
 import { buyerSnapshotFromForm, isBuyerLegalEntity } from '@/lib/buyerLegalEntity';
 import { buildSaleSpouseDbPatch } from '@/lib/saleSpouseFields';
-import {
-  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
-  normalizeInstallmentCorrectionType,
-} from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
 import {
   assertSaleContractModelConfigured,
   detectPreviewAraguaiaNameCoerce,
+  normalizeSaleContractModel,
 } from '@/lib/contractModel';
+import {
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal,
+  resolvePersistInstallmentCorrectionType,
+  usesSplitDownPaymentFinance,
+} from '@/lib/saleFinanceConfig';
+import { buildSplitDownPaymentPersistFields } from '@/lib/recantoSignalRemaining';
+import {
+  assertLfParticipationConfiguredForNewSale,
+  captureLfContractSnapshotForSale,
+} from '@/lib/lfImoveisContractConfig';
 import { buildTerminationPolicySnapshot } from '@/lib/contract-termination/snapshot';
 import { buildRecantoInstallmentSalesSnapshot } from '@/lib/recantoFixedInstallmentPlan';
 import {
@@ -113,8 +120,10 @@ async function withTimeout<T>(
 
 function parseMissingColumn(message: string | undefined): string | null {
   if (!message) return null;
-  const match = message.match(/Could not find the '(\w+)' column/i);
-  return match?.[1] ?? null;
+  const schema = message.match(/Could not find the '(\w+)' column/i);
+  if (schema?.[1]) return schema[1];
+  const postgres = message.match(/column (?:[\w]+\.)?["']?(\w+)["']? does not exist/i);
+  return postgres?.[1] ?? null;
 }
 
 async function insertRowWithColumnFallback(
@@ -239,46 +248,68 @@ export function estimateFinanceReceiptsPayloadBytes(
   }
 }
 
+async function selectSingleWithColumnFallback(
+  supabase: SupabaseClient,
+  table: string,
+  columns: string[],
+  eqColumn: string,
+  eqValue: string,
+): Promise<Record<string, unknown> | null> {
+  let current = [...columns];
+  for (let attempt = 0; attempt < 16 && current.length > 0; attempt++) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(current.join(', '))
+      .eq(eqColumn, eqValue)
+      .maybeSingle();
+    if (!error) {
+      return (data as Record<string, unknown> | null) ?? null;
+    }
+    const missing = parseMissingColumn(error.message);
+    if (missing && current.includes(missing)) {
+      current = current.filter((col) => col !== missing);
+      continue;
+    }
+    throw new Error(error.message);
+  }
+  return null;
+}
+
 async function loadProjectSnapshotForSale(
   supabase: SupabaseClient,
   projectId: string,
 ): Promise<Record<string, unknown> | null> {
-  const withContractModel = await supabase
-    .from('projects')
-    .select('id, name, city, uf, forum_city, financial_account_id, contract_model')
-    .eq('id', projectId)
-    .maybeSingle();
+  return selectSingleWithColumnFallback(
+    supabase,
+    'projects',
+    [
+      'id',
+      'name',
+      'city',
+      'uf',
+      'forum_city',
+      'neighborhood',
+      'address',
+      'financial_account_id',
+      'contract_model',
+      'lf_contract_config_json',
+    ],
+    'id',
+    projectId,
+  );
+}
 
-  if (!withContractModel.error) {
-    return (withContractModel.data as Record<string, unknown> | null) ?? null;
-  }
-
-  const missing = parseMissingColumn(withContractModel.error.message);
-  if (missing === 'contract_model' || missing === 'financial_account_id') {
-    const withAccount = await supabase
-      .from('projects')
-      .select('id, name, city, uf, forum_city, financial_account_id')
-      .eq('id', projectId)
-      .maybeSingle();
-
-    if (!withAccount.error) {
-      return (withAccount.data as Record<string, unknown> | null) ?? null;
-    }
-
-    if (parseMissingColumn(withAccount.error.message) === 'financial_account_id') {
-      const fallback = await supabase
-        .from('projects')
-        .select('id, name, city, uf, forum_city')
-        .eq('id', projectId)
-        .maybeSingle();
-      if (fallback.error) throw new Error(fallback.error.message);
-      return (fallback.data as Record<string, unknown> | null) ?? null;
-    }
-
-    throw new Error(withAccount.error.message);
-  }
-
-  throw new Error(withContractModel.error.message);
+async function loadCompanyForLfSnapshot(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<Record<string, unknown> | null> {
+  return selectSingleWithColumnFallback(
+    supabase,
+    'companies',
+    ['id', 'contract_model', 'contract_second_vendor_json', 'name', 'razao_social', 'fantasy_name'],
+    'id',
+    tenantId,
+  );
 }
 
 async function persistSaleContractLink(
@@ -415,13 +446,10 @@ export async function executeGisSaleCreate(
 
   const projDataSnapshot = await loadProjectSnapshotForSale(supabase, projectId);
 
-  const { data: tenantContractRow, error: tenantContractErr } = await supabase
-    .from('companies')
-    .select('contract_model')
-    .eq('id', tenantId)
-    .maybeSingle();
-  if (tenantContractErr) {
-    throw new Error(tenantContractErr.message || 'Falha ao carregar modelo de contrato da empresa');
+  const tenantCompanyRow = await loadCompanyForLfSnapshot(supabase, tenantId);
+  const tenantContractRow = tenantCompanyRow;
+  if (!tenantContractRow) {
+    throw new Error('Falha ao carregar modelo de contrato da empresa');
   }
 
   const saleContractModel = assertSaleContractModelConfigured({
@@ -431,6 +459,9 @@ export async function executeGisSaleCreate(
     uiFallback: input.tenantContractModel,
     companyFound: Boolean(tenantContractRow),
   });
+  if (normalizeSaleContractModel(saleContractModel) === 'ESTRELA_DO_SUL') {
+    assertLfParticipationConfiguredForNewSale(projDataSnapshot);
+  }
 
   const nameCoerce = detectPreviewAraguaiaNameCoerce({
     projectName: projDataSnapshot?.name,
@@ -468,40 +499,29 @@ export async function executeGisSaleCreate(
     ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ''))
     : 1;
 
-  const recantoSignalContract =
-    saleContractModel === 'RECANTO_PRIMAVERA'
-      ? parseCurrencyBRLNumber(
-          customerData.signal_contract_value || customerData.down_payment || '',
-        )
-      : null;
+  const splitDownPayment = usesSplitDownPaymentFinance({
+    contractModel: saleContractModel,
+    projectLfConfig: projDataSnapshot?.lf_contract_config_json,
+  });
+  const recantoSignalContract = splitDownPayment
+    ? parseCurrencyBRLNumber(
+        customerData.signal_contract_value || customerData.down_payment || '',
+      )
+    : null;
   const recantoSignalPaidAtSale =
-    saleContractModel === 'RECANTO_PRIMAVERA' &&
+    splitDownPayment &&
     customerData.signal_paid_at_sale != null &&
     String(customerData.signal_paid_at_sale).trim() !== ''
       ? parseCurrencyBRLNumber(String(customerData.signal_paid_at_sale))
       : null;
-  const recantoSignalRemaining =
-    recantoSignalContract != null && recantoSignalPaidAtSale != null
-      ? Math.max(0, recantoSignalContract - recantoSignalPaidAtSale)
-      : null;
-  const recantoSignalMode =
-    saleContractModel === 'RECANTO_PRIMAVERA' &&
-    recantoSignalRemaining != null &&
-    recantoSignalRemaining > 0
-      ? String(customerData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS')
-      : null;
-  const recantoSignalInstallments =
-    recantoSignalMode === 'FIRST_INSTALLMENTS'
-      ? Number(customerData.signal_remaining_installments) || null
-      : recantoSignalMode === 'ALL_INSTALLMENTS'
-        ? instCount
-        : null;
-  const recantoSignalInstallmentValue =
-    recantoSignalRemaining != null &&
-    recantoSignalInstallments &&
-    recantoSignalInstallments > 0
-      ? Math.round((recantoSignalRemaining / recantoSignalInstallments) * 100) / 100
-      : null;
+  const splitPersist = buildSplitDownPaymentPersistFields({
+    enabled: splitDownPayment,
+    contractValue: recantoSignalContract,
+    paidAtSale: recantoSignalPaidAtSale,
+    paymentMode: String(customerData.signal_remaining_payment_mode || ''),
+    remainingInstallments: Number(customerData.signal_remaining_installments) || null,
+    installmentsCount: instCount,
+  });
 
   const balloonPlan = resolveSaleBalloonPlan({
     useBalloon: Boolean(customerData.use_balloon_installments),
@@ -525,7 +545,9 @@ export async function executeGisSaleCreate(
     const entryForPrincipal = parseCurrencyBRLNumber(customerData.down_payment);
     const principal = resolveInstallmentPrincipal({
       totalValue: customerData.final_value || finalPrice,
-      downPayment: entryForPrincipal,
+      downPayment: splitDownPayment
+        ? recantoSignalContract ?? entryForPrincipal
+        : entryForPrincipal,
       contractModel: saleContractModel,
     });
     const balloonValidation = validateSaleBalloonConfiguration({
@@ -534,11 +556,14 @@ export async function executeGisSaleCreate(
       installmentsCount: instCount,
       principal,
       finalValue: customerData.final_value || finalPrice,
-      entryAmount: downPaymentReducesInstallmentBase(saleContractModel)
-        ? entryForPrincipal
-        : 0,
+      entryAmount:
+        splitDownPayment || !downPaymentReducesInstallmentBase(saleContractModel)
+          ? 0
+          : entryForPrincipal,
       firstInstallmentDueDate: customerData.first_installment_due_date,
-      entryReducesPrincipal: downPaymentReducesInstallmentBase(saleContractModel),
+      entryReducesPrincipal:
+        !splitDownPayment &&
+        downPaymentReducesInstallmentBase(saleContractModel),
     });
     if (!balloonValidation.valid) {
       throw new Error(balloonValidation.message);
@@ -550,7 +575,12 @@ export async function executeGisSaleCreate(
   const recantoInstallmentSnapshot = buildRecantoInstallmentSalesSnapshot({
     contractModel: saleContractModel,
     mode: customerData.installment_definition_mode,
-    lotValue: customerData.final_value || finalPrice,
+    lotValue: resolveInstallmentPrincipal({
+      totalValue: customerData.final_value || finalPrice,
+      downPayment:
+        recantoSignalContract ?? parseCurrencyBRLNumber(customerData.down_payment),
+      contractModel: saleContractModel,
+    }),
     regularCount: instCount,
     regularAmount: parseCurrencyBRLNumber(
       String(customerData.regular_installment_amount || ''),
@@ -561,6 +591,16 @@ export async function executeGisSaleCreate(
   if (recantoInstallmentSnapshot.error) {
     throw new Error(recantoInstallmentSnapshot.error);
   }
+
+  const installmentCorrectionType = resolvePersistInstallmentCorrectionType({
+    contractModel: saleContractModel,
+    selected: customerData.installment_correction_type,
+    projectLfConfig: projDataSnapshot?.lf_contract_config_json,
+  });
+  assertLfEstrelaCorrectionCoherentWithHardcodedLegal(
+    saleContractModel,
+    installmentCorrectionType,
+  );
 
   const salePayload: Record<string, unknown> = {
     tenant_id: tenantId,
@@ -580,21 +620,16 @@ export async function executeGisSaleCreate(
     discount: parseCurrencyBRLNumber(customerData.discount_value),
     total_value: customerData.final_value || finalPrice,
     down_payment:
-      recantoSignalContract ?? parseCurrencyBRLNumber(customerData.down_payment),
+      splitPersist.downPaymentOverride ?? parseCurrencyBRLNumber(customerData.down_payment),
     installments_count: instCount,
-    installment_correction_type:
-      saleContractModel === 'RECANTO_PRIMAVERA'
-        ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
-        : normalizeInstallmentCorrectionType(
-            customerData.installment_correction_type,
-          ),
+    installment_correction_type: installmentCorrectionType,
     status: 'ACTIVE',
-    signal_contract_value: recantoSignalContract,
-    signal_paid_at_sale: recantoSignalPaidAtSale,
-    signal_remaining_value: recantoSignalRemaining,
-    signal_remaining_payment_mode: recantoSignalMode,
-    signal_remaining_installments: recantoSignalInstallments,
-    signal_remaining_installment_value: recantoSignalInstallmentValue,
+    signal_contract_value: splitPersist.signalContractValue,
+    signal_paid_at_sale: splitPersist.signalPaidAtSale,
+    signal_remaining_value: splitPersist.signalRemainingValue,
+    signal_remaining_payment_mode: splitPersist.signalRemainingPaymentMode,
+    signal_remaining_installments: splitPersist.signalRemainingInstallments,
+    signal_remaining_installment_value: splitPersist.signalRemainingInstallmentValue,
     installment_definition_mode:
       recantoInstallmentSnapshot.installment_definition_mode,
     regular_installment_amount:
@@ -611,6 +646,14 @@ export async function executeGisSaleCreate(
       isBuyerLegalEntity(String(customerData.cpf_cnpj || '')) ? { has_spouse: false } : customerData,
     ),
     ...buyerSnapshotFromForm(customerData),
+    ...(normalizeSaleContractModel(saleContractModel) === 'ESTRELA_DO_SUL'
+      ? {
+          lf_contract_snapshot_json: captureLfContractSnapshotForSale({
+            project: projDataSnapshot,
+            company: tenantContractRow,
+          }),
+        }
+      : {}),
   };
 
   logSaleStep('create_sale', startedAt);
@@ -692,6 +735,70 @@ export async function executeGisSaleCreate(
 
     await replaceSaleBalloonInstallments(supabase, saleId, balloonPlan);
 
+    // Snapshot de comissão ANTES do HTML do contrato, para o modelo consumir
+    // broker_commissions.amount da venda (não a config atual do corretor).
+    if (brokerId && saleId) {
+      try {
+        const { data: brokerData } = await supabase
+          .from('brokers')
+          .select('commission_percent, commission_mode, commission_fixed_amount')
+          .eq('id', brokerId)
+          .maybeSingle();
+
+        const saleVal = Number(customerData.final_value || finalPrice) || 0;
+        const useDefault =
+          customerData.use_broker_default_commission === undefined ||
+          customerData.use_broker_default_commission === null ||
+          customerData.use_broker_default_commission === true ||
+          customerData.use_broker_default_commission === 'true';
+
+        const plan = resolveSaleCommissionPlan({
+          broker: brokerData,
+          useBrokerDefault: Boolean(useDefault),
+          saleCommissionMode: customerData.sale_commission_mode as string | null | undefined,
+          saleCommissionPercent: customerData.sale_commission_percent as
+            | number
+            | string
+            | null
+            | undefined,
+          saleCommissionFixedAmount: customerData.sale_commission_fixed_amount as
+            | number
+            | string
+            | null
+            | undefined,
+          saleValue: saleVal,
+        });
+
+        if (shouldCreatePendingCommissionFromPlan(plan)) {
+          const { data: insertedCommission, error: commissionInsertError } =
+            await insertRowWithColumnFallback(
+              supabase,
+              'broker_commissions',
+              {
+                company_id: tenantId,
+                tenant_id: tenantId,
+                broker_id: brokerId,
+                sale_id: saleId,
+                customer_id: customerId || clientId,
+                ...buildCommissionSnapshotFields(plan),
+                status: 'pendente',
+              },
+              'id, amount, commission_fixed_amount',
+            );
+          if (commissionInsertError || !insertedCommission) {
+            console.warn(
+              '[sales/create] broker_commission_failed',
+              commissionInsertError,
+            );
+            warnings.push('Comissão do corretor não registrada automaticamente.');
+          }
+        }
+      } catch (commErr) {
+        console.warn('[sales/create] broker_commission_failed', commErr);
+        warnings.push('Comissão do corretor não registrada automaticamente.');
+      }
+    }
+
     logSaleStep('generate_contract', startedAt);
     try {
       await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
@@ -719,6 +826,9 @@ export async function executeGisSaleCreate(
           contractTenantId: tenantId,
           activeTenantId: tenantId,
           callerRole: String(input.userRole || 'ADMIN'),
+          customerFormOverlay: customerPatchFromForm(
+            customerData as { name?: string; nationality?: string },
+          ),
         });
 
         const viability = assessGeneratedContractViability({
@@ -852,58 +962,18 @@ export async function executeGisSaleCreate(
       throw new Error(blockUpdErr.message || 'Falha ao marcar lote como vendido');
     }
 
-    // Comissão: snapshot na época da venda (não depende só do role BROKER).
-    if (brokerId && saleId) {
+    if (saleId && contractId) {
       try {
-        const { data: brokerData } = await supabase
-          .from('brokers')
-          .select('commission_percent, commission_mode, commission_fixed_amount')
-          .eq('id', brokerId)
-          .maybeSingle();
-
-        const saleVal = Number(customerData.final_value || finalPrice) || 0;
-        const useDefault =
-          customerData.use_broker_default_commission === undefined ||
-          customerData.use_broker_default_commission === null ||
-          customerData.use_broker_default_commission === true ||
-          customerData.use_broker_default_commission === 'true';
-
-        const plan = resolveSaleCommissionPlan({
-          broker: brokerData,
-          useBrokerDefault: Boolean(useDefault),
-          saleCommissionMode: customerData.sale_commission_mode as string | null | undefined,
-          saleCommissionPercent: customerData.sale_commission_percent as
-            | number
-            | string
-            | null
-            | undefined,
-          saleCommissionFixedAmount: customerData.sale_commission_fixed_amount as
-            | number
-            | string
-            | null
-            | undefined,
-          saleValue: saleVal,
-        });
-
-        if (shouldCreatePendingCommissionFromPlan(plan)) {
-          await supabase.from('broker_commissions').insert([
-            {
-              company_id: tenantId,
-              tenant_id: tenantId,
-              broker_id: brokerId,
-              sale_id: saleId,
-              contract_id: contractId,
-              customer_id: customerId || clientId,
-              ...buildCommissionSnapshotFields(plan),
-              status: 'pendente',
-            },
-          ]);
-        }
-      } catch (commErr) {
-        console.warn('[sales/create] broker_commission_failed', commErr);
-        warnings.push('Comissão do corretor não registrada automaticamente.');
+        await supabase
+          .from('broker_commissions')
+          .update({ contract_id: contractId })
+          .eq('sale_id', saleId)
+          .is('contract_id', null);
+      } catch (linkErr) {
+        console.warn('[sales/create] broker_commission_contract_link_failed', linkErr);
       }
     }
+
 
     if (!contractId) {
       throw new Error(SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE);

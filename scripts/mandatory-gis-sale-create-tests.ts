@@ -46,10 +46,26 @@ function testGisSaleCreateServiceFlow() {
   );
   assert(service.includes('persistGeneratedContractHtml'), 'persiste HTML do contrato');
   assert(service.includes('buildCommissionSnapshotFields'), 'snapshot de comissão na venda');
+  assert(service.includes('captureLfContractSnapshotForSale'), 'snapshot contratual LF na venda');
+  assert(
+    service.includes('assertLfParticipationConfiguredForNewSale'),
+    'venda Estrela exige percentuais do empreendimento',
+  );
+  assert(service.includes('lf_contract_snapshot_json'), 'grava lf_contract_snapshot_json');
+  assert(
+    service.indexOf('lf_contract_snapshot_json') <
+      service.indexOf("logSaleStep('generate_contract'"),
+    'snapshot LF antes de gerar o contrato',
+  );
   assert(service.includes('buildTerminationPolicySnapshot'), 'captura snapshot na venda GIS');
   assert(service.includes('terminationPersist'), 'grava snapshot na sales');
   assert(service.includes('copyTerminationPolicyPersistFromSale') === false, 'GIS cria, não copia de legado');
   assert(service.includes('resolveSaleCommissionPlan'), 'plano PERCENT/FIXED/NONE');
+  assert(
+    service.indexOf('buildCommissionSnapshotFields') <
+      service.indexOf("logSaleStep('generate_contract'"),
+    'snapshot de comissão antes de gerar o contrato',
+  );
   console.log('OK testGisSaleCreateServiceFlow');
 }
 

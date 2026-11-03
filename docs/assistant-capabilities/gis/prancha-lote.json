@@ -1,0 +1,32 @@
+{
+  "id": "gis.lot.sheet",
+  "title": "Prancha do lote",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "write",
+  "aliases": ["prancha do lote", "gerar prancha", "prancha de um lote", "prancha pdf do lote"],
+  "summary": "Gerar o PDF da prancha de um lote específico.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Empreendimento aberto no mapa."],
+  "requiredContext": ["lote no mapa ou ficha aberta"],
+  "controls": [
+    { "label": "Gerar Prancha do Lote", "kind": "toolbar" },
+    { "label": "Gerar prancha", "kind": "button" },
+    { "label": "Prancha do Lote (PDF)", "kind": "modal" },
+    { "label": "Gerar PDF / Baixar", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Pela barra: clique em Gerar Prancha do Lote e depois clique no lote.",
+    "Pela ficha: clique no lote → aba Resumo → Gerar prancha.",
+    "No modal Prancha do Lote (PDF), clique em Gerar PDF / Baixar."
+  ],
+  "conclusion": "Gerar PDF / Baixar",
+  "result": "Download do PDF da prancha do lote.",
+  "related": ["gis.project.general_plan", "gis.lot.confrontations"],
+  "restrictions": ["OWNER não gera prancha.", "O assistente não gera o PDF."],
+  "knowledgeIds": ["gis-prancha-lote"],
+  "sourceOfTruth": ["app/map/page.tsx", "components/map/GISMap.tsx", "components/map/LotSheetPrintModal.tsx"]
+}

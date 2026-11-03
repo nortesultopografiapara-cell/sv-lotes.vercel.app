@@ -11,6 +11,7 @@ import {
 import { loadCustomerForSaleContract } from '@/lib/loadCustomerForSaleContract';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
+import { tryBuildLfEstrelaCustomSaleHtml } from '@/lib/lfEstrelaSaleContract';
 import {
   applyEffectiveContractModelToTenant,
   isRecantoPrimaveraContractModel,
@@ -219,6 +220,8 @@ export type RegenerationSession = {
   contractTenantId: string;
   activeTenantId: string;
   callerRole: string;
+  /** Dados confirmados no formulário da venda — prevalecem sobre o cadastro recarregado. */
+  customerFormOverlay?: Record<string, unknown> | null;
 };
 
 /** Empresa do contrato deve ser a mesma da sessão logada (ou impersonação ativa). */
@@ -752,6 +755,9 @@ export async function loadFreshRegenerationEntities(
       tenantId,
     });
   }
+  if (session.customerFormOverlay && Object.keys(session.customerFormOverlay).length) {
+    customer = mergeCustomerData(session.customerFormOverlay, customer);
+  }
 
   let receipts_sum = 0;
   let finance_receipts: Array<Record<string, unknown>> = [];
@@ -1025,26 +1031,49 @@ export async function buildFreshSaleContractHtml(
 
   let html: string;
   try {
-    html = generateContractHTML({
-      tenant,
+    const customLf = await tryBuildLfEstrelaCustomSaleHtml(supabase, {
+      companyId: session.contractTenantId,
+      projectId: String(projectWithId.id || ''),
+      company,
       customer: customerWithId,
+      sale: saleWithId,
       project: projData,
-      block: blockWithId,
-      sale: {
-        ...saleWithId,
-        receipts_sum,
-        finance_receipts,
-      },
-      financeReceipts: finance_receipts,
-      balloonAddons,
-      contractSnapshot: {
+      lot: blockWithId,
+      contract: {
         contract_number: contractNumber,
         ...contractPayloadPartial,
       },
-      projectBlocks,
-      streetGuides,
-      manualConfrontants: null,
+      receipts: finance_receipts,
+      formOverlay: session.customerFormOverlay || null,
     });
+    if (customLf) {
+      html = customLf.html;
+      console.log('REGENERATE_TEMPLATE_USED', 'lf_estrela_custom_published', {
+        modelId: customLf.modelId,
+        version: customLf.version,
+      });
+    } else {
+      html = generateContractHTML({
+        tenant,
+        customer: customerWithId,
+        project: projData,
+        block: blockWithId,
+        sale: {
+          ...saleWithId,
+          receipts_sum,
+          finance_receipts,
+        },
+        financeReceipts: finance_receipts,
+        balloonAddons,
+        contractSnapshot: {
+          contract_number: contractNumber,
+          ...contractPayloadPartial,
+        },
+        projectBlocks,
+        streetGuides,
+        manualConfrontants: null,
+      });
+    }
   } catch (genErr) {
     console.error('REGENERATE_HTML_GENERATE_FAILED', {
       saleId,

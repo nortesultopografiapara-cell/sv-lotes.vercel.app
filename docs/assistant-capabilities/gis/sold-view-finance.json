@@ -1,0 +1,33 @@
+{
+  "id": "gis.sold.view_finance",
+  "title": "Ver Financeiro do lote vendido",
+  "module": "gis",
+  "routes": ["/map", "/finance"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "read",
+  "aliases": [
+    "ver financeiro",
+    "vejo o financeiro",
+    "financeiro deste lote",
+    "parcelas do lote vendido"
+  ],
+  "summary": "Do lote vendido, abrir a tela Financeiro. O atalho atual abre /finance; não filtra sozinho a venda.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Lote vendido com saleId.", "Perfil com acesso ao Financeiro."],
+  "controls": [{ "label": "Ver Financeiro", "kind": "button" }],
+  "sequence": [
+    "Abra o lote vendido no Mapa GIS, aba Comercial.",
+    "Clique em Ver Financeiro. Abre Financeiro em nova aba.",
+    "Na tela Financeiro, localize as parcelas da venda (o atalho do mapa não aplica filtro automático)."
+  ],
+  "conclusion": "Ver Financeiro",
+  "result": "Tela Financeiro aberta para consulta das parcelas.",
+  "related": ["sale.edit", "gis.sold.view_contract", "finance.receipts"],
+  "restrictions": [
+    "Corretor não tem o módulo Financeiro.",
+    "O assistente não lista parcelas reais."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": ["components/map/GISMap.tsx", "app/finance/page.tsx"]
+}

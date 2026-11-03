@@ -1,0 +1,63 @@
+{
+  "id": "contracts-assinatura-lf-imoveis",
+  "title": "Assinatura eletrônica — LF Imóveis",
+  "module": "contracts",
+  "routes": ["/contracts"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["lf imoveis", "lf imóveis", "estrela do sul", "estrela", "assinatura", "vendor 1", "principal admin"],
+  "contractModels": ["ESTRELA_DO_SUL"],
+  "objective": "Conduzir a assinatura do contrato no modelo LF Imóveis (chave interna ESTRELA_DO_SUL), respeitando vendedor interno e vendedor público.",
+  "prerequisites": [
+    "Empreendimento com Modelo de contrato padrão do empreendimento = LF Imóveis.",
+    "Contrato gerado pela venda.",
+    "ADMIN da empresa. Assinatura administrativa do vendedor 1 exige o Administrador Principal quando a UI solicitar."
+  ],
+  "navigationPath": [
+    "Contratos",
+    "Enviar para assinatura",
+    "Link individual (comprador / cônjuge / vendedor 2)",
+    "Copiar link ou Enviar por WhatsApp",
+    "Assinar como vendedor (vendedor 1 LF, interno)",
+    "Assinatura administrativa pela empresa"
+  ],
+  "steps": [
+    "Abra Contratos no contrato LF Imóveis da venda.",
+    "Clique em Enviar para assinatura.",
+    "Compartilhe o Link individual do comprador (e do cônjuge, se houver) com Copiar link ou Enviar por WhatsApp.",
+    "Se houver segundo vendedor/proprietário, ele recebe link público próprio (vendedor 2). Não reutilize o link do comprador.",
+    "O vendedor 1 (LF Imóveis) não usa link público. Aguarde a UI indicar Liberada para assinar.",
+    "Conclua com Assinar como vendedor / Assinatura administrativa pela empresa, autenticando como Administrador Principal quando pedido.",
+    "Acompanhe o status das partes na seção de assinatura. O link público inválido mostra Link inválido ou expirado na rota de assinatura."
+  ],
+  "expectedResult": "Comprador (e cônjuge) assinados pelo link; vendedor 2 pelo link público, se existir; vendedor 1 LF assinado internamente no sistema.",
+  "commonErrors": [
+    "Enviar link público do vendedor 1 LF — esse link não é o fluxo homologado.",
+    "Tratar os percentuais 40/60 do texto do contrato como se fossem o Split de Recebimentos. São coisas distintas.",
+    "Cadastrar segundo vendedor nas Configurações da empresa achando que isso substitui a Configuração contratual — LF Imóveis do empreendimento."
+  ],
+  "limitations": [
+    "O assistente não assina nem envia WhatsApp.",
+    "Configuração contratual — LF Imóveis fica no formulário Editar Projeto do empreendimento (Qualificação do segundo vendedor/proprietário, Participação LF Imóveis (%)). Não altera o Split de Recebimentos."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["ESTRELA_DO_SUL"],
+      "note": "Rótulo na UI: LF Imóveis. Vendedor 1 interno; vendedor 2 público quando houver segundo proprietário."
+    }
+  ],
+  "sourceOfTruth": [
+    "lib/contractModel.ts",
+    "components/contracts/SaleContractSignatureSection.tsx",
+    "components/projects/ProjectLfContractConfigFields.tsx",
+    "scripts/mandatory-lf-internal-vendor-share-tests.ts"
+  ],
+  "uiLabels": [
+    "LF Imóveis",
+    "Enviar para assinatura",
+    "Assinar como vendedor",
+    "Assinatura administrativa pela empresa",
+    "Configuração contratual — LF Imóveis",
+    "Não altera o Split de Recebimentos"
+  ]
+}

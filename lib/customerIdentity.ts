@@ -31,6 +31,8 @@ export type CustomerRecord = {
   phone?: string | null;
   email?: string | null;
   profession?: string | null;
+  nationality?: string | null;
+  nacionalidade?: string | null;
   civil_state?: string | null;
   marital_status?: string | null;
   address?: string | null;
@@ -58,6 +60,7 @@ export type CustomerFormValues = {
   rg_issuer: string;
   rg_issuer_state: string;
   profession: string;
+  nationality?: string;
   civil_state: string;
   phone: string;
   email: string;
@@ -106,6 +109,7 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     rg_issuer: customer.rg_issuer || '',
     rg_issuer_state: customer.rg_issuer_state || customer.state_uf || customer.state || '',
     profession: customer.profession || '',
+    nationality: String(customer.nationality || customer.nacionalidade || ''),
     civil_state: customer.civil_state || customer.marital_status || '',
     phone: customer.phone || '',
     email: customer.email || '',
@@ -132,6 +136,7 @@ export function emptyCustomerFormValues(): CustomerFormValues {
     rg_issuer: '',
     rg_issuer_state: '',
     profession: '',
+    nationality: '',
     civil_state: '',
     phone: '',
     email: '',
@@ -396,6 +401,49 @@ export function pickNonemptyCustomerField(...values: unknown[]): string {
 }
 
 /**
+ * Nacionalidade do comprador para a venda atual.
+ * Formulário > snapshot/venda > customers.nationality > clients legado.
+ * Nunca deixa string vazia sobrescrever valor preenchido.
+ */
+export function resolveBuyerNationality(input: {
+  form?: Record<string, unknown> | null;
+  sale?: Record<string, unknown> | null;
+  customer?: Record<string, unknown> | null;
+  client?: Record<string, unknown> | null;
+}): string {
+  const form = input.form || {};
+  const sale = input.sale || {};
+  const customer = input.customer || {};
+  const client = input.client || {};
+  return pickNonemptyCustomerField(
+    form.nationality,
+    form.nacionalidade,
+    sale.customer_nationality,
+    sale.buyer_nationality,
+    customer.nationality,
+    customer.nacionalidade,
+    client.nationality,
+    client.nacionalidade,
+  );
+}
+
+/** Remove só a coluna rejeitada pelo PostgREST; não descarta nationality junto com nacionalidade. */
+export function omitUnsupportedCustomerColumns(
+  payload: Record<string, unknown>,
+  errorMessage: string,
+): Record<string, unknown> {
+  const msg = String(errorMessage || '');
+  const next = { ...payload };
+  if (/nacionalidade/i.test(msg)) {
+    delete next.nacionalidade;
+  }
+  if (/\bnationality\b/i.test(msg) && !/nacionalidade/i.test(msg)) {
+    delete next.nationality;
+  }
+  return next;
+}
+
+/**
  * Mescla camadas sem apagar valores preenchidos.
  * Camadas anteriores no array têm maior prioridade (ex.: customers → sale → contract).
  */
@@ -446,6 +494,9 @@ export function mergeCustomerData(
 
   const profession = pick('profession');
   if (profession) merged.profession = profession;
+
+  const nationality = pick('nationality', 'nacionalidade');
+  if (nationality) merged.nationality = nationality;
 
   const civilState = pick('civil_state', 'marital_status');
   if (civilState) {
@@ -533,6 +584,9 @@ export function customerPatchFromForm(
   if (!isEmptyCustomerField(form.profession)) {
     patch.profession = form.profession?.trim() || null;
   }
+  if (!isEmptyCustomerField(form.nationality)) {
+    patch.nationality = form.nationality?.trim() || null;
+  }
   if (!isEmptyCustomerField(form.civil_state)) {
     const civil = form.civil_state?.trim() || null;
     patch.civil_state = civil;
@@ -608,6 +662,7 @@ export function buildCustomerPayload(
     rg_issuer: form.rg_issuer?.trim() || null,
     rg_issuer_state: form.rg_issuer_state?.trim().toUpperCase() || null,
     profession: form.profession?.trim() || null,
+    nationality: form.nationality?.trim() || null,
     marital_status: form.civil_state?.trim() || null,
     civil_state: form.civil_state?.trim() || null,
     address: form.address?.trim().toUpperCase() || null,
@@ -764,40 +819,52 @@ export async function resolveOrCreateCustomer(
         source: 'sale_create',
       });
     }
-    const { error: updErr } = await writeCustomerRow(
+    const updated = await writeCustomerRow(
       async (row) => {
         const res = await supabase.from('customers').update(row).eq('id', customerId);
         return { error: res.error };
       },
-      payload,
+      payload as Record<string, unknown>,
     );
+    let updErr = updated.error;
+    if (updErr && /nationality|nacionalidade/i.test(updErr.message || '')) {
+      const retryPayload = omitUnsupportedCustomerColumns(
+        payload as Record<string, unknown>,
+        updErr.message || '',
+      );
+      const retry = await writeCustomerRow(
+        async (row) => {
+          const res = await supabase.from('customers').update(row).eq('id', customerId);
+          return { error: res.error };
+        },
+        retryPayload,
+      );
+      updErr = retry.error;
+    }
     if (updErr) console.warn('CUSTOMER_UPDATE_WARN', updErr.message);
   }
 
   if (!customerId) {
-    let insertPayload = payload;
+    let insertPayload: Record<string, unknown> = payload as Record<string, unknown>;
     let newCustomer: { id: string } | null = null;
-    let custError: { message?: string } | null = null;
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      const inserted = await supabase
-        .from('customers')
-        .insert([insertPayload])
-        .select('id')
-        .single();
-      if (!inserted.error && inserted.data) {
-        newCustomer = inserted.data;
-        custError = null;
-        break;
-      }
-      custError = inserted.error;
-      const missing = String(inserted.error?.message || '').match(
-        /Could not find the '(\w+)' column|column ["']?(\w+)["']? of relation/i,
+    const inserted = await writeCustomerRow(async (row) => {
+      const res = await supabase.from('customers').insert([row]).select('id').single();
+      if (!res.error && res.data) newCustomer = res.data;
+      return { error: res.error };
+    }, insertPayload);
+    let custError = inserted.error;
+    if (custError && /nationality|nacionalidade/i.test(custError.message || '')) {
+      const retryPayload = omitUnsupportedCustomerColumns(
+        insertPayload,
+        custError.message || '',
       );
-      const column = missing?.[1] || missing?.[2];
-      if (!column || !(column in insertPayload)) break;
-      const next = { ...insertPayload };
-      delete next[column];
-      insertPayload = next;
+      newCustomer = null;
+      const retry = await writeCustomerRow(async (row) => {
+        const res = await supabase.from('customers').insert([row]).select('id').single();
+        if (!res.error && res.data) newCustomer = res.data;
+        return { error: res.error };
+      }, retryPayload);
+      custError = retry.error;
     }
 
     if (custError || !newCustomer) {
@@ -852,6 +919,7 @@ export async function resolveOrCreateCustomer(
     email: payload.email,
     rg: payload.rg,
     profession: payload.profession,
+    nationality: payload.nationality,
     civil_state: payload.civil_state,
     address: payload.address,
     neighborhood: payload.neighborhood,
