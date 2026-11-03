@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { resolveChargePayer } from '@/lib/buyerLegalEntity';
 import {
   createInterCobranca,
   fetchInterCobrancaByCodigo,
@@ -78,10 +79,8 @@ function onlyDigits(v: unknown): string {
 }
 
 function buildPagadorFromCustomer(customer: Record<string, unknown>): InterCreateCobrancaInput['pagador'] {
-  const doc = resolveCustomerDocumentDigits({
-    cpf_cnpj: customer.cpf_cnpj as string | null,
-    document: customer.document as string | null,
-  });
+  const payer = resolveChargePayer(customer);
+  const doc = payer.documentDigits;
   if (!isValidBrazilianTaxDocument(doc)) {
     throw new Error(
       `Cadastro incompleto: informe CPF/CNPJ de "${String(customer.name || 'Cliente')}" antes de emitir no Inter.`,
@@ -103,7 +102,7 @@ function buildPagadorFromCustomer(customer: Record<string, unknown>): InterCreat
   return {
     cpfCnpj: doc,
     tipoPessoa: doc.length === 14 ? 'JURIDICA' : 'FISICA',
-    nome: String(customer.name || '').trim().slice(0, 100),
+    nome: (payer.name || String(customer.name || '')).trim().slice(0, 100),
     email: customer.email ? String(customer.email).trim() : undefined,
     endereco: endereco.slice(0, 100),
     numero: 'S/N',

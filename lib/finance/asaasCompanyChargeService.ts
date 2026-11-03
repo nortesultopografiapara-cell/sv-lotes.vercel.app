@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { resolveChargePayer } from '@/lib/buyerLegalEntity';
 import type { BankEnvironment } from '@/lib/banking/types';
 import {
   getCompanyAsaasIntegrationConfig,
@@ -227,7 +228,7 @@ async function loadInstallment(
 }
 
 function resolvePayerDocument(customer: InstallmentRow['customers']): string {
-  return resolveCustomerDocumentDigits(customer);
+  return resolveChargePayer(customer as Record<string, unknown> | null).documentDigits;
 }
 
 function assertPayerDocumentPresent(customer: InstallmentRow['customers']): string {
@@ -319,7 +320,9 @@ async function createCompanyChargeWithBillingType(
   });
 
   const dueDate = String(installment.due_date || '').split('T')[0];
-  const customerName = installment.customers?.name || 'Cliente';
+  const customerName =
+    resolveChargePayer(installment.customers as Record<string, unknown> | null).name ||
+    'Cliente';
   const payerDocument = assertPayerDocumentPresent(installment.customers);
   const customerId = await asaasCompanyFindOrCreateCustomer(apiKey, environment, {
     name: customerName,

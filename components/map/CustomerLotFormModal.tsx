@@ -7,6 +7,7 @@ import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
 import { SaleDocumentsPanel } from '@/components/sales/SaleDocumentsPanel';
+import { BuyerLegalEntityFields } from '@/components/customers/BuyerLegalEntityFields';
 import { SaleChargesPanel } from '@/components/sales/SaleChargesPanel';
 import { SaleCarneCoverPanel } from '@/components/sales/SaleCarneCoverPanel';
 import {
@@ -942,8 +943,13 @@ export function CustomerLotFormModal({
       zip_code: 'zip_code',
       email: 'email',
       phone: 'phone',
+      trade_name: 'trade_name',
+      registration_status: 'registration_status',
+      address_number: 'address_number',
+      address_complement: 'address_complement',
     },
   });
+  const isBuyerPj = cpfCnpjValidation.isCompleteCnpj;
 
   const onCustomerFormChange = (data: CustomerFormValues) => {
     setFormData((prev) => ({ ...prev, ...data }));
@@ -1128,7 +1134,7 @@ export function CustomerLotFormModal({
               </h4>
               <div className={isWorkspaceDesktop ? "sv-sale-workspace-fields" : "space-y-4"}>
               <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--full" : undefined}>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Nome Completo *</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">{isBuyerPj ? 'Razão social *' : 'Nome Completo *'}</label>
                 <input
                   required
                   type="text"
@@ -1154,7 +1160,7 @@ export function CustomerLotFormModal({
                     lookupMessage={cnpjLookupMessage}
                   />
                 </div>
-                <div>
+                {!isBuyerPj && <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">RG *</label>
                   <input
                     type="text"
@@ -1162,9 +1168,9 @@ export function CustomerLotFormModal({
                     onChange={(e) => setField({ rg: e.target.value })}
                     className={GIS_INPUT}
                   />
-                </div>
+                </div>}
               </div>
-              <div className={isWorkspaceDesktop ? "contents" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
+              {!isBuyerPj && <div className={isWorkspaceDesktop ? "contents" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Órgão emissor</label>
                   <input
@@ -1184,7 +1190,7 @@ export function CustomerLotFormModal({
                     className={GIS_INPUT}
                   />
                 </div>
-              </div>
+              </div>}
               </div>
               <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--contact" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
                 <div className={isWorkspaceDesktop ? "sv-sale-ws-field--phone" : undefined}>
@@ -1206,7 +1212,7 @@ export function CustomerLotFormModal({
                   />
                 </div>
               </div>
-              <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--split" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
+              {!isBuyerPj && <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--split" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Profissão *</label>
                   <input
@@ -1231,7 +1237,7 @@ export function CustomerLotFormModal({
                     <option value="União Estável">União Estável</option>
                   </select>
                 </div>
-              </div>
+              </div>}
               <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--full" : undefined}>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Endereço *</label>
                 <input
@@ -1286,10 +1292,22 @@ export function CustomerLotFormModal({
                   />
                 </div>
               </div>
+              {isBuyerPj && (
+                <BuyerLegalEntityFields
+                  tradeName={formData.trade_name || ''}
+                  registrationStatus={formData.registration_status || ''}
+                  addressNumber={formData.address_number || ''}
+                  addressComplement={formData.address_complement || ''}
+                  signatureMode={formData.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL'}
+                  representatives={formData.legal_representatives || []}
+                  disabled={submitting || prefillLoading}
+                  onChange={(patch) => setField(patch)}
+                />
+              )}
               </div>
             </div>
 
-            {(actionName === 'Vendido' || isEditMode || isReservationWorkspaceDesktop) && (
+            {!isBuyerPj && (actionName === 'Vendido' || isEditMode || isReservationWorkspaceDesktop) && (
               <div className={isWorkspaceDesktop ? (formData.has_spouse ? "sv-sale-workspace-card sv-sale-workspace-spouse" : "sv-sale-workspace-spouse-compact") : "space-y-4"}>
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-900 cursor-pointer">
                   <input

@@ -118,6 +118,9 @@ function sellerInline(ctx: MundoNovoContractContext, index: number): string {
 }
 
 function buyerQualification(ctx: MundoNovoContractContext): string {
+  if (ctx.buyerLegalEntity) {
+    return `<span class="mundo-novo-buyer-qualification">${esc(ctx.buyerLegalEntity.qualificationText)}</span>`;
+  }
   const parts: string[] = [strong(ctx.buyerName)];
   if (ctx.buyerNationality) parts.push(esc(ctx.buyerNationality));
   if (ctx.buyerMaritalStatus) parts.push(esc(ctx.buyerMaritalStatus));

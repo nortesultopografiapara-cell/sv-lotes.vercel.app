@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { Loader2, Download, Printer, FileDown } from 'lucide-react';
 import { Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
+import { buildBuyerLegalEntityView } from '@/lib/buyerLegalEntity';
 
 function saleDiscountAmount(sale: {
   discount?: number | null;
@@ -163,6 +164,8 @@ export function ContractGenerator({ sale }: { sale: any }) {
        const clEmail = sale.clients?.email || '';
        const clPhone = sale.clients?.phone || '';
        const clAddress = sale.clients?.address || '';
+       const buyerView = buildBuyerLegalEntityView(sale.clients || {});
+       const clQualification = buyerView?.qualificationText || clName;
        
        const lNumber = sale.blocks?.number || '';
        const bName = sale.blocks?.block_name || sale.blocks?.name || '';
@@ -177,6 +180,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
            .replace(/\{\{COMPANY_CITY_STATE\}\}/g, cCityState)
            .replace(/\{\{CLIENT_NAME\}\}/g, clName)
            .replace(/\{\{CLIENT_CPF\}\}/g, clCpf)
+           .replace(/\{\{CLIENT_QUALIFICATION\}\}/g, clQualification)
            .replace(/\{\{CLIENT_RG\}\}/g, clRg)
            .replace(/\{\{CLIENT_EMAIL\}\}/g, clEmail)
            .replace(/\{\{CLIENT_PHONE\}\}/g, clPhone)
@@ -242,9 +246,15 @@ export function ContractGenerator({ sale }: { sale: any }) {
                            <p className="mb-2 text-justify">
                                <strong>VENDEDOR(A):</strong> {company?.razao_social || company?.fantasy_name || company?.name || '__________'}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº {company?.cnpj || '__________'}, com sede na {company?.address || '__________'}, CEP: {company?.zip_code || '__________'}, na cidade de {company?.city || '__________'} - {company?.state || '___'}, neste ato representado por seu responsável legal {company?.legal_representative || company?.responsible_name || '__________'} (CPF: {company?.representative_cpf || company?.responsible_cpf || '__________'}).
                            </p>
+                           {buildBuyerLegalEntityView(sale.clients || {}) ? (
+                           <p className="mb-2 text-justify">
+                               <strong>COMPRADORA:</strong> {buildBuyerLegalEntityView(sale.clients || {})?.qualificationText}.
+                           </p>
+                           ) : (
                            <p className="mb-2 text-justify">
                                <strong>COMPRADOR(A):</strong> {sale.clients?.full_name}, inscrito(a) no CPF/CNPJ sob o nº {sale.clients?.cpf_cnpj || '__________'}, RG nº {sale.clients?.rg || '__________'}, profissão: {sale.clients?.profession || '__________'}, estado civil: {sale.clients?.marital_status || '__________'}, residente e domiciliado(a) na {sale.clients?.address || '__________'}, telefone {sale.clients?.phone || '__________'}, e-mail {sale.clients?.email || '__________'}.
                            </p>
+                           )}
 
                            <h2 className="font-bold border-b border-black pb-1 mb-3 uppercase text-xs mt-6">2. Do Imóvel (Objeto do Contrato)</h2>
                            <p className="mb-2 text-justify">

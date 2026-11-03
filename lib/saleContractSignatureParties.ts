@@ -223,7 +223,15 @@ export async function createPartiesForSignatureProcess(
       phone?: string | null;
       email?: string | null;
       token: string;
+      withPublicToken?: boolean;
     };
+    legalRepresentatives?: Array<{
+      name?: string | null;
+      cpf?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      existingToken?: string | null;
+    }> | null;
     spouse?: {
       name: string;
       cpf: string;
@@ -296,12 +304,30 @@ export async function createPartiesForSignatureProcess(
     signerPhone: params.buyer.phone,
     signerEmail: params.buyer.email,
     existingToken: params.buyer.token,
+    withPublicToken: params.buyer.withPublicToken,
     expiresAt: params.expiresAt,
   });
 
   let spouseToken: string | null = null;
   let spouseSignUrl: string | null = null;
   const parties: ContractSignaturePartyRow[] = [buyerCreated.party];
+
+  for (const rep of params.legalRepresentatives || []) {
+    const repCreated = await insertSignatureParty(supabaseAdmin, {
+      companyId: params.companyId,
+      contractSignatureId: params.contractSignatureId,
+      contractId: params.contractId,
+      saleId: params.saleId,
+      role: 'LEGAL_REPRESENTATIVE',
+      signerName: rep.name,
+      signerCpf: rep.cpf,
+      signerPhone: rep.phone,
+      signerEmail: rep.email,
+      existingToken: rep.existingToken,
+      expiresAt: params.expiresAt,
+    });
+    parties.push(repCreated.party);
+  }
 
   if (params.spouse) {
     const spouseCreated = await insertSignatureParty(supabaseAdmin, {

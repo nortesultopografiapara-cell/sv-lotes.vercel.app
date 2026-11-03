@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { lookupCnpj } from '@/lib/cnpjLookup';
+import { lookupCustomerCnpjFromBackend } from '@/lib/cnpjLookup';
 import { lookupCep } from '@/lib/cepLookup';
 import {
   formatCep,
@@ -22,7 +22,10 @@ export type LookupStatusMessage =
   | 'Buscando CNPJ...'
   | 'CNPJ encontrado'
   | 'CNPJ não encontrado'
-  | 'Não foi possível consultar o CNPJ';
+  | 'CNPJ não encontrado. Preencha manualmente.'
+  | 'CNPJ inválido. Corrija o número ou preencha manualmente.'
+  | 'Não foi possível consultar o CNPJ'
+  | 'Não foi possível consultar o CNPJ. Preencha manualmente.';
 
 export type CustomerAutofillFieldMap = {
   name?: string;
@@ -36,6 +39,10 @@ export type CustomerAutofillFieldMap = {
   email?: string;
   phone?: string;
   cpf_cnpj?: string;
+  trade_name?: string;
+  registration_status?: string;
+  address_number?: string;
+  address_complement?: string;
 };
 
 type Options<T extends Record<string, unknown>> = {
@@ -159,14 +166,16 @@ export function useCustomerDocumentAutofill<T extends Record<string, unknown>>({
     lastCnpjLookupRef.current = digits;
     setCnpjLookupMessage('Buscando CNPJ...');
 
-    void lookupCnpj(cpfCnpjValue)
+    void lookupCustomerCnpjFromBackend(cpfCnpjValue)
       .then((result) => {
         if (runId !== cnpjAbortRef.current) return;
         if (!result.ok) {
           setCnpjLookupMessage(
             result.reason === 'not_found'
-              ? 'CNPJ não encontrado'
-              : 'Não foi possível consultar o CNPJ',
+              ? 'CNPJ não encontrado. Preencha manualmente.'
+              : result.reason === 'invalid'
+                ? 'CNPJ inválido. Corrija o número ou preencha manualmente.'
+                : 'Não foi possível consultar o CNPJ. Preencha manualmente.',
           );
           return;
         }
@@ -185,13 +194,21 @@ export function useCustomerDocumentAutofill<T extends Record<string, unknown>>({
         if (fields.zip_code) mapped[fields.zip_code] = result.fields.zip_code;
         if (fields.email) mapped[fields.email] = result.fields.email;
         if (fields.phone) mapped[fields.phone] = result.fields.phone;
+        if (fields.trade_name) mapped[fields.trade_name] = result.fields.trade_name;
+        if (fields.registration_status) {
+          mapped[fields.registration_status] = result.fields.registration_status;
+        }
+        if (fields.address_number) mapped[fields.address_number] = result.fields.address_number;
+        if (fields.address_complement) {
+          mapped[fields.address_complement] = result.fields.address_complement;
+        }
 
         mergeEmpty(mapped);
         setCnpjLookupMessage('CNPJ encontrado');
       })
       .catch(() => {
         if (runId !== cnpjAbortRef.current) return;
-        setCnpjLookupMessage('Não foi possível consultar o CNPJ');
+        setCnpjLookupMessage('Não foi possível consultar o CNPJ. Preencha manualmente.');
       });
   }, [cpfCnpjValue, cpfCnpjValidation.shouldLookupCnpj, disabled, fields, mergeEmpty]);
 

@@ -204,7 +204,7 @@ export default function TemplatesPage() {
                           <div>
                               <h4 className="text-xs font-semibold text-gray-500 mb-2 uppercase">Comprador</h4>
                               <div className="flex flex-col gap-1">
-                                  {['CLIENT_NAME', 'CLIENT_CPF', 'CLIENT_RG', 'CLIENT_EMAIL', 'CLIENT_PHONE', 'CLIENT_ADDRESS'].map(v => (
+                                  {['CLIENT_NAME', 'CLIENT_CPF', 'CLIENT_QUALIFICATION', 'CLIENT_RG', 'CLIENT_EMAIL', 'CLIENT_PHONE', 'CLIENT_ADDRESS'].map(v => (
                                       <button key={v} onClick={() => copyVariable(`{{${v}}}`)} className="text-left text-xs bg-[var(--color-surface)] hover:bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-1.5 text-[var(--color-primary)] transition-colors">
                                           {`{{${v}}}`}
                                       </button>

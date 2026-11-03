@@ -53,6 +53,11 @@ export function computeAggregateSaleSignatureStatus(
     const role = String(p.role).toUpperCase();
     return role === 'WITNESS_1' || role === 'WITNESS_2';
   });
+  const legalReps = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+  );
+  const hasLegalReps = legalReps.length > 0;
+  const legalRepsAllSigned = !hasLegalReps || legalReps.every(isSigned);
   const vendors = parties.filter(
     (p) => String(p.role).toUpperCase() === 'VENDOR',
   );
@@ -89,8 +94,9 @@ export function computeAggregateSaleSignatureStatus(
   const witnessesAnySigned = witnesses.some(isSigned);
   const providersComplete =
     vendorsAllSigned && intervenientSigned && witnessesAllSigned;
-  const externalComplete =
-    isSigned(buyer) && (!hasSpouse || isSigned(spouse));
+  const externalComplete = hasLegalReps
+    ? legalRepsAllSigned && (!hasSpouse || isSigned(spouse))
+    : isSigned(buyer) && (!hasSpouse || isSigned(spouse));
 
   if (externalComplete && providersComplete) {
     return 'SIGNED';
@@ -101,7 +107,9 @@ export function computeAggregateSaleSignatureStatus(
   }
 
   const anyExternalSigned =
-    isSigned(buyer) || (hasSpouse && isSigned(spouse));
+    isSigned(buyer) ||
+    (hasSpouse && isSigned(spouse)) ||
+    legalReps.some(isSigned);
   const anyProviderSigned =
     vendorsAnySigned ||
     (hasIntervenient && isSigned(intervenient)) ||
@@ -114,6 +122,7 @@ export function computeAggregateSaleSignatureStatus(
   if (
     isViewed(buyer) ||
     (hasSpouse && isViewed(spouse)) ||
+    legalReps.some(isViewed) ||
     witnesses.some(isViewed)
   ) {
     return 'VIEWED';
@@ -172,6 +181,15 @@ export function canVendorSignFromParties(
 
   const spouse = partyByRole(parties, 'SPOUSE');
   const buyer = partyByRole(parties, 'BUYER');
+  const legalReps = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'LEGAL_REPRESENTATIVE',
+  );
+  if (legalReps.length > 0 && !legalReps.every(isSigned)) {
+    return {
+      ok: false,
+      reason: 'O vendedor só pode assinar após a assinatura dos representantes legais.',
+    };
+  }
 
   if (spouse && !isSigned(spouse) && isSigned(buyer)) {
     return {

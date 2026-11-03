@@ -21,6 +21,12 @@ import {
   documentFieldInputClass,
 } from '@/components/customers/DocumentFieldFeedback';
 import { useCustomerDocumentAutofill } from '@/hooks/useCustomerDocumentAutofill';
+import { BuyerLegalEntityFields } from '@/components/customers/BuyerLegalEntityFields';
+import { syncCustomerLegalRepresentatives } from '@/lib/customerLegalRepresentatives';
+import {
+  resolveBuyerPersonType,
+  validateBuyerRepresentatives,
+} from '@/lib/buyerLegalEntity';
 
 const CUSTOMER_FIELD_INPUT =
   'w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]';
@@ -59,8 +65,13 @@ export default function CustomersPage() {
       zip_code: 'cep',
       email: 'email',
       phone: 'phone',
+      trade_name: 'trade_name',
+      registration_status: 'registration_status',
+      address_number: 'address_number',
+      address_complement: 'address_complement',
     },
   });
+  const isBuyerPj = cpfCnpjValidation.isCompleteCnpj;
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteModalCustomer, setDeleteModalCustomer] = useState<any>(null);
   const [deleteModalStats, setDeleteModalStats] = useState<any>({});
@@ -163,6 +174,18 @@ export default function CustomersPage() {
         ? formatCpfCnpj(formData.cpf_cnpj.trim())
         : null;
       const cepValue = formData.cep?.trim() ? formatCep(formData.cep.trim()) : null;
+      const personType = resolveBuyerPersonType(cpfCnpjValue);
+      if (personType === 'PJ') {
+        const repCheck = validateBuyerRepresentatives(
+          formData.legal_representatives || [],
+          formData.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL',
+        );
+        if (!repCheck.ok) {
+          alert(repCheck.errors.join('\n'));
+          setSubmitting(false);
+          return;
+        }
+      }
       const nameUpper = formData.name?.trim().toUpperCase() || '';
       const emailUpper = formData.email?.trim().toUpperCase() || '';
       const addressUpper = formData.address?.trim().toUpperCase() || '';
@@ -207,6 +230,15 @@ export default function CustomersPage() {
         cep: cepValue,
         zip_code: cepValue,
         status: formData.status || 'ativo',
+        person_type: personType,
+        trade_name: personType === 'PJ' ? formData.trade_name?.trim() || null : null,
+        registration_status: personType === 'PJ' ? formData.registration_status?.trim() || null : null,
+        address_number: personType === 'PJ' ? formData.address_number?.trim() || null : null,
+        address_complement: personType === 'PJ' ? formData.address_complement?.trim() || null : null,
+        legal_representatives_json: personType === 'PJ' ? formData.legal_representatives || [] : null,
+        buyer_signature_mode: personType === 'PJ'
+          ? (formData.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL')
+          : null,
       };
       if (!customerId && tenantId) {
         payload = withTenantFields(payload, tenantId, 'customers');
@@ -226,13 +258,58 @@ export default function CustomersPage() {
             changedBy: user?.id,
             source: 'customer_form',
           });
-          let updateQuery = supabase.from('customers').update(payload).eq('id', customerId);
-          updateQuery = applyTenantFilter(updateQuery, rlsCtx, 'customers');
-          const { error: custError } = await updateQuery;
+          let current = payload;
+          let custError: { message?: string } | null = null;
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            let updateQuery = supabase.from('customers').update(current).eq('id', customerId);
+            updateQuery = applyTenantFilter(updateQuery, rlsCtx, 'customers');
+            const updated = await updateQuery;
+            if (!updated.error) {
+              custError = null;
+              break;
+            }
+            custError = updated.error;
+            const missing = String(updated.error.message || '').match(
+              /Could not find the '(\w+)' column|column ["']?(\w+)["']? of relation/i,
+            );
+            const column = missing?.[1] || missing?.[2];
+            if (!column || !(column in current)) break;
+            const next = { ...current };
+            delete next[column];
+            current = next;
+          }
           if (custError) throw custError;
       } else {
-          const { error: custError } = await supabase.from('customers').insert([payload]);
-          if (custError) throw custError;
+          let current = payload;
+          let insertedId: string | null = null;
+          let custError: { message?: string } | null = null;
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            const inserted = await supabase.from('customers').insert([current]).select('id').single();
+            if (!inserted.error && inserted.data) {
+              insertedId = inserted.data.id;
+              custError = null;
+              break;
+            }
+            custError = inserted.error;
+            const missing = String(inserted.error?.message || '').match(
+              /Could not find the '(\w+)' column|column ["']?(\w+)["']? of relation/i,
+            );
+            const column = missing?.[1] || missing?.[2];
+            if (!column || !(column in current)) break;
+            const next = { ...current };
+            delete next[column];
+            current = next;
+          }
+          if (custError || !insertedId) throw custError || new Error('Não foi possível criar o cliente.');
+          customerId = insertedId;
+      }
+
+      if (personType === 'PJ' && customerId) {
+        await syncCustomerLegalRepresentatives(supabase, {
+          companyId: tenantId,
+          customerId,
+          representatives: formData.legal_representatives || [],
+        });
       }
 
       setIsModalOpen(false);
@@ -262,7 +339,15 @@ export default function CustomersPage() {
       city: customer.city || '',
       state: customer.state || '',
       cep: formatCep(customer.cep || customer.zip_code || ''),
-      status: customer.status || 'ativo'
+      status: customer.status || 'ativo',
+      trade_name: customer.trade_name || '',
+      registration_status: customer.registration_status || '',
+      address_number: customer.address_number || '',
+      address_complement: customer.address_complement || '',
+      buyer_signature_mode: customer.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL',
+      legal_representatives: Array.isArray(customer.legal_representatives_json)
+        ? customer.legal_representatives_json
+        : [],
     });
     setIsModalOpen(true);
   };
@@ -469,7 +554,7 @@ export default function CustomersPage() {
             <form onSubmit={handleSaveCustomer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="sv-modal-body p-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Nome Completo *</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">{isBuyerPj ? 'Razão social *' : 'Nome Completo *'}</label>
                 <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Ex: João da Silva" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -488,10 +573,10 @@ export default function CustomersPage() {
                     lookupMessage={cnpjLookupMessage}
                   />
                 </div>
-                <div>
+                {!isBuyerPj && <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">RG</label>
                   <input type="text" value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="0000000" />
-                </div>
+                </div>}
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Telefone</label>
                    <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="(11) 99999-9999" />
@@ -502,11 +587,11 @@ export default function CustomersPage() {
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">E-mail</label>
                    <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="joao@exemplo.com" />
                 </div>
-                <div>
+                {!isBuyerPj && <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Profissão</label>
                    <input type="text" value={formData.profession} onChange={e => setFormData({...formData, profession: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Empresário" />
-                </div>
-                <div>
+                </div>}
+                {!isBuyerPj && <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Estado Civil</label>
                    <select value={formData.marital_status} onChange={e => setFormData({...formData, marital_status: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]">
                        <option value="">Selecione...</option>
@@ -516,7 +601,7 @@ export default function CustomersPage() {
                        <option value="VIÚVO(A)">Viúvo(a)</option>
                        <option value="ESTÁVEL">União Estável</option>
                    </select>
-                </div>
+                </div>}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -553,6 +638,18 @@ export default function CustomersPage() {
                    />
                 </div>
               </div>
+              {isBuyerPj && (
+                <BuyerLegalEntityFields
+                  tradeName={formData.trade_name || ''}
+                  registrationStatus={formData.registration_status || ''}
+                  addressNumber={formData.address_number || ''}
+                  addressComplement={formData.address_complement || ''}
+                  signatureMode={formData.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL'}
+                  representatives={formData.legal_representatives || []}
+                  disabled={submitting}
+                  onChange={(patch) => setFormData((prev: any) => ({ ...prev, ...patch }))}
+                />
+              )}
               {formData.id && (
                   <div>
                     <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Status</label>

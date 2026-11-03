@@ -9,6 +9,7 @@ import {
   formatAraguaiaMetersExtenso,
   resolveAraguaiaLotDescription,
 } from '@/lib/araguaiaContractLot';
+import { buildBuyerLegalEntityView } from '@/lib/buyerLegalEntity';
 import { formatContractIdentityDocumentPhrase } from '@/lib/contractIdentity';
 import {
   formatContractDueDateBr,
@@ -80,6 +81,7 @@ export type AraguaiaContractContext = {
   intervenienteRepresentativeName: string;
   intervenienteRepresentativeCpf: string;
   buyerName: string;
+  buyerLegalEntity?: import('@/lib/buyerLegalEntity').BuyerLegalEntityView | null;
   buyerNationality: string;
   buyerMaritalStatus: string;
   buyerProfession: string;
@@ -466,6 +468,7 @@ export function buildAraguaiaContractContext(
     intervenienteRepresentativeName: intervenienteId.representativeName,
     intervenienteRepresentativeCpf: intervenienteId.representativeCpfDigits,
     buyerName,
+    buyerLegalEntity: buildBuyerLegalEntityView(customer, sale),
     buyerNationality,
     buyerMaritalStatus,
     buyerProfession,

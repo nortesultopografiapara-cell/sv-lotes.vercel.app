@@ -10,6 +10,10 @@ export type CompanyLookupResult = {
   city: string;
   state: string;
   zip_code: string;
+  neighborhood?: string;
+  address_number?: string;
+  address_complement?: string;
+  registration_status?: string;
 };
 
 /** @deprecated use CompanyLookupResult — mantido para compatibilidade */
@@ -127,6 +131,10 @@ export function mapBrasilApiCnpjToResult(data: Record<string, unknown>): Company
     cnpj: formatCnpj(cnpjRaw),
     email,
     phone,
+    neighborhood: String(data.bairro || '').trim(),
+    address_number: String(data.numero || '').trim(),
+    address_complement: String(data.complemento || '').trim(),
+    registration_status: String(data.descricao_situacao_cadastral || '').trim(),
     address: buildAddressFromParts({
       logradouro: String(data.logradouro || ''),
       numero: String(data.numero || ''),
@@ -153,6 +161,10 @@ export function mapReceitaWsCnpjToResult(data: Record<string, unknown>): Company
     cnpj: formatCnpj(cnpjRaw),
     email: String(data.email || '').trim(),
     phone,
+    neighborhood: String(data.bairro || '').trim(),
+    address_number: String(data.numero || '').trim(),
+    address_complement: String(data.complemento || '').trim(),
+    registration_status: String(data.situacao || '').trim(),
     address: buildAddressFromParts({
       logradouro: String(data.logradouro || ''),
       numero: String(data.numero || ''),

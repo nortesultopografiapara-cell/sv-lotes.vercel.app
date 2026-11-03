@@ -60,7 +60,7 @@ export function buildSaleSignatureShareMessage(input: SaleSignatureShareInput): 
 
 export type SalePartySignatureShareInput = {
   signerName: string;
-  role: 'BUYER' | 'SPOUSE' | 'VENDOR' | 'WITNESS_1' | 'WITNESS_2';
+  role: 'BUYER' | 'SPOUSE' | 'VENDOR' | 'WITNESS_1' | 'WITNESS_2' | 'LEGAL_REPRESENTATIVE';
   projectName: string;
   quadra: string;
   lote: string;
@@ -84,7 +84,9 @@ export function buildSalePartySignatureShareMessage(
         ? 'vendedor'
         : input.role === 'WITNESS_1' || input.role === 'WITNESS_2'
           ? 'testemunha'
-          : 'comprador',
+          : input.role === 'LEGAL_REPRESENTATIVE'
+            ? 'representante legal'
+            : 'comprador',
   );
   const project = shareField(input.projectName, '—');
   const quadra = shareField(input.quadra, '—');

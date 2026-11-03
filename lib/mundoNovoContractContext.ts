@@ -4,6 +4,7 @@
 
 const extenso = require('extenso');
 
+import { buildBuyerLegalEntityView } from '@/lib/buyerLegalEntity';
 import { formatContractIdentityDocumentPhrase } from '@/lib/contractIdentity';
 import {
   formatContractDueDateBr,
@@ -70,6 +71,7 @@ export type MundoNovoContractContext = {
   intervenienteCnpj: string;
   intervenienteAddress: string;
   buyerName: string;
+  buyerLegalEntity?: import('@/lib/buyerLegalEntity').BuyerLegalEntityView | null;
   buyerNationality: string;
   buyerMaritalStatus: string;
   buyerProfession: string;
@@ -391,6 +393,7 @@ export function buildMundoNovoContractContext(
     intervenienteCnpj,
     intervenienteAddress,
     buyerName,
+    buyerLegalEntity: buildBuyerLegalEntityView(customer, sale),
     buyerNationality,
     buyerMaritalStatus,
     buyerProfession,

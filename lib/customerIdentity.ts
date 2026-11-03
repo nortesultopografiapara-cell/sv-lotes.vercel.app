@@ -4,6 +4,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logCustomerAudit } from '@/lib/customerAudit';
+import { syncCustomerLegalRepresentatives } from '@/lib/customerLegalRepresentatives';
+import {
+  isBuyerLegalEntity,
+  type BuyerRepresentativeInput,
+  type BuyerSignatureMode,
+} from '@/lib/buyerLegalEntity';
 import {
   cepIlikePatterns,
   cpfCnpjIlikePatterns,
@@ -37,6 +43,11 @@ export type CustomerRecord = {
   tenant_id?: string | null;
   company_id?: string | null;
   project_id?: string | null;
+  person_type?: string | null;
+  trade_name?: string | null;
+  registration_status?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
 };
 
 export type CustomerFormValues = {
@@ -55,6 +66,13 @@ export type CustomerFormValues = {
   city: string;
   state_uf: string;
   zip_code: string;
+  person_type?: 'PF' | 'PJ' | null;
+  trade_name?: string;
+  registration_status?: string;
+  address_number?: string;
+  address_complement?: string;
+  buyer_signature_mode?: BuyerSignatureMode;
+  legal_representatives?: BuyerRepresentativeInput[];
   signal_amount?: string;
   signal_date?: string;
   signal_payment_method?: string;
@@ -96,6 +114,12 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     city: customer.city || '',
     state_uf: customer.state_uf || customer.state || '',
     zip_code: formatCep(customer.zip_code || customer.cep || ''),
+    trade_name: customer.trade_name || '',
+    registration_status: customer.registration_status || '',
+    address_number: customer.address_number || '',
+    address_complement: customer.address_complement || '',
+    buyer_signature_mode: 'INDIVIDUAL',
+    legal_representatives: [],
   };
 }
 
@@ -116,6 +140,12 @@ export function emptyCustomerFormValues(): CustomerFormValues {
     city: '',
     state_uf: '',
     zip_code: '',
+    trade_name: '',
+    registration_status: '',
+    address_number: '',
+    address_complement: '',
+    buyer_signature_mode: 'INDIVIDUAL',
+    legal_representatives: [],
     signal_amount: '',
     signal_date: '',
     signal_payment_method: '',
@@ -528,6 +558,23 @@ export function customerPatchFromForm(
     patch.zip_code = zip;
   }
 
+  const pj = isBuyerLegalEntity(form.cpf_cnpj);
+  patch.person_type = pj ? 'PJ' : normalizeDocument(form.cpf_cnpj).length === 11 ? 'PF' : null;
+  if (pj) {
+    if (!isEmptyCustomerField(form.trade_name)) patch.trade_name = form.trade_name?.trim() || null;
+    if (!isEmptyCustomerField(form.registration_status)) {
+      patch.registration_status = form.registration_status?.trim() || null;
+    }
+    if (!isEmptyCustomerField(form.address_number)) {
+      patch.address_number = form.address_number?.trim() || null;
+    }
+    if (!isEmptyCustomerField(form.address_complement)) {
+      patch.address_complement = form.address_complement?.trim() || null;
+    }
+    patch.legal_representatives_json = form.legal_representatives || [];
+    patch.buyer_signature_mode = form.buyer_signature_mode || 'INDIVIDUAL';
+  }
+
   return patch;
 }
 
@@ -570,6 +617,13 @@ export function buildCustomerPayload(
     state_uf: form.state_uf?.trim().toUpperCase() || null,
     cep: zipFormatted,
     zip_code: zipFormatted,
+    person_type: isBuyerLegalEntity(form.cpf_cnpj) ? 'PJ' : 'PF',
+    trade_name: form.trade_name?.trim() || null,
+    registration_status: form.registration_status?.trim() || null,
+    address_number: form.address_number?.trim() || null,
+    address_complement: form.address_complement?.trim() || null,
+    legal_representatives_json: form.legal_representatives || [],
+    buyer_signature_mode: form.buyer_signature_mode || null,
     status: 'ativo',
     company_id: ctx.tenantId,
     project_id: ctx.projectId,
@@ -580,6 +634,28 @@ export function buildCustomerPayload(
     return mergeCustomerPatchFromForm(existing, form);
   }
   return fromForm;
+}
+
+async function writeCustomerRow(
+  run: (payload: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>,
+  payload: Record<string, unknown>,
+): Promise<{ error: { message?: string } | null }> {
+  let current = { ...payload };
+  let last: { message?: string } | null = null;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const result = await run(current);
+    if (!result.error) return { error: null };
+    last = result.error;
+    const missing = String(result.error.message || '').match(
+      /Could not find the '(\w+)' column|column ["']?(\w+)["']? of relation/i,
+    );
+    const column = missing?.[1] || missing?.[2];
+    if (!column || !(column in current)) break;
+    const next = { ...current };
+    delete next[column];
+    current = next;
+  }
+  return { error: last };
 }
 
 export async function resolveOrCreateCustomer(
@@ -688,19 +764,41 @@ export async function resolveOrCreateCustomer(
         source: 'sale_create',
       });
     }
-    const { error: updErr } = await supabase
-      .from('customers')
-      .update(payload)
-      .eq('id', customerId);
+    const { error: updErr } = await writeCustomerRow(
+      async (row) => {
+        const res = await supabase.from('customers').update(row).eq('id', customerId);
+        return { error: res.error };
+      },
+      payload,
+    );
     if (updErr) console.warn('CUSTOMER_UPDATE_WARN', updErr.message);
   }
 
   if (!customerId) {
-    const { data: newCustomer, error: custError } = await supabase
-      .from('customers')
-      .insert([payload])
-      .select('id')
-      .single();
+    let insertPayload = payload;
+    let newCustomer: { id: string } | null = null;
+    let custError: { message?: string } | null = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const inserted = await supabase
+        .from('customers')
+        .insert([insertPayload])
+        .select('id')
+        .single();
+      if (!inserted.error && inserted.data) {
+        newCustomer = inserted.data;
+        custError = null;
+        break;
+      }
+      custError = inserted.error;
+      const missing = String(inserted.error?.message || '').match(
+        /Could not find the '(\w+)' column|column ["']?(\w+)["']? of relation/i,
+      );
+      const column = missing?.[1] || missing?.[2];
+      if (!column || !(column in insertPayload)) break;
+      const next = { ...insertPayload };
+      delete next[column];
+      insertPayload = next;
+    }
 
     if (custError || !newCustomer) {
       throw new Error(custError?.message || 'Não foi possível criar o cliente.');
@@ -708,6 +806,14 @@ export async function resolveOrCreateCustomer(
     customerId = newCustomer.id;
     reused = false;
     console.log('CUSTOMER_CREATED', { customerId });
+  }
+
+  if (customerId && isBuyerLegalEntity({ cpf_cnpj: form.cpf_cnpj, person_type: form.person_type })) {
+    await syncCustomerLegalRepresentatives(supabase, {
+      companyId: effectiveTenantId,
+      customerId,
+      representatives: form.legal_representatives || [],
+    });
   }
 
   let clientId: string | null = null;

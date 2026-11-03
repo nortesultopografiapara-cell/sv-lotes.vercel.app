@@ -13,6 +13,7 @@ import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
 } from "@/lib/contractSeller";
+import { buildBuyerLegalEntityView } from "@/lib/buyerLegalEntity";
 import {
   formatContractIdentityDocumentSuffix,
   formatSellerRepresentativeIdentitySuffix,
@@ -247,6 +248,7 @@ export function generateContractHTML({
     ? `<img src="${seller.signatureUrl}" style="max-height: 40px; margin-bottom: 2px;" alt="Assinatura"/>`
     : "";
 
+  const buyerLegalEntity = buildBuyerLegalEntityView(customer, sale);
   const clienteNome = toTitleCase(customer?.name || "cliente não informado");
   const clienteCpfCnpj = formatCNPJCPF(customer?.document || customer?.cpf || "cpf/cnpj não informado");
   const clienteIdentitySuffix = formatContractIdentityDocumentSuffix(customer);
@@ -682,9 +684,11 @@ export function generateContractHTML({
                     <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
                 </p>
                 <p style="margin-bottom: 10px;">
-                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
+                    ${buyerLegalEntity
+                      ? `<strong>COMPRADORA:</strong> ${buyerLegalEntity.qualificationText}.`
+                      : `<strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.`}
                 </p>
-                ${spouseQualificationHtml}
+                ${buyerLegalEntity ? '' : spouseQualificationHtml}
             </div>
 
             <div class="contract-preamble">
@@ -720,10 +724,11 @@ export function generateContractHTML({
                 <div class="signature-slot" data-party-role="BUYER">
                     <div class="signature-line"></div>
                     <p style="font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
-                    <p style="font-size: 9pt; font-weight: normal;">PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}</p>
+                    <p style="font-size: 9pt; font-weight: normal;">${buyerLegalEntity ? `COMPRADORA<br/>CNPJ: ${buyerLegalEntity.cnpjFormatted}` : `PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}`}</p>
                 </div>
 
-                ${spouseSignatureSlotHtml}
+                ${buyerLegalEntity ? buyerLegalEntity.signers.map((signer) => `<div class="signature-slot" data-party-role="LEGAL_REPRESENTATIVE"><div class="signature-line"></div><p style="font-weight: bold; text-transform: uppercase;">${signer.fullName}</p><p style="font-size: 9pt; font-weight: normal;">REPRESENTANTE LEGAL<br/>CPF: ${signer.cpfFormatted}</p></div>`).join('') : ''}
+                ${buyerLegalEntity ? '' : spouseSignatureSlotHtml}
 
                 <div class="signature-slot" data-party-role="WITNESS">
                     <div class="signature-line"></div>

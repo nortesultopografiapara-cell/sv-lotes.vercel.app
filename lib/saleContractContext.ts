@@ -7,6 +7,7 @@ const extenso = require('extenso');
 
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 import { formatCurveClause } from '@/lib/officialLotMeasurements';
+import { buildBuyerLegalEntityView } from '@/lib/buyerLegalEntity';
 import { buildLotAddressLine } from '@/lib/streetGuide';
 import {
   getCompanyDisplayName,
@@ -93,6 +94,7 @@ export type SaleContractRenderContext = {
   clienteCidade: string;
   clienteUf: string;
   clienteCep: string;
+  buyerLegalEntity?: import('@/lib/buyerLegalEntity').BuyerLegalEntityView | null;
   empreendimentoNome: string;
   quadra: string;
   lote: string;
@@ -526,6 +528,10 @@ export function buildSaleContractRenderContext(
     clienteCidade,
     clienteUf,
     clienteCep,
+    buyerLegalEntity: buildBuyerLegalEntityView(
+      customer as Record<string, unknown>,
+      sale as Record<string, unknown>,
+    ),
     empreendimentoNome,
     quadra,
     lote,

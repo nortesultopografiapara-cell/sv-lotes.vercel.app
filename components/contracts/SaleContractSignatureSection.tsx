@@ -678,7 +678,8 @@ export const SaleContractSignatureSection = forwardRef<
               party.role === 'SPOUSE' ||
               party.role === 'VENDOR' ||
               party.role === 'WITNESS_1' ||
-              party.role === 'WITNESS_2'
+              party.role === 'WITNESS_2' ||
+              party.role === 'LEGAL_REPRESENTATIVE'
                 ? buildSalePartySignatureShareMessage({
                     signerName: party.signer_name || party.roleLabel,
                     role: party.role,

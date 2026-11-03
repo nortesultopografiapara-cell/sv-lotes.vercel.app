@@ -9,6 +9,7 @@ export const SALE_SIGNATURE_PARTY_ROLES = [
   'INTERVENIENT',
   'WITNESS_1',
   'WITNESS_2',
+  'LEGAL_REPRESENTATIVE',
 ] as const;
 
 export type SaleSignaturePartyRole = (typeof SALE_SIGNATURE_PARTY_ROLES)[number];
@@ -108,6 +109,7 @@ export function saleSignaturePartyRoleLabel(
   if (key === 'INTERVENIENT') return 'Interveniente';
   if (key === 'WITNESS_1') return 'Testemunha 1';
   if (key === 'WITNESS_2') return 'Testemunha 2';
+  if (key === 'LEGAL_REPRESENTATIVE') return 'Representante legal';
   return 'Signatário';
 }
 
@@ -148,7 +150,7 @@ export function saleSignaturePartyStatusLabel(
 
 export function isPublicPartyRole(role?: string | null): boolean {
   const key = String(role || '').toUpperCase();
-  return key === 'BUYER' || key === 'SPOUSE';
+  return key === 'BUYER' || key === 'SPOUSE' || key === 'LEGAL_REPRESENTATIVE';
 }
 
 /** Banner do painel quando o processo está CLIENT_SIGNED. */

@@ -35,7 +35,7 @@ function buildRecantoPartyBlockLines(
 
 function buildSignatureSlot(params: {
   role: string;
-  partyRole: 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS';
+  partyRole: 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS' | 'LEGAL_REPRESENTATIVE';
   name?: string;
   docLines?: string[];
   signatureImage?: string;
@@ -74,6 +74,12 @@ function buildSignatureSlot(params: {
 export function buildRecantoPrimaveraBuyerClauseHtml(
   ctx: RecantoPrimaveraContractContext,
 ): string {
+  if (ctx.buyerLegalEntity) {
+    return `
+    <div class="contract-clause contract-buyer-block" style="margin-bottom: 14px;">
+      <p><strong>COMPRADORA:</strong> ${ctx.buyerLegalEntity.qualificationText}.</p>
+    </div>`;
+  }
   const rgLine =
     ctx.clienteRg && ctx.clienteRgIssuer
       ? `${ctx.clienteRg} — ${ctx.clienteRgIssuer}`
@@ -135,9 +141,9 @@ export function buildRecantoPrimaveraSignaturesHtml(
     ? `${docLabel}: ${p.documentFmt}`
     : '';
 
-  const buyerDocLines = [
-    ctx.clienteCpfCnpj ? `CPF: ${ctx.clienteCpfCnpj}` : '',
-  ].filter(Boolean);
+  const buyerDocLines = ctx.buyerLegalEntity
+    ? [`CNPJ: ${ctx.buyerLegalEntity.cnpjFormatted}`]
+    : [ctx.clienteCpfCnpj ? `CPF: ${ctx.clienteCpfCnpj}` : ''].filter(Boolean);
 
   const conjugeSignatureSlot = ctx.hasConjuge
     ? buildSignatureSlot({
@@ -174,13 +180,14 @@ export function buildRecantoPrimaveraSignaturesHtml(
       })}
 
       ${buildSignatureSlot({
-        role: 'COMPRADOR(A)',
+        role: ctx.buyerLegalEntity ? 'COMPRADORA' : 'COMPRADOR(A)',
         partyRole: 'BUYER',
-        name: ctx.clienteNome,
+        name: ctx.buyerLegalEntity ? ctx.buyerLegalEntity.legalName : ctx.clienteNome,
         docLines: buyerDocLines,
       })}
 
-      ${conjugeSignatureSlot}
+      ${ctx.buyerLegalEntity ? ctx.buyerLegalEntity.signers.map((signer) => buildSignatureSlot({ role: 'REPRESENTANTE LEGAL', partyRole: 'LEGAL_REPRESENTATIVE', name: signer.fullName, docLines: [`CPF: ${signer.cpfFormatted}`] })).join('') : ''}
+      ${ctx.buyerLegalEntity ? '' : conjugeSignatureSlot}
 
       ${buildSignatureSlot({
         role: 'TESTEMUNHA 1',

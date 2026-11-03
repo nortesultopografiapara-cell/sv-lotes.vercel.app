@@ -18,6 +18,7 @@ import {
   lotAuditContextFromBlock,
 } from '@/lib/lotAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
+import { buyerSnapshotFromForm, isBuyerLegalEntity } from '@/lib/buyerLegalEntity';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
 import { saleSpouseFormFieldsFromSale } from '@/lib/saleSpouseFields';
 import {
@@ -633,6 +634,21 @@ export async function updateSaleFromEdit(
       sale_spouse_address: data.sale_spouse_address,
     },
   });
+  if (isBuyerLegalEntity({ cpf_cnpj: data.cpf_cnpj, person_type: data.person_type })) {
+    Object.assign(salePatch, {
+      has_spouse: false,
+      sale_spouse_name: null,
+      sale_spouse_nationality: null,
+      sale_spouse_marital_status: null,
+      sale_spouse_profession: null,
+      sale_spouse_rg: null,
+      sale_spouse_rg_issuer: null,
+      sale_spouse_cpf: null,
+      sale_spouse_phone: null,
+      sale_spouse_email: null,
+      sale_spouse_address: null,
+    });
+  }
   // notes permanece apenas no formulário; coluna ausente em produção (20260608120000 não aplicada).
 
   {
@@ -680,6 +696,31 @@ export async function updateSaleFromEdit(
     }
     if (saleUpdErr) {
       throw new Error(`Erro ao atualizar venda: ${saleUpdErr.message}`);
+    }
+  }
+
+  {
+    const buyerIsPj = isBuyerLegalEntity({
+      cpf_cnpj: data.cpf_cnpj,
+      person_type: data.person_type,
+    });
+    let snapshot: Record<string, unknown> = buyerSnapshotFromForm(data);
+    if (buyerIsPj) {
+      snapshot = {
+        ...snapshot,
+        has_spouse: false,
+      };
+    }
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const { error } = await supabase.from('sales').update(snapshot).eq('id', saleId);
+      if (!error) break;
+      const missing = String(error.message || '').match(
+        /Could not find the '(\w+)' column/i,
+      )?.[1];
+      if (!missing || !(missing in snapshot)) break;
+      const next = { ...snapshot };
+      delete next[missing];
+      snapshot = next;
     }
   }
 

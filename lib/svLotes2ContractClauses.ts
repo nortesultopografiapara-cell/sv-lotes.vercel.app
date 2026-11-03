@@ -91,6 +91,15 @@ export function buildSvLotes2VendorQualificationHtml(
 export function buildSvLotes2BuyerQualificationHtml(
   ctx: SvLotes2ContractContext,
 ): string {
+  if (ctx.buyerLegalEntity) {
+    const reps = ctx.buyerLegalEntity.signers
+      .map(
+        (signer) =>
+          `<p><strong>Representante legal:</strong> ${signer.fullName}${signer.qualification ? `, ${signer.qualification}` : ''}, CPF ${signer.cpfFormatted}${signer.representationDocument ? `. Poderes: ${signer.representationDocument}` : ''}</p>`,
+      )
+      .join('');
+    return `<div class="sv2-party-block"><p><strong>${SV2_BUYER_LABEL}:</strong> ${ctx.buyerLegalEntity.qualificationText}.</p>${reps}</div>`;
+  }
   const parts = [
     `<strong>${SV2_BUYER_LABEL}:</strong> ${ctx.clienteNome}`,
     `<strong>CPF:</strong> ${ctx.buyerCpfFmt}${ctx.clienteIdentitySuffix}`,
@@ -255,11 +264,12 @@ export function buildSvLotes2SignaturesHtml(ctx: SvLotes2ContractContext): strin
           ${ctx.representanteAssinaturaHtml}
         </div>
         <div class="signature-slot sv2-sign-line" data-party-role="BUYER">
-          <strong>${ctx.clienteNome}</strong><br/>
-          ${SV2_BUYER_LABEL}<br/>
-          CPF: ${ctx.buyerCpfFmt}
+          <strong>${ctx.buyerLegalEntity ? ctx.buyerLegalEntity.legalName : ctx.clienteNome}</strong><br/>
+          ${ctx.buyerLegalEntity ? 'COMPRADORA' : SV2_BUYER_LABEL}<br/>
+          ${ctx.buyerLegalEntity ? `CNPJ: ${ctx.buyerLegalEntity.cnpjFormatted}` : `CPF: ${ctx.buyerCpfFmt}`}
         </div>
+        ${ctx.buyerLegalEntity ? ctx.buyerLegalEntity.signers.map((signer) => `<div class="signature-slot sv2-sign-line" data-party-role="LEGAL_REPRESENTATIVE"><strong>${signer.fullName}</strong><br/>REPRESENTANTE LEGAL<br/>CPF: ${signer.cpfFormatted}</div>`).join('') : ''}
       </div>
-      ${ctx.hasSpouse ? buildSv2SpouseSignatureSlotHtml(ctx.spouse) : ''}
+      ${!ctx.buyerLegalEntity && ctx.hasSpouse ? buildSv2SpouseSignatureSlotHtml(ctx.spouse) : ''}
     </div>`;
 }

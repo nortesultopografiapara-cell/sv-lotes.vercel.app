@@ -6,6 +6,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { onlyDigits } from '@/lib/inputMasks';
 import {
+  isBuyerLegalEntity,
+  isValidCpfCheckDigits,
+  readBuyerRepresentatives,
+  readBuyerSignatureMode,
+  representativesDesignatedToSign,
+} from '@/lib/buyerLegalEntity';
+import {
   resolveSaleContractModelFromContext,
 } from '@/lib/contractModel';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
@@ -180,6 +187,18 @@ export async function loadSaleAndCompanyForSignature(
       });
     }
     sale = (data as Record<string, unknown>) || null;
+    if (sale) {
+      const snap = await supabaseAdmin
+        .from('sales')
+        .select(
+          'buyer_person_type, buyer_signature_mode, buyer_representatives_json',
+        )
+        .eq('id', saleId)
+        .maybeSingle();
+      if (!snap.error && snap.data) {
+        sale = { ...sale, ...(snap.data as Record<string, unknown>) };
+      }
+    }
   }
 
   let project: Record<string, unknown> | null = null;
@@ -397,7 +416,27 @@ export async function createSignaturePartiesAfterSend(
   const hasSpouse = hasRecantoSpouse(sale);
   const htmlHasSpouseSlot = contractHtmlHasSpouseAnuenteSlot(storedHtml);
 
-  const spouseRequired = shouldCreateSpouseSignatureParty({
+  const buyerIsLegalEntity = isBuyerLegalEntity({
+    ...(customer || {}),
+    person_type: sale?.buyer_person_type || customer?.person_type,
+    cpf_cnpj: customer?.cpf_cnpj || customer?.cpf || customer?.document,
+  });
+  const designatedLegalRepresentatives = buyerIsLegalEntity
+    ? representativesDesignatedToSign(
+        readBuyerRepresentatives(sale, customer),
+        readBuyerSignatureMode(sale, customer),
+      )
+    : [];
+  if (buyerIsLegalEntity && designatedLegalRepresentatives.length === 0) {
+    throw new SaleContractSignatureError(
+      'Cadastre o representante legal autorizado a assinar antes de enviar o contrato.',
+      'validation',
+    );
+  }
+
+  const spouseRequired = buyerIsLegalEntity
+    ? false
+    : shouldCreateSpouseSignatureParty({
     contractModel,
     sale,
     contractHtml: storedHtml,
@@ -608,7 +647,15 @@ export async function createSignaturePartiesAfterSend(
         phone: buyerPhone,
         email: buyerEmail,
         token: params.buyerToken,
+        withPublicToken: buyerIsLegalEntity ? false : undefined,
       },
+      legalRepresentatives: designatedLegalRepresentatives.map((rep, index) => ({
+        name: rep.full_name,
+        cpf: rep.cpf,
+        phone: rep.phone || null,
+        email: rep.email || null,
+        existingToken: index === 0 ? params.buyerToken : null,
+      })),
       spouse:
         mundoNovoEsign
           ? null
@@ -1122,6 +1169,7 @@ export async function signPartyElectronically(
     party.role !== 'BUYER' &&
     party.role !== 'SPOUSE' &&
     party.role !== 'VENDOR' &&
+    party.role !== 'LEGAL_REPRESENTATIVE' &&
     !isWitness
   ) {
     throw new SaleContractSignatureError(
@@ -1195,6 +1243,15 @@ export async function signPartyElectronically(
     const resolvedHasEmail = isValidSignerEmail(
       String(resolvedSignerEmail || ''),
     );
+
+    if (
+      party.role === 'LEGAL_REPRESENTATIVE' &&
+      !isValidCpfCheckDigits(signerDocument)
+    ) {
+      throw new SaleContractSignatureError(
+        'Informe o CPF válido do representante legal para assinar.',
+      );
+    }
 
     if (!signerName || signerDocument.length < 11) {
       throw new SaleContractSignatureError(

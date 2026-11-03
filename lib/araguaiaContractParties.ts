@@ -117,12 +117,23 @@ export function buildAraguaiaPhysicalSignaturesGridHtml(
         <div class="signature-grid signature-grid--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
           ${vendorSlots}
           ${buildPhysicalSlot({
-            role: ctx.buyerSignatureLabel || 'PROMITENTE COMPRADOR',
+            role: ctx.buyerLegalEntity ? 'COMPRADORA' : (ctx.buyerSignatureLabel || 'PROMITENTE COMPRADOR'),
             name: ctx.buyerName,
-            meta: ctx.buyerCpf ? [`CPF: ${ctx.buyerCpf}`] : [],
+            meta: ctx.buyerLegalEntity
+              ? [`CNPJ: ${ctx.buyerLegalEntity.cnpjFormatted}`]
+              : ctx.buyerCpf
+                ? [`CPF: ${ctx.buyerCpf}`]
+                : [],
             dataRole: 'BUYER',
             extraClass: 'signature-slot-buyer',
           })}
+          ${ctx.buyerLegalEntity ? ctx.buyerLegalEntity.signers.map((signer) => buildPhysicalSlot({
+            role: 'REPRESENTANTE LEGAL',
+            name: signer.fullName,
+            meta: [`CPF: ${signer.cpfFormatted}`],
+            dataRole: 'LEGAL_REPRESENTATIVE',
+            extraClass: 'signature-slot-legal-representative',
+          })).join('') : ''}
           ${buildPhysicalSlot({
             role: 'INTERVENIENTE',
             name: intervenienteName,

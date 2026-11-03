@@ -30,6 +30,7 @@ import {
   sanitizeContractField,
   type RecantoPrimaveraCompanyProfile,
 } from '@/lib/recantoPrimaveraCompanyProfile';
+import { buildBuyerLegalEntityView } from '@/lib/buyerLegalEntity';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 import {
   resolveRecantoContractProjectRecord,
@@ -104,6 +105,7 @@ export type RecantoPrimaveraContractContext = {
   clienteUf: string;
   clienteCep: string;
   clienteEnderecoCompleto: string;
+  buyerLegalEntity?: import('@/lib/buyerLegalEntity').BuyerLegalEntityView | null;
   /** true quando resolveSaleSpouseContext.hasSpouse */
   hasConjuge: boolean;
   conjugeNome: string;
@@ -728,6 +730,7 @@ export function buildRecantoPrimaveraContractContext(
     titleLine1: 'INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA',
     titleLine2,
     clienteNome,
+    buyerLegalEntity: buildBuyerLegalEntityView(customer, sale),
     clienteCpfCnpj,
     clienteRg,
     clienteRgIssuer,

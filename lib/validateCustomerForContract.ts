@@ -2,8 +2,8 @@
  * Validação obrigatória do comprador antes de gerar/regenerar contrato, PDF ou assinatura.
  */
 
+import { isBuyerLegalEntity, validateBuyerRepresentatives, readBuyerRepresentatives, readBuyerSignatureMode } from '@/lib/buyerLegalEntity';
 import {
-  isEmptyCustomerField,
   mergeCustomerData,
   pickNonemptyCustomerField,
 } from '@/lib/customerIdentity';
@@ -12,6 +12,14 @@ export type CustomerContractFieldRule = {
   keys: string[];
   label: string;
 };
+
+export const CUSTOMER_PJ_CONTRACT_REQUIRED_FIELDS: CustomerContractFieldRule[] = [
+  { keys: ['name', 'full_name'], label: 'Razão social' },
+  { keys: ['document', 'cpf_cnpj', 'cpf'], label: 'CNPJ' },
+  { keys: ['address', 'street'], label: 'Endereço' },
+  { keys: ['city'], label: 'Cidade' },
+  { keys: ['state_uf', 'state'], label: 'UF' },
+];
 
 export const CUSTOMER_CONTRACT_REQUIRED_FIELDS: CustomerContractFieldRule[] = [
   { keys: ['name', 'full_name'], label: 'Nome Completo' },
@@ -54,12 +62,23 @@ export function validateCustomerForContract(
   const merged = customer ? mergeCustomerData(customer) : {};
   const missingRequired: string[] = [];
   const missingRecommended: string[] = [];
+  const pj = isBuyerLegalEntity(merged);
+  const required = pj
+    ? CUSTOMER_PJ_CONTRACT_REQUIRED_FIELDS
+    : CUSTOMER_CONTRACT_REQUIRED_FIELDS;
 
-  for (const rule of CUSTOMER_CONTRACT_REQUIRED_FIELDS) {
+  for (const rule of required) {
     if (!fieldValue(merged, rule)) missingRequired.push(rule.label);
   }
   for (const rule of CUSTOMER_CONTRACT_RECOMMENDED_FIELDS) {
     if (!fieldValue(merged, rule)) missingRecommended.push(rule.label);
+  }
+  if (pj) {
+    const reps = validateBuyerRepresentatives(
+      readBuyerRepresentatives(merged),
+      readBuyerSignatureMode(merged),
+    );
+    if (!reps.ok) missingRequired.push(...reps.errors);
   }
 
   return {

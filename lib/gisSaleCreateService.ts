@@ -30,6 +30,7 @@ import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
 import { resolveOrCreateCustomer } from '@/lib/customerIdentity';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
+import { buyerSnapshotFromForm, isBuyerLegalEntity } from '@/lib/buyerLegalEntity';
 import { buildSaleSpouseDbPatch } from '@/lib/saleSpouseFields';
 import {
   DEFAULT_INSTALLMENT_CORRECTION_TYPE,
@@ -606,7 +607,10 @@ export async function executeGisSaleCreate(
     ...(financialAccountId ? { financial_account_id: financialAccountId } : {}),
     contract_model: saleContractModel,
     ...terminationPersist,
-    ...buildSaleSpouseDbPatch(customerData),
+    ...buildSaleSpouseDbPatch(
+      isBuyerLegalEntity(String(customerData.cpf_cnpj || '')) ? { has_spouse: false } : customerData,
+    ),
+    ...buyerSnapshotFromForm(customerData),
   };
 
   logSaleStep('create_sale', startedAt);
