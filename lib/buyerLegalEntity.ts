@@ -168,14 +168,13 @@ export function readBuyerSignatureMode(
 }
 
 export function representativeQualification(rep: BuyerRepresentativeInput): string {
-  return [
-    clean(rep.nationality),
-    clean(rep.marital_status),
-    clean(rep.profession),
-    clean(rep.role_title),
-  ]
+  const base = [clean(rep.nationality), clean(rep.marital_status), clean(rep.profession)]
     .filter(Boolean)
     .join(', ');
+  const role = clean(rep.role_title);
+  if (!role) return base;
+  const quality = `na qualidade de ${role}`;
+  return base ? `${base}, ${quality}` : quality;
 }
 
 export function representativesDesignatedToSign(
@@ -221,6 +220,17 @@ function joinClauses(parts: string[]): string {
   return `${parts.slice(0, -1).join('; ')} e ${parts[parts.length - 1]}`;
 }
 
+function addressAlreadyHas(line: string, part: string): boolean {
+  const needle = part.trim().toLowerCase();
+  if (!needle) return false;
+  const haystack = line.toLowerCase();
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (needle.length <= 4) {
+    return new RegExp(`(?:^|\\D)${escaped}(?:\\D|$)`).test(haystack);
+  }
+  return haystack.includes(needle);
+}
+
 export function buildBuyerAddressLine(source: Record<string, unknown> | null | undefined): string {
   const record = source || {};
   const street = clean(record.address || record.street);
@@ -230,11 +240,20 @@ export function buildBuyerAddressLine(source: Record<string, unknown> | null | u
   const city = clean(record.city || record.municipio);
   const uf = clean(record.state_uf || record.state || record.uf).toUpperCase();
   const cep = clean(record.zip_code || record.cep);
-  const head = [street, number].filter(Boolean).join(', ');
-  const withComplement = complement ? `${head}${head ? ' - ' : ''}${complement}` : head;
-  return [withComplement, neighborhood, [city, uf].filter(Boolean).join('/'), cep ? `CEP ${cep}` : '']
-    .filter(Boolean)
-    .join(', ');
+
+  let line = street;
+  if (number && !addressAlreadyHas(line, number)) {
+    line = line ? `${line}, ${number}` : number;
+  }
+  if (complement && !addressAlreadyHas(line, complement)) {
+    line = line ? `${line} - ${complement}` : complement;
+  }
+  const tail = [
+    neighborhood && !addressAlreadyHas(line, neighborhood) ? neighborhood : '',
+    city && !addressAlreadyHas(line, city) ? [city, uf].filter(Boolean).join('/') : '',
+    cep && !addressAlreadyHas(line.replace(/\D/g, ''), cep.replace(/\D/g, '')) ? `CEP ${cep}` : '',
+  ].filter(Boolean);
+  return [line, ...tail].filter(Boolean).join(', ');
 }
 
 function toSigner(rep: BuyerRepresentativeInput): BuyerRepresentativeSigner {

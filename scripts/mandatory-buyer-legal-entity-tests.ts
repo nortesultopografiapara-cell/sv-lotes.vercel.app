@@ -7,6 +7,7 @@
 
 import { generateContractHTML } from '../lib/contractTemplate';
 import {
+  buildBuyerAddressLine,
   buildBuyerLegalEntityView,
   buyerSnapshotFromForm,
   isBuyerLegalEntity,
@@ -168,9 +169,26 @@ function testLegalEntityQualification() {
     assert(text.includes(customer.name), `${label} razão social`);
     assert(text.includes('11.222.333/0001-81'), `${label} CNPJ`);
     assert(text.includes('Ana Representante'), `${label} representante`);
+    assert(text.includes('na qualidade de Sócia administradora'), `${label} função`);
+    const repeated = (text.match(/Centro/g) || []).length;
+    assert(repeated === 1, `${label} bairro não duplica no endereço`);
     assert(text.includes('Contrato social registrado'), `${label} documento de poderes`);
     assert(text.includes('529.982.247-25'), `${label} CPF do representante`);
   }
+
+  const composed = buildBuyerAddressLine({
+    address: 'Rua das Empresas, 10 — Centro',
+    address_number: '10',
+    address_complement: 'Sala 2',
+    neighborhood: 'Centro',
+    city: 'Parauapebas',
+    state_uf: 'PA',
+    zip_code: '68515000',
+  });
+  assert((composed.match(/\b10\b/g) || []).length === 1, 'número já presente não repete');
+  assert((composed.match(/Centro/g) || []).length === 1, 'bairro já presente não repete');
+  assert(composed.includes('Sala 2'), 'complemento ausente é acrescentado');
+  assert(composed.includes('Parauapebas/PA'), 'cidade e UF entram uma vez');
 
   const models = ['PADRAO', 'MENESES', 'RECANTO_PRIMAVERA', 'SV_LOTES_2', 'ARAGUAIA', 'MUNDO_NOVO', 'CUSTOM'];
   for (const model of models) {
@@ -495,6 +513,7 @@ function testSignatureAggregate() {
       {
         name: 'SEVERINO JOSE DE FRANÇA',
         cpf: CPF,
+        roleTitle: 'Presidente',
         signedAt: '2026-11-03T18:00:00.000Z',
         signatureEventId: 'rep-event',
       },
@@ -504,6 +523,8 @@ function testSignatureAggregate() {
   assertIncludes(certificate, 'COMPRADORA', 'certificado trata a PJ como compradora');
   assertIncludes(certificate, 'REPRESENTANTE LEGAL', 'certificado registra o representante');
   assertIncludes(certificate, 'SEVERINO JOSE DE FRANÇA', 'certificado nomeia o signatário');
+  assertIncludes(certificate, 'REPRESENTADA PELO REPRESENTANTE LEGAL', 'certificado não trata o CNPJ como signatário');
+  assertIncludes(certificate, 'Presidente', 'certificado mostra a função do representante');
   console.log('OK testSignatureAggregate');
 }
 

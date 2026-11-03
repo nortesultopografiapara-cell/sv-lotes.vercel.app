@@ -450,13 +450,18 @@ function testPartyFlowWiring() {
     'assinatura pública VENDOR',
   );
   ok(
-    flow.includes('vendorCount !== 2') ||
-      flow.includes('exatamente 2 VENDOR'),
-    'gate pós-criação exige 2 VENDOR',
+    flow.includes('vendorCount !== expectedCpfs.length') &&
+      flow.includes('missingCpf'),
+    'gate pós-criação exige os VENDORs configurados e seus CPFs',
+  );
+  const esign = fs.readFileSync(
+    path.join(process.cwd(), 'lib/araguaiaContractEsign.ts'),
+    'utf8',
   );
   ok(
-    flow.includes('82091226220') && flow.includes('85656011291'),
-    'valida CPFs Daniel/Aldenise',
+    esign.includes('ARAGUAIA_ESIGN_VENDORS') &&
+      esign.includes('856.560.112-91'),
+    'vendedores ARAGUAIA permanecem na configuração do modelo',
   );
 
   const modal = fs.readFileSync(

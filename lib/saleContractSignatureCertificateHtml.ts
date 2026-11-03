@@ -83,6 +83,7 @@ export type SaleContractSignatureCertificateInput = {
     device?: string | null;
     approxLocation?: string | null;
     signatureEventId?: string | null;
+    roleTitle?: string | null;
   }> | null;
   /**
    * MUNDO_NOVO ELECTRONIC_SIGNED: omite as fichas extensas (já estão
@@ -443,12 +444,15 @@ function buildOfficialSignatureCard(params: {
   role: string;
   fields: Array<{ icon: string; label: string; value: string }>;
   signed?: boolean;
+  badgeLabel?: string;
   fullWidth?: boolean;
 }): string {
   const fieldsHtml = params.fields.map((f) => buildCertField(f.icon, f.label, f.value)).join('');
-  const badge = params.signed !== false
-    ? '<span class="sv-cert-card-badge">✓ ASSINADO ELETRONICAMENTE</span>'
-    : '<span class="sv-cert-card-badge" style="background:#92400e;">⏳ AGUARDANDO ASSINATURA</span>';
+  const badge = params.badgeLabel
+    ? `<span class="sv-cert-card-badge">${escapeHtml(params.badgeLabel)}</span>`
+    : params.signed !== false
+      ? '<span class="sv-cert-card-badge">✓ ASSINADO ELETRONICAMENTE</span>'
+      : '<span class="sv-cert-card-badge" style="background:#92400e;">⏳ AGUARDANDO ASSINATURA</span>';
   const fullClass = params.fullWidth ? ' sv-cert-card--full' : '';
 
   return `
@@ -782,6 +786,12 @@ function buildBuyerLegalRepresentativeCards(
       const fields: Array<{ icon: string; label: string; value: string }> = [
         { icon: '👤', label: 'Nome', value: String(card.name || '—') },
         { icon: '🪪', label: 'CPF', value: cpf },
+      ];
+      const roleTitle = String(card.roleTitle || '').trim();
+      if (roleTitle) {
+        fields.push({ icon: '🏛️', label: 'Função', value: roleTitle });
+      }
+      fields.push(
         ...buildEvidenceFields({
           email: card.email,
           phone: card.phone,
@@ -793,7 +803,7 @@ function buildBuyerLegalRepresentativeCards(
           approxLocation: card.approxLocation,
           signatureEventId: card.signatureEventId,
         }),
-      ];
+      );
       return buildOfficialSignatureCard({
         role: 'REPRESENTANTE LEGAL',
         fields,
@@ -808,29 +818,50 @@ function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
   const buyerIsCompany = buyerDigits.length === 14;
   const buyerDoc =
     formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
+  const representatives = Array.isArray(input.buyerLegalRepresentativeCards)
+    ? input.buyerLegalRepresentativeCards.filter((card) => String(card?.name || '').trim())
+    : [];
+  const represented = buyerIsCompany && representatives.length > 0;
 
   const fields: Array<{ icon: string; label: string; value: string }> = [
     { icon: '👤', label: 'Nome', value: String(input.buyerName || '—') },
     { icon: '🪪', label: buyerIsCompany ? 'CNPJ' : 'CPF', value: buyerDoc },
-    ...buildEvidenceFields({
-      email: input.signerEmail,
-      phone: input.signerPhone,
-      ipAddress: input.ipAddress,
-      signedAt: input.signedAt,
-      browser: input.browser,
-      os: input.os,
-      device: input.device,
-      approxLocation: input.approxLocation,
-      signatureEventId:
-        input.buyerSignatureEventId ||
-        input.signatureEventId ||
-        input.uniqueId,
-    }),
   ];
+  if (represented) {
+    const names = representatives
+      .map((card) => {
+        const role = String(card.roleTitle || '').trim();
+        return role ? `${card.name} (${role})` : String(card.name);
+      })
+      .join('; ');
+    fields.push({
+      icon: '✍️',
+      label: 'Representação',
+      value: `Representada por ${names}`,
+    });
+  } else {
+    fields.push(
+      ...buildEvidenceFields({
+        email: input.signerEmail,
+        phone: input.signerPhone,
+        ipAddress: input.ipAddress,
+        signedAt: input.signedAt,
+        browser: input.browser,
+        os: input.os,
+        device: input.device,
+        approxLocation: input.approxLocation,
+        signatureEventId:
+          input.buyerSignatureEventId ||
+          input.signatureEventId ||
+          input.uniqueId,
+      }),
+    );
+  }
 
   return buildOfficialSignatureCard({
     role: buyerIsCompany ? 'COMPRADORA' : 'PROMISSÁRIO COMPRADOR',
     fields,
+    badgeLabel: represented ? 'REPRESENTADA PELO REPRESENTANTE LEGAL' : undefined,
   });
 }
 
