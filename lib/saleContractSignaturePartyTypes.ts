@@ -91,6 +91,8 @@ export type SaleSignaturePartyPublicView = {
   signatureUrl?: string | null;
   canResend: boolean;
   canShare: boolean;
+  /** Status EXPIRED com papel de link público. O link antigo não é reexibido. */
+  canRenewExpired?: boolean;
   /** Preview: SPOUSE/BUYER pendente sem URL — modal deve exibir erro, não omitir. */
   missingPublicUrl?: boolean;
   /** INTERVENIENT PJ — nome do representante (signature_data). */

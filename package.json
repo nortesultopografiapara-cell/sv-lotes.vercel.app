@@ -180,6 +180,7 @@
     "test:araguaia-esign-v2": "tsx scripts/mandatory-araguaia-esign-v2-foundation-tests.ts",
     "test:araguaia-esign-v2-intervenient": "tsx scripts/mandatory-araguaia-esign-v2-intervenient-tests.ts",
     "test:araguaia-esign-v2-witness": "tsx scripts/mandatory-araguaia-esign-v2-witness-tests.ts",
+    "test:signature-link-renewal": "tsx scripts/mandatory-signature-link-renewal-tests.ts",
     "test:araguaia-esign-v2-pdf-modes": "tsx scripts/mandatory-araguaia-esign-v2-pdf-modes-tests.ts",
     "test:araguaia-esign-v2-integration": "tsx scripts/mandatory-araguaia-esign-v2-integration-tests.ts",
     "test:araguaia-esign-v2-gate": "tsx scripts/mandatory-araguaia-esign-v2-gate-tests.ts",

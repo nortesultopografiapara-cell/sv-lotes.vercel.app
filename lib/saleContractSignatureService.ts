@@ -57,6 +57,7 @@ import type { SaleSignatureStatus } from '@/lib/saleContractSignatureStatus';
 import {
   canPublicSaleSign,
   isSaleSignatureBlocked,
+  processStatusBlocksIndividualParty,
 } from '@/lib/saleContractSignatureStatus';
 import {
   assertSaleSignaturePartiesReadyBeforeSend,
@@ -807,7 +808,7 @@ export async function signSaleContractElectronically(
   const party = await getPartyByPublicToken(supabaseAdmin, token);
   if (party && party.contract_signature_id === signature.id) {
     const processStatus = String(signature.signature_status || '').toUpperCase();
-    if (['SIGNED', 'CANCELLED', 'EXPIRED'].includes(processStatus)) {
+    if (processStatusBlocksIndividualParty(processStatus, party)) {
       throw new SaleContractSignatureError(
         processStatus === 'SIGNED'
           ? 'Este contrato já foi assinado. O link está bloqueado.'

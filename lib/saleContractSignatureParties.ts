@@ -535,36 +535,65 @@ export async function markPartySigned(
 }
 
 /**
- * Reemite link para BUYER, SPOUSE, VENDOR (com token) ou WITNESS_* ainda não assinados.
+ * null = pode reemitir. EXPIRED entra; SIGNED e CANCELLED não.
+ * Não cria processo novo e não mexe nas evidências já gravadas.
+ */
+export function partyPublicLinkReissueBlockReason(party: {
+  role?: string | null;
+  status?: string | null;
+  signature_url?: string | null;
+  signature_token_hash?: string | null;
+}): string | null {
+  const role = String(party.role || '').toUpperCase();
+  const status = String(party.status || '').toUpperCase();
+  const hasLink = Boolean(party.signature_url || party.signature_token_hash);
+  const publicRole =
+    role === 'BUYER' || role === 'SPOUSE' || role === 'LEGAL_REPRESENTATIVE';
+  const isVendorWithLink = role === 'VENDOR' && hasLink;
+  const isWitnessWithLink =
+    (role === 'WITNESS_1' || role === 'WITNESS_2') && hasLink;
+  if (!publicRole && !isVendorWithLink && !isWitnessWithLink) {
+    return 'Somente comprador, cônjuge, representante legal, vendedor ou testemunha com link público podem reemitir.';
+  }
+  if (status === 'SIGNED') {
+    return 'Este participante já assinou. Não é possível gerar novo link sem reabertura administrativa.';
+  }
+  if (status === 'CANCELLED') {
+    return 'Participante cancelado. Envie o contrato novamente.';
+  }
+  return null;
+}
+
+/** Campos gravados na renovação. Evidências de assinatura ficam de fora. */
+export function buildPartyLinkReissuePatch(input: {
+  tokenHash: string;
+  signUrl: string;
+  now: string;
+  expiresAt: string;
+}): Record<string, unknown> {
+  return {
+    signature_token_hash: input.tokenHash,
+    signature_url: input.signUrl,
+    status: 'PENDING',
+    sent_at: input.now,
+    viewed_at: null,
+    cancelled_at: null,
+    expires_at: input.expiresAt,
+    updated_at: input.now,
+  };
+}
+
+/**
+ * Reemite link para BUYER, SPOUSE, LEGAL_REPRESENTATIVE, VENDOR (com token)
+ * ou WITNESS_* em PENDING, VIEWED ou EXPIRED.
  */
 export async function reissuePartyPublicLink(
   supabaseAdmin: SupabaseClient,
   party: ContractSignaturePartyRow,
 ): Promise<CreatedPartyWithToken> {
-  const role = String(party.role).toUpperCase();
-  const isVendorWithLink =
-    role === 'VENDOR' &&
-    Boolean(party.signature_url || party.signature_token_hash);
-  const isWitnessWithLink =
-    (role === 'WITNESS_1' || role === 'WITNESS_2') &&
-    Boolean(party.signature_url || party.signature_token_hash);
-  if (
-    role !== 'BUYER' &&
-    role !== 'SPOUSE' &&
-    !isVendorWithLink &&
-    !isWitnessWithLink
-  ) {
-    throw new Error(
-      'Somente comprador, cônjuge, vendedor ou testemunha com link público podem reemitir.',
-    );
-  }
-  if (String(party.status).toUpperCase() === 'SIGNED') {
-    throw new Error(
-      'Este participante já assinou. Não é possível gerar novo link sem reabertura administrativa.',
-    );
-  }
-  if (['CANCELLED', 'EXPIRED'].includes(String(party.status).toUpperCase())) {
-    throw new Error('Participante cancelado ou expirado. Envie o contrato novamente.');
+  const blockReason = partyPublicLinkReissueBlockReason(party);
+  if (blockReason) {
+    throw new Error(blockReason);
   }
 
   const { token, tokenHash } = createSaleSignaturePartyToken();
@@ -574,22 +603,24 @@ export async function reissuePartyPublicLink(
 
   const { data, error } = await supabaseAdmin
     .from('contract_signature_parties')
-    .update({
-      signature_token_hash: tokenHash,
-      signature_url: signUrl,
-      status: 'PENDING',
-      sent_at: now,
-      viewed_at: null,
-      cancelled_at: null,
-      expires_at: expiresAt,
-      updated_at: now,
-    })
+    .update(
+      buildPartyLinkReissuePatch({
+        tokenHash,
+        signUrl,
+        now,
+        expiresAt,
+      }),
+    )
     .eq('id', party.id)
+    .in('status', ['PENDING', 'VIEWED', 'EXPIRED', 'ERROR'])
     .select('*')
     .single();
 
   if (error || !data) {
-    throw new Error(error?.message || 'Falha ao reemitir link.');
+    throw new Error(
+      error?.message ||
+        'Falha ao reemitir link. O participante pode já ter assinado.',
+    );
   }
 
   return {
@@ -646,8 +677,12 @@ export function toPublicPartyViews(
       ['PENDING', 'VIEWED'].includes(status) &&
       hasPublicLink;
     const canResend = canShare;
+    const canRenewExpired = shareableRole && status === 'EXPIRED';
     const publicUrl =
-      includeUrls && shareableRole && !internalCompanyVendor
+      includeUrls &&
+      shareableRole &&
+      !internalCompanyVendor &&
+      status !== 'EXPIRED'
         ? resolvedUrl || party.signature_url || null
         : null;
 
@@ -696,6 +731,7 @@ export function toPublicPartyViews(
         : undefined,
       canResend,
       canShare,
+      canRenewExpired,
       missingPublicUrl:
         includeUrls &&
         shareableRole &&

@@ -762,6 +762,11 @@ export const SaleContractSignatureSection = forwardRef<
                     Contato: {contactLine}
                   </p>
                 )}
+                {party.expires_at && party.status !== 'SIGNED' && (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Validade: {formatSignatureTimelineDateTime(party.expires_at)}
+                  </p>
+                )}
                 {party.role === 'VENDOR' &&
                   party.status !== 'SIGNED' &&
                   isVendorWaitingForBuyers(parties) && (
@@ -785,6 +790,15 @@ export const SaleContractSignatureSection = forwardRef<
                   <p className="text-[11px] text-emerald-300/80">
                     Assinatura administrativa pela empresa
                   </p>
+                )}
+                {party.canRenewExpired && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <ActionChip
+                      icon={Send}
+                      label="Gerar novo link"
+                      onClick={() => void handleReissueParty(party)}
+                    />
+                  </div>
                 )}
                 {party.canShare && url && (
                   <div className="flex flex-wrap gap-1.5 pt-1">

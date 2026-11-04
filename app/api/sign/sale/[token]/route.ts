@@ -20,6 +20,7 @@ import {
 import {
   canPublicSaleSign,
   isSaleSignatureBlocked,
+  processStatusBlocksIndividualParty,
   saleSignatureStatusLabel,
 } from '@/lib/saleContractSignatureStatus';
 import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
@@ -87,7 +88,15 @@ export async function GET(
     return NextResponse.json({ error: 'Link inválido ou expirado.' }, { status: 404 });
   }
 
-  if (isSignatureExpired(signature.expires_at) && !isSaleSignatureBlocked(signature.signature_status)) {
+  const tokenParty = await getPartyByPublicToken(supabaseAdmin, token);
+  const tokenIsThisParty =
+    Boolean(tokenParty) && tokenParty?.contract_signature_id === signature.id;
+
+  if (
+    !tokenIsThisParty &&
+    isSignatureExpired(signature.expires_at) &&
+    !isSaleSignatureBlocked(signature.signature_status)
+  ) {
     if (signature.signature_status !== 'EXPIRED') {
       const { data } = await supabaseAdmin
         .from('contract_signatures')
@@ -267,9 +276,11 @@ export async function GET(
   const blocked = party
     ? ['SIGNED', 'CANCELLED', 'EXPIRED', 'ERROR'].includes(
         String(partyStatus).toUpperCase(),
-      ) || ['SIGNED', 'CANCELLED', 'EXPIRED'].includes(
-        String(signature.signature_status).toUpperCase(),
-      )
+      ) ||
+      processStatusBlocksIndividualParty(signature.signature_status, {
+        status: partyStatus,
+        expires_at: party.expires_at,
+      })
     : processBlocked;
   const buyerName =
     String(

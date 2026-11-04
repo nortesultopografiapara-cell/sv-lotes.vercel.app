@@ -48,6 +48,34 @@ export function canPublicSaleSign(status?: string | null): boolean {
   return key === 'PENDING' || key === 'VIEWED';
 }
 
+/** Link individual ainda assinável. Prazo vazio não expira a linha. */
+export function individualPartyLinkStillOpen(
+  party?: { status?: string | null; expires_at?: string | null } | null,
+  now = new Date(),
+): boolean {
+  if (!party) return false;
+  const status = String(party.status || '').toUpperCase();
+  if (status !== 'PENDING' && status !== 'VIEWED') return false;
+  if (!party.expires_at) return true;
+  const expiresAt = new Date(party.expires_at).getTime();
+  return !Number.isNaN(expiresAt) && expiresAt >= now.getTime();
+}
+
+/**
+ * SIGNED e CANCELLED bloqueiam qualquer token.
+ * EXPIRED do processo não bloqueia um participante cujo próprio link ainda vale.
+ */
+export function processStatusBlocksIndividualParty(
+  processStatus?: string | null,
+  party?: { status?: string | null; expires_at?: string | null } | null,
+  now = new Date(),
+): boolean {
+  const process = String(processStatus || '').toUpperCase();
+  if (process === 'SIGNED' || process === 'CANCELLED') return true;
+  if (process === 'EXPIRED') return !individualPartyLinkStillOpen(party, now);
+  return false;
+}
+
 export function isSaleSignatureBlocked(status?: string | null): boolean {
   const key = String(status || '').toUpperCase();
   return [

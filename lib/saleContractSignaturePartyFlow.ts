@@ -1791,10 +1791,11 @@ export async function reissueExternalPartyLink(
   }
 
   const result = await reissuePartyPublicLink(supabaseAdmin, party);
+  const previousExpiresAt = party.expires_at;
 
   if (result.token) {
     await logSignatureEvent(supabaseAdmin, {
-      signatureToken: result.token,
+      signatureToken: maskSignatureTokenForLog(result.token) || 'reissued',
       signatureSource: 'SALE',
       signatureRecordId: params.signatureId,
       eventType: 'PARTY_LINK_REISSUED',
@@ -1804,12 +1805,16 @@ export async function reissueExternalPartyLink(
         role: party.role,
         partyId: party.id,
         actorUserId: params.actorUserId || null,
+        previousStatus: party.status,
+        previousExpiresAt,
+        expiresAt: result.party.expires_at,
         tokenPreview: maskSignatureTokenForLog(result.token),
       },
     });
   }
 
-  // Espelha token do comprador no processo para portal/legado
+  // Espelha token do comprador no processo para portal/legado.
+  // Não cria outro processo e não regrava o HTML.
   if (party.role === 'BUYER' && result.token && result.signUrl) {
     await supabaseAdmin
       .from('contract_signatures')
@@ -1827,6 +1832,25 @@ export async function reissueExternalPartyLink(
         updated_at: new Date().toISOString(),
       })
       .eq('id', params.contractId);
+  }
+
+  const { data: processRow } = await supabaseAdmin
+    .from('contract_signatures')
+    .select('*')
+    .eq('id', params.signatureId)
+    .maybeSingle();
+  if (
+    String(
+      (processRow as { signature_status?: string } | null)?.signature_status ||
+        '',
+    ).toUpperCase() === 'EXPIRED'
+  ) {
+    const refreshed = await listSignatureParties(supabaseAdmin, params.signatureId);
+    await syncAggregateSignatureStatus(
+      supabaseAdmin,
+      processRow as SignatureProcessRow,
+      refreshed,
+    );
   }
 
   return result;
