@@ -191,7 +191,9 @@ BEGIN
   END IF;
 
   IF NOT has_table_privilege('authenticated', 'public.users', 'SELECT')
-     OR NOT has_table_privilege('authenticated', 'public.users', 'UPDATE') THEN
+     OR NOT has_table_privilege('authenticated', 'public.users', 'INSERT')
+     OR NOT has_table_privilege('authenticated', 'public.users', 'UPDATE')
+     OR NOT has_table_privilege('authenticated', 'public.users', 'DELETE') THEN
     RAISE EXCEPTION 'SEG2B_AUTHENTICATED_DML_MISSING';
   END IF;
 
