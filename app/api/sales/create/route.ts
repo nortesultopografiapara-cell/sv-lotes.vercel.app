@@ -73,10 +73,22 @@ export async function POST(request: Request) {
     }
 
     const profile = await resolveCallerProfile(supabase, user.id);
-    const userRole = String(profile?.role || user.role || '').toUpperCase();
+    const userRole = String(profile?.role || '').toUpperCase();
+    let callerTenantId = profile?.tenant_id ?? null;
+    if (!callerTenantId) {
+      const { data: companyProfile, error: companyProfileError } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!companyProfileError) {
+        callerTenantId =
+          (companyProfile as { company_id?: string | null } | null)?.company_id ?? null;
+      }
+    }
     const tenantDecision = decideServiceRoleFinanceTenantWrite({
       callerRole: userRole,
-      callerTenantId: profile?.tenant_id ?? null,
+      callerTenantId,
       requestedTenantId: tenantId,
     });
     if (!tenantDecision.allow) {

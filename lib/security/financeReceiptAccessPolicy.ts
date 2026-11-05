@@ -17,7 +17,7 @@ export const BROAD_FINANCE_RECEIPT_POLICIES = [
 export const FINANCE_RECEIPT_RLS_PROPOSAL =
   'supabase/proposals/20261105170000_finance_receipts_rls_lockdown.sql';
 
-const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER_ADMIN', 'MASTER-ADMIN'] as const;
+const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER_ADMIN', 'MASTER-ADMIN', 'SUPER_MASTER'] as const;
 
 export type FinanceCommand = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'TRUNCATE';
 export type FinanceRole = 'anon' | 'authenticated' | 'service_role';
@@ -61,27 +61,12 @@ function roleMatches(roles: FinancePolicyModel['roles'], role: FinanceRole): boo
   return roles.includes('public') || roles.includes(role);
 }
 
-function sameTenant(left: string | null, right: string | null): boolean {
-  return Boolean(left && right && left === right);
-}
-
-/** Leitura: a empresa casa com tenant_id ou company_id, como em sales. */
-export function financeReceiptVisibleToTenant(
-  actor: FinanceActor,
-  row: FinanceRowScope,
-): boolean {
-  if (actor.isSuperAdmin) return true;
-  return (
-    sameTenant(row.tenantId, actor.currentTenantId) ||
-    sameTenant(row.companyId, actor.currentTenantId)
-  );
-}
-
 /**
- * Escrita: os dois campos, quando preenchidos, precisam ser a empresa da sessão.
- * Impede gravar tenant_id de outra empresa mesmo que company_id seja o próprio.
+ * Leitura e escrita usam a mesma regra. Os dois identificadores, quando
+ * preenchidos, precisam ser a empresa da sessão. Parcela cruzada não aparece
+ * para nenhuma das empresas.
  */
-export function financeReceiptWritableByTenant(
+export function financeReceiptAnchoredToTenant(
   actor: FinanceActor,
   row: FinanceRowScope,
 ): boolean {
@@ -92,6 +77,20 @@ export function financeReceiptWritableByTenant(
   const anchored =
     row.tenantId === actor.currentTenantId || row.companyId === actor.currentTenantId;
   return tenantOk && companyOk && anchored;
+}
+
+export function financeReceiptVisibleToTenant(
+  actor: FinanceActor,
+  row: FinanceRowScope,
+): boolean {
+  return financeReceiptAnchoredToTenant(actor, row);
+}
+
+export function financeReceiptWritableByTenant(
+  actor: FinanceActor,
+  row: FinanceRowScope,
+): boolean {
+  return financeReceiptAnchoredToTenant(actor, row);
 }
 
 function expressionAllows(

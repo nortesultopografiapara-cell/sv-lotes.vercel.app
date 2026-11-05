@@ -426,6 +426,11 @@ export async function executeGisSaleCreate(
     throw new Error(blockLoadErr?.message || 'Lote não encontrado.');
   }
 
+  const blockTenant = String(blockRow.tenant_id || '').trim();
+  if (!blockTenant || blockTenant !== tenantId) {
+    throw new Error('O lote não pertence à empresa da venda.');
+  }
+
   const blockStatus = String(blockRow.status || '').toLowerCase();
   if (
     blockRow.sale_id &&

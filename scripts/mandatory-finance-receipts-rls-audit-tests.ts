@@ -19,6 +19,7 @@ import {
   type FinanceActor,
   type FinanceRowScope,
 } from '../lib/security/financeReceiptAccessPolicy';
+import { financeRlsHomologBlockReason } from '../lib/security/financeReceiptRlsHomologPlan';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -115,6 +116,22 @@ assert(proposedAllows(superAdmin, 'UPDATE', rowA, rowA), '7c. SUPER_ADMIN atuali
 assert(proposedAllows(userA, 'SELECT', legacyA), '12. parcela antiga só com company_id continua visível');
 assert(proposedAllows(userA, 'UPDATE', legacyA, legacyA), '12b. parcela antiga da própria empresa continua editável');
 assert(
+  !proposedAllows(userA, 'SELECT', { tenantId: COMPANY_A, companyId: COMPANY_B }),
+  'parcela com empresas divergentes não aparece para A',
+);
+assert(
+  !proposedAllows(userB, 'SELECT', { tenantId: COMPANY_A, companyId: COMPANY_B }),
+  'parcela com empresas divergentes não aparece para B',
+);
+assert(
+  !proposedAllows(userA, 'SELECT', { tenantId: null, companyId: null }),
+  'parcela sem empresa não aparece para o usuário comum',
+);
+assert(
+  proposedAllows(superAdmin, 'SELECT', { tenantId: null, companyId: null }),
+  'SUPER_ADMIN ainda vê parcela sem empresa para corrigir',
+);
+assert(
   !proposedAllows(userA, 'INSERT', null, { tenantId: COMPANY_A, companyId: COMPANY_B }),
   'escrita não grava company_id de outra empresa',
 );
@@ -199,7 +216,13 @@ assert(
 );
 assert(!/GRANT[\s\S]{0,80}TO anon/i.test(proposal), 'proposta não concede privilégio a anon');
 assert(!/REVOKE[\s\S]{0,80}FROM service_role/i.test(proposal), 'proposta não revoga service_role');
-assert(!proposal.includes('owner_readonly_no_'), 'proposta não recria nem apaga as policies do OWNER');
+assert(proposal.includes("'owner_readonly_no_insert'"), 'allowlist preserva a policy restritiva do OWNER');
+assert(!proposal.includes('DROP POLICY IF EXISTS "owner_readonly'), 'proposta não apaga as policies do OWNER');
+assert(proposal.includes('SEG2A_UNEXPECTED_POLICY'), 'proposta aborta se restar policy desconhecida');
+assert(proposal.includes('SEG2A_SERVICE_ROLE_DML_MISSING'), 'proposta aborta se o service_role perder DML');
+assert(proposal.includes('SEG2A_AUTHENTICATED_TRUNCATE'), 'proposta aborta se authenticated conservar TRUNCATE');
+assert(!proposal.includes('DROP TRIGGER'), 'proposta não remove o trigger da baixa manual');
+assert(!proposal.includes('DROP FUNCTION'), 'proposta não remove funções SECURITY DEFINER');
 assert(
   proposal.includes('Production') && proposal.includes('não é alvo'),
   'proposta marca Production como fora do alvo',
@@ -214,7 +237,34 @@ assert(
   'criação de venda recusa tenant escolhido no cliente antes do service role',
 );
 assert(salesCreate.includes('status: 403'), 'venda de outra empresa responde 403');
-assert(salesCreate.includes('createAdminSupabase'), 'venda continua no service role, agora com a decisão de empresa');
+assert(!salesCreate.includes('user.role'), 'o papel usado na decisão vem de public.users, não do JWT');
+assert(salesCreate.includes('company_id'), 'empresa do perfil também aceita company_id quando tenant_id está vazio');
+const saleService = read('lib/gisSaleCreateService.ts');
+const saleCreateIdx = saleService.indexOf('export async function executeGisSaleCreate');
+const lotGuardIdx = saleService.indexOf('O lote não pertence à empresa da venda.');
+const customerWriteIdx = saleService.indexOf('upsert_customer', saleCreateIdx);
+assert(lotGuardIdx > saleCreateIdx && lotGuardIdx < customerWriteIdx, 'o lote é conferido no banco antes de gravar cliente ou parcela');
+
+const precheck = read('supabase/proposals/20261105173100_finance_receipts_rls_precheck_readonly.sql');
+assert(precheck.includes('BEGIN READ ONLY'), 'inventário abre transação somente leitura');
+assert(precheck.includes('ROLLBACK'), 'inventário desfaz a transação de leitura');
+assert(!/\b(insert|update|delete|truncate|drop|grant|revoke|alter)\b/i.test(precheck), 'inventário não contém comando de escrita');
+assert(precheck.includes('tenant_differs_from_company'), 'inventário conta parcelas com empresas divergentes');
+assert(precheck.includes('receipt_sale_company_mismatch'), 'inventário conta parcela ligada a venda de outra empresa');
+assert(!precheck.includes('customer_name') && !precheck.includes('cpf'), 'inventário não pede dado pessoal');
+
+const homolog = read('lib/security/financeReceiptRlsHomologPlan.ts');
+const homologScript = read('scripts/develop/finance-receipts-rls-homolog.ts');
+assert(homolog.includes('select-other-company'), 'plano cobre SELECT entre empresas');
+assert(homolog.includes('truncate-authenticated'), 'plano cobre TRUNCATE');
+assert(homolog.includes('manual-payment'), 'plano cobre a baixa manual');
+assert(homologScript.includes('financeRlsHomologBlockReason'), 'executor da homologação passa pelo bloqueio');
+assert(homologScript.includes('executed: false'), 'sem autorização o executor não abre banco');
+assert(financeRlsHomologBlockReason({}) === 'NOT_AUTHORIZED', 'ambiente vazio não autoriza homologação');
+assert(
+  financeRlsHomologBlockReason({ SV_LOTES_FINANCE_RLS_HOMOLOG: '1', SV_LOTES_FINANCE_RLS_TARGET: PRODUCTION_PROJECT_REF }) === 'PRODUCTION_FORBIDDEN',
+  'Production não passa no alvo da homologação',
+);
 
 const manualPayment = read('lib/finance/manualReceiptPayment.ts');
 const manualRpc = read('supabase/migrations/20261021120000_manual_receipt_payment_authorization.sql');
