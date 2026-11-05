@@ -189,7 +189,7 @@ function main() {
   assert(classifySeparateSignalSchemaProbe({
     error: { code: '42703', message: 'column "schedule_group" does not exist' },
   }).status === 'NOT_MIGRATED', 'schema antigo tratado como falha');
-  assert(classifySeparateSignalSchemaProbe({ columnSeen: true }).status === 'MIGRATED', 'schema novo não reconhecido');
+  assert(classifySeparateSignalSchemaProbe({ columnSeen: true }).status === 'UNEXPECTED', 'coluna isolada virou schema compatível');
   const unexpected = classifySeparateSignalSchemaProbe({
     error: {
       code: '28000',

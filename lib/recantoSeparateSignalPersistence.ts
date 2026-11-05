@@ -13,7 +13,10 @@ import {
   type RecantoLotStartMode,
 } from '@/lib/recantoBrokerageInstallments';
 
-/** O arquivo SQL desta fase ainda não foi aplicado em nenhum banco. */
+/**
+ * A aplicação ainda não está autorizada a gravar, mesmo que o Develop já tenha as colunas.
+ * Esta constante não significa que a migration possa ser executada de novo.
+ */
 export const RECANTO_SEPARATE_SIGNAL_SCHEMA_APPLIED = false;
 
 /** A confirmação real permanece desligada mesmo depois do planejamento. */
@@ -172,13 +175,174 @@ function isAbsentScheduleGroupColumn(error: { message?: string; code?: string } 
   return code === '' || code === '42703' || code === 'PGRST204' || code === 'PGRST205';
 }
 
+export type SeparateSignalColumnFact = {
+  table: 'sales' | 'finance_receipts';
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  hasDefault?: boolean;
+};
+
+export type SeparateSignalConstraintFact = {
+  name: string;
+  definition: string;
+};
+
+export type SeparateSignalIndexFact = {
+  name: string;
+  unique: boolean;
+  valid: boolean;
+  definition: string;
+  predicate: string | null;
+};
+
+export type SeparateSignalSchemaCatalog = {
+  columns: SeparateSignalColumnFact[];
+  constraints: SeparateSignalConstraintFact[];
+  indexes: SeparateSignalIndexFact[];
+  receiptUniqueIndexes?: SeparateSignalIndexFact[];
+};
+
+const EXPECTED_SCHEMA_COLUMNS: Array<Omit<SeparateSignalColumnFact, 'nullable' | 'hasDefault'>> = [
+  { table: 'sales', name: 'signal_schedule_mode', dataType: 'text' },
+  { table: 'sales', name: 'signal_installment_count', dataType: 'integer' },
+  { table: 'sales', name: 'signal_first_due_date', dataType: 'date' },
+  { table: 'sales', name: 'lot_schedule_start_mode', dataType: 'text' },
+  { table: 'sales', name: 'lot_schedule_first_due_date', dataType: 'date' },
+  { table: 'sales', name: 'hold_lot_charges_until_signal_settled', dataType: 'boolean' },
+  { table: 'sales', name: 'separate_signal_request_key', dataType: 'text' },
+  { table: 'finance_receipts', name: 'schedule_group', dataType: 'text' },
+];
+
+const EXPECTED_CONSTRAINT_TOKENS: Record<string, string[]> = {
+  sales_signal_schedule_mode_check: ['signal_schedule_mode', 'embedded', 'separate'],
+  sales_lot_schedule_start_mode_check: ['lot_schedule_start_mode', 'after_signal', 'simultaneous', 'specific_date'],
+  sales_separate_signal_without_embedded_mode_check: [
+    'signal_schedule_mode',
+    'separate',
+    'signal_remaining_payment_mode',
+    'signal_remaining_installments',
+    'signal_remaining_installment_value',
+    'tenant_id',
+    'company_id',
+    'separate_signal_request_key',
+    'not distinct from',
+  ],
+  finance_receipts_schedule_group_check: ['schedule_group', 'signal', 'lot'],
+  finance_receipts_separate_lot_without_signal_addon_check: ['schedule_group', 'lot', 'signal_addon_amount'],
+  finance_receipts_separate_signal_without_addon_check: ['schedule_group', 'signal', 'signal_addon_amount'],
+};
+
+function schemaTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/::[a-z0-9_ ]+/g, ' ')
+    .replace(/[^a-z0-9_]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function hasTokens(value: string, expected: string[]): boolean {
+  const tokens = schemaTokens(value);
+  return expected.every((part) => {
+    if (part.includes(' ')) return schemaTokens(part).every((token) => tokens.includes(token));
+    return tokens.includes(part);
+  });
+}
+
+function sameDataType(actual: string, expected: string): boolean {
+  const left = actual.toLowerCase();
+  const right = expected.toLowerCase();
+  if (left === right) return true;
+  if (right === 'integer' && (left === 'int' || left === 'int4')) return true;
+  if (right === 'boolean' && left === 'bool') return true;
+  return false;
+}
+
+export function assessSeparateSignalSchemaCatalog(
+  catalog: SeparateSignalSchemaCatalog,
+): SeparateSignalSchemaProbe {
+  const columns = catalog.columns ?? [];
+  const found = EXPECTED_SCHEMA_COLUMNS.filter((expected) =>
+    columns.some((column) => column.table === expected.table && column.name === expected.name),
+  );
+  if (found.length === 0) return { status: 'NOT_MIGRATED' };
+  if (found.length !== EXPECTED_SCHEMA_COLUMNS.length) {
+    const missing = EXPECTED_SCHEMA_COLUMNS
+      .filter((expected) => !found.some((column) => column.table === expected.table && column.name === expected.name))
+      .map((column) => column.name);
+    return { status: 'UNEXPECTED', safeMessage: `Schema parcial. Faltam colunas: ${missing.join(', ')}.` };
+  }
+
+  for (const expected of EXPECTED_SCHEMA_COLUMNS) {
+    const column = columns.find((item) => item.table === expected.table && item.name === expected.name);
+    if (!column || !sameDataType(column.dataType, expected.dataType) || column.nullable !== true || column.hasDefault) {
+      return {
+        status: 'UNEXPECTED',
+        safeMessage: `A coluna ${expected.name} não está nula, sem default, no tipo ${expected.dataType}.`,
+      };
+    }
+  }
+
+  for (const [name, tokens] of Object.entries(EXPECTED_CONSTRAINT_TOKENS)) {
+    const constraint = (catalog.constraints ?? []).find((item) => item.name === name);
+    if (!constraint || !hasTokens(constraint.definition, tokens)) {
+      return { status: 'UNEXPECTED', safeMessage: `A constraint ${name} está ausente ou incompatível.` };
+    }
+    if (name === 'finance_receipts_separate_lot_without_signal_addon_check' && schemaTokens(constraint.definition).includes('signal') && schemaTokens(constraint.definition).includes('lot')) {
+      const onlyLot = schemaTokens(constraint.definition).includes('lot')
+        && !schemaTokens(constraint.definition).filter((token) => token === 'signal').length;
+      if (!onlyLot) {
+        return { status: 'UNEXPECTED', safeMessage: `A constraint ${name} não isola o grupo LOT.` };
+      }
+    }
+  }
+
+  const groupIndex = (catalog.indexes ?? []).find((item) => item.name === 'finance_receipts_sale_group_installment_uidx');
+  const keyIndex = (catalog.indexes ?? []).find((item) => item.name === 'sales_separate_signal_request_key_uidx');
+  if (
+    !groupIndex?.unique
+    || !groupIndex.valid
+    || !hasTokens(`${groupIndex.definition} ${groupIndex.predicate ?? ''}`, ['sale_id', 'schedule_group', 'installment_number', 'schedule_group', 'not', 'null'])
+    || !hasTokens(groupIndex.predicate ?? '', ['schedule_group', 'not', 'null'])
+  ) {
+    return { status: 'UNEXPECTED', safeMessage: 'O índice único do grupo de parcelas está ausente ou sem o predicado parcial.' };
+  }
+  if (
+    !keyIndex?.unique
+    || !keyIndex.valid
+    || !hasTokens(`${keyIndex.definition} ${keyIndex.predicate ?? ''}`, ['tenant_id', 'separate_signal_request_key'])
+    || !hasTokens(keyIndex.predicate ?? '', ['separate_signal_request_key', 'not', 'null'])
+  ) {
+    return { status: 'UNEXPECTED', safeMessage: 'O índice único da confirmação por empresa está ausente ou sem o predicado parcial.' };
+  }
+
+  const conflicting = (catalog.receiptUniqueIndexes ?? []).filter((item) => {
+    if (item.name === 'finance_receipts_sale_group_installment_uidx' || !item.unique) return false;
+    const tokens = schemaTokens(item.definition);
+    return tokens.includes('sale_id') && tokens.includes('installment_number') && !tokens.includes('schedule_group');
+  });
+  if (conflicting.length > 0) {
+    return { status: 'UNEXPECTED', safeMessage: 'Existe índice único antigo de venda e parcela sem o grupo do cronograma.' };
+  }
+
+  return { status: 'MIGRATED' };
+}
+
 export function classifySeparateSignalSchemaProbe(input: {
   error?: { message?: string; code?: string } | null;
   columnSeen?: boolean;
+  catalog?: SeparateSignalSchemaCatalog | null;
 }): SeparateSignalSchemaProbe {
   if (isAbsentScheduleGroupColumn(input.error)) return { status: 'NOT_MIGRATED' };
   if (input.error) return { status: 'UNEXPECTED', safeMessage: sanitizeSchemaError(input.error) };
-  if (input.columnSeen === true) return { status: 'MIGRATED' };
+  if (input.catalog) return assessSeparateSignalSchemaCatalog(input.catalog);
+  if (input.columnSeen === true) {
+    return {
+      status: 'UNEXPECTED',
+      safeMessage: 'A coluna schedule_group existe, mas a compatibilidade integral ainda não foi conferida.',
+    };
+  }
   if (input.columnSeen === false) return { status: 'NOT_MIGRATED' };
   return { status: 'UNEXPECTED', safeMessage: 'Consulta de schema incompleta.' };
 }
