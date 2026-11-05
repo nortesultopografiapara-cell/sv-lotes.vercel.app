@@ -5,6 +5,7 @@ import {
   resolveCallerProfile,
 } from '@/lib/supabase/server';
 import { executeGisSaleCreate, type GisSaleCreateInput } from '@/lib/gisSaleCreateService';
+import { decideServiceRoleFinanceTenantWrite } from '@/lib/security/financeReceiptAccessPolicy';
 
 export const runtime = 'nodejs';
 
@@ -73,6 +74,18 @@ export async function POST(request: Request) {
 
     const profile = await resolveCallerProfile(supabase, user.id);
     const userRole = String(profile?.role || user.role || '').toUpperCase();
+    const tenantDecision = decideServiceRoleFinanceTenantWrite({
+      callerRole: userRole,
+      callerTenantId: profile?.tenant_id ?? null,
+      requestedTenantId: tenantId,
+    });
+    if (!tenantDecision.allow) {
+      mark('response', { status: 403, reason: tenantDecision.reason });
+      return NextResponse.json(
+        { success: false, error: 'A venda não pertence à empresa autenticada.' },
+        { status: 403 },
+      );
+    }
 
     const result = await executeGisSaleCreate(supabase, {
       userId: user.id,
