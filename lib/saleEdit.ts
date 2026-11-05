@@ -18,6 +18,11 @@ import {
   lotAuditContextFromBlock,
 } from '@/lib/lotAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
+import {
+  assertSeparateScheduleRecalcSupported,
+  isMissingScheduleGroupColumn,
+  mergeScheduleGroups,
+} from '@/lib/finance/recantoReceiptSchedule';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
 import { saleSpouseFormFieldsFromSale } from '@/lib/saleSpouseFields';
 import {
@@ -574,7 +579,10 @@ export async function updateSaleFromEdit(
     installment_number: number | string;
     amount?: number | string | null;
     due_date?: string | null;
+    schedule_group?: string | null;
   }>;
+
+  assertSeparateScheduleRecalcSupported(await receiptRowsWithScheduleGroup(supabase, saleId, receiptRows));
 
   const scheduleLock = resolveFinanceScheduleEditLock({
     financePlanChanged,
@@ -966,5 +974,22 @@ function customerAuditHasChanges(
   ];
   return keys.some(
     (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
+  );
+}
+
+async function receiptRowsWithScheduleGroup<T extends { id: string }>(
+  supabase: SupabaseClient,
+  saleId: string,
+  rows: T[],
+): Promise<Array<T & { schedule_group: string | null }>> {
+  const grouped = await supabase
+    .from('finance_receipts')
+    .select('id, schedule_group')
+    .eq('sale_id', saleId);
+  if (isMissingScheduleGroupColumn(grouped.error)) return rows.map((row) => ({ ...row, schedule_group: null }));
+  if (grouped.error) throw new Error(grouped.error.message);
+  return mergeScheduleGroups(
+    rows,
+    (grouped.data || []) as unknown as Array<{ id: string; schedule_group: string | null }>,
   );
 }

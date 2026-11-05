@@ -10,6 +10,7 @@ import {
   isRegeneratableCompanyAsaasChargeStatus,
 } from '@/lib/finance/companyAsaasChargeWorkflow';
 import type { MissingChargeInstallmentPreview } from '@/lib/finance/generateMissingSaleChargesPlan';
+import { separateScheduleChargeAllowed } from '@/lib/finance/recantoReceiptSchedule';
 
 export {
   SALE_CHARGES_GENERATE_BATCH_LIMIT,
@@ -52,6 +53,7 @@ export type SaleChargeInstallmentRow = {
   amount: number | string | null;
   status: string | null;
   paid_at?: string | null;
+  schedule_group?: string | null;
 };
 
 export type SaleChargesSummary = {
@@ -126,6 +128,7 @@ export function isCanceledFinanceReceipt(row: {
 }
 
 export function isEligibleInstallmentForAsaasCharge(row: SaleChargeInstallmentRow): boolean {
+  if (!separateScheduleChargeAllowed(row)) return false;
   if (isCanceledFinanceReceipt(row)) return false;
   if (isPaidFinanceReceipt(row)) return false;
   const amount = money(row.amount);

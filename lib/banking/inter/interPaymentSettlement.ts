@@ -11,6 +11,7 @@ import {
   type InterCobrancaDetail,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { isInterSituacaoRecebido } from '@/lib/banking/inter/interStatus';
+import { assertSettlementTargetsReceipt } from '@/lib/finance/recantoReceiptSchedule';
 
 export const INTER_FINANCE_RECEIPT_PAID_STATUS = 'pago' as const;
 
@@ -170,6 +171,7 @@ export async function settleInterPaidCharge(admin: SupabaseClient, input: {
     );
 
     if (receipt?.id) {
+      assertSettlementTargetsReceipt(String(financeReceiptId), String(receipt.id));
       if (!interChargeBelongsToReceiptAccount(charge, receipt)) {
         throw new Error(
           'Cobrança Inter não corresponde à conta financeira da parcela.',

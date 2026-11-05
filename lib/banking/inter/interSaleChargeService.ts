@@ -5,6 +5,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  assertSeparateScheduleChargeAllowed,
+  isMissingScheduleGroupColumn,
+} from '@/lib/finance/recantoReceiptSchedule';
+import {
   createInterCobranca,
   fetchInterCobrancaByCodigo,
   pollInterCobrancaUntilReady,
@@ -607,6 +611,18 @@ export async function createInterInstallmentCharge(
     .maybeSingle();
   if (receiptErr) throw new Error(receiptErr.message);
   if (!receipt) throw new Error('Parcela não encontrada.');
+  const grouped = await admin
+    .from('finance_receipts')
+    .select('schedule_group')
+    .eq('id', input.installmentId)
+    .maybeSingle();
+  if (grouped.error && !isMissingScheduleGroupColumn(grouped.error)) {
+    throw new Error(grouped.error.message);
+  }
+  const scheduleGroup = isMissingScheduleGroupColumn(grouped.error)
+    ? null
+    : ((grouped.data as unknown as { schedule_group?: string | null } | null)?.schedule_group ?? null);
+  assertSeparateScheduleChargeAllowed({ schedule_group: scheduleGroup });
   const rowCompany = String(receipt.company_id || receipt.tenant_id || '');
   if (rowCompany && rowCompany !== input.companyId) {
     throw new Error('Parcela não pertence a esta empresa.');

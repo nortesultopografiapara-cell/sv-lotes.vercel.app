@@ -53,6 +53,10 @@ import { assertCompanyAsaasEnabled } from './companyAsaasAccess';
 import { ASAAS_BOLETO_MIN_AMOUNT } from '@/lib/saasMasterConfig';
 import { FINANCE_RECEIPTS_CHARGE_SELECT } from './financeReceiptsEmbed';
 import {
+  assertSeparateScheduleChargeAllowed,
+  isMissingScheduleGroupColumn,
+} from '@/lib/finance/recantoReceiptSchedule';
+import {
   isValidBrazilianTaxDocument,
   resolveCustomerDocumentDigits,
   type CustomerRecord,
@@ -78,6 +82,7 @@ type InstallmentRow = {
   due_date: string;
   amount: number;
   status: string;
+  schedule_group?: string | null;
   customers?: Pick<CustomerRecord, 'name' | 'cpf_cnpj' | 'document' | 'email' | 'phone'> | null;
   sales?: {
     financial_account_id?: string | null;
@@ -213,6 +218,18 @@ async function loadInstallment(
   if (!data) throw new Error('Parcela não encontrada.');
 
   const row = data as InstallmentRow;
+  const grouped = await admin
+    .from('finance_receipts')
+    .select('schedule_group')
+    .eq('id', installmentId)
+    .maybeSingle();
+  const scheduleGroup = isMissingScheduleGroupColumn(grouped.error)
+    ? null
+    : ((grouped.data as unknown as { schedule_group?: string | null } | null)?.schedule_group ?? null);
+  if (grouped.error && !isMissingScheduleGroupColumn(grouped.error)) {
+    throw new Error(grouped.error.message);
+  }
+  assertSeparateScheduleChargeAllowed({ ...row, schedule_group: scheduleGroup });
   const rowCompanyId = row.company_id || row.tenant_id;
   if (rowCompanyId && rowCompanyId !== companyId) {
     throw new Error('Parcela não pertence a esta empresa.');
