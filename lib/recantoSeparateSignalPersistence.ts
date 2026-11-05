@@ -59,6 +59,8 @@ export type SeparateSignalPersistenceInput = {
   customerId: string;
   projectId?: string | null;
   blockId?: string | null;
+  /** Deve ser a empresa autenticada. Valor diferente de tenantId é recusado. */
+  companyId?: string | null;
   /** Conta já resolvida da venda. O sinal usa esta mesma conta, sem abrir outra. */
   financialAccountId?: string | null;
   lotPrice: number;
@@ -71,6 +73,8 @@ export type SeparateSignalPersistenceInput = {
   lotStartMode: RecantoLotStartMode;
   lotSpecificStartDate?: string | null;
   holdLotChargesUntilSignalSettled?: boolean;
+  /** Ignorado. Os valores são recalculados no servidor. */
+  clientSchedule?: unknown;
 };
 
 export type SeparateSignalReceiptDraft = {
@@ -105,6 +109,7 @@ export type SeparateSignalSaleDraft = {
   holdLotChargesUntilSignalSettled: boolean;
   financialAccountId: string | null;
   requestKey: string;
+  companyId: string;
   signalRemainingPaymentMode: null;
   signalRemainingInstallments: null;
   signalRemainingInstallmentValueCents: null;
@@ -140,6 +145,53 @@ export function assertRecantoSeparateSignalPersistAuthorized(): void {
   if (!RECANTO_SEPARATE_SIGNAL_SCHEMA_APPLIED || !RECANTO_SEPARATE_SIGNAL_PERSIST_ENABLED) {
     throw new RecantoSeparateSignalPersistenceError(RECANTO_SEPARATE_SIGNAL_PERSIST_BLOCKED_MESSAGE);
   }
+}
+
+export const RECANTO_SEPARATE_SIGNAL_ACTIVATION_STEPS = [
+  'Confirmar o schema no Supabase Develop, sem tocar em Production.',
+  'Validar os testes de integração no banco de homologação.',
+  'Habilitar a gravação somente nessa homologação.',
+  'Gravar uma venda fictícia.',
+  'Conferir os recebíveis de sinal e de lote.',
+  'Validar que boleto, Pix, edição e distrato seguem bloqueados.',
+  'Só então autorizar a fase seguinte.',
+] as const;
+
+export type SeparateSignalSchemaProbe =
+  | { status: 'NOT_MIGRATED' }
+  | { status: 'MIGRATED' }
+  | { status: 'UNEXPECTED'; safeMessage: string };
+
+function isAbsentScheduleGroupColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  const message = String(error?.message || '');
+  const code = String(error?.code || '');
+  const missing = /column\s+"?schedule_group"?\s+does not exist/i.test(message)
+    || /could not find the ['"]schedule_group['"] column/i.test(message)
+    || (/schema cache/i.test(message) && /schedule_group/i.test(message));
+  if (!missing) return false;
+  return code === '' || code === '42703' || code === 'PGRST204' || code === 'PGRST205';
+}
+
+export function classifySeparateSignalSchemaProbe(input: {
+  error?: { message?: string; code?: string } | null;
+  columnSeen?: boolean;
+}): SeparateSignalSchemaProbe {
+  if (isAbsentScheduleGroupColumn(input.error)) return { status: 'NOT_MIGRATED' };
+  if (input.error) return { status: 'UNEXPECTED', safeMessage: sanitizeSchemaError(input.error) };
+  if (input.columnSeen === true) return { status: 'MIGRATED' };
+  if (input.columnSeen === false) return { status: 'NOT_MIGRATED' };
+  return { status: 'UNEXPECTED', safeMessage: 'Consulta de schema incompleta.' };
+}
+
+function sanitizeSchemaError(error: { message?: string; code?: string } | null | undefined): string {
+  const code = String(error?.code || '').replace(/[^\w]/g, '').slice(0, 16);
+  const message = String(error?.message || 'Falha inesperada ao consultar o schema.')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    .replace(/bearer\s+\S+/gi, 'bearer [redacted]')
+    .replace(/eyJ[A-Za-z0-9_-]{10,}/g, '[token]')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[id]')
+    .slice(0, 180);
+  return code ? `${code}: ${message}` : message;
 }
 
 export function classifyExistingReceipt(row: {
@@ -188,12 +240,21 @@ export function planRecantoSeparateSignalPersistence(
       'O sinal separado só existe no modelo Recanto Primavera.',
     );
   }
-  if (!String(input.saleId || '').trim() || !String(input.tenantId || '').trim()) {
+  const saleId = String(input.saleId || '').trim();
+  const tenantId = String(input.tenantId || '').trim();
+  const requestedCompany = input.companyId == null || String(input.companyId).trim() === ''
+    ? tenantId
+    : String(input.companyId).trim();
+  if (!saleId || !tenantId) {
     throw new RecantoSeparateSignalPersistenceError('A venda e a empresa são obrigatórias.');
+  }
+  if (requestedCompany !== tenantId) {
+    throw new RecantoSeparateSignalPersistenceError('A empresa da venda não pode ser escolhida pelo cliente.');
   }
   if (!String(input.customerId || '').trim()) {
     throw new RecantoSeparateSignalPersistenceError('O cliente da venda é obrigatório.');
   }
+  void input.clientSchedule;
 
   let schedule: RecantoBrokerageSchedule;
   try {
@@ -237,8 +298,8 @@ export function planRecantoSeparateSignalPersistence(
     status: 'pago' | 'pendente',
   ) => {
     receipts.push({
-      saleId: input.saleId,
-      tenantId: input.tenantId,
+      saleId,
+      tenantId,
       customerId: input.customerId,
       projectId: input.projectId ?? null,
       blockId: input.blockId ?? null,
@@ -297,8 +358,9 @@ export function planRecantoSeparateSignalPersistence(
 
   const signalFutureCount = signalReceipts.filter((row) => row.installmentNumber > 0).length;
   const sale: SeparateSignalSaleDraft = {
-    saleId: input.saleId,
-    tenantId: input.tenantId,
+    saleId,
+    tenantId,
+    companyId: tenantId,
     signalScheduleMode: 'SEPARATE',
     signalContractCents: schedule.brokerageTotalCents,
     paidAtActCents: schedule.paidAtActCents,
@@ -311,7 +373,7 @@ export function planRecantoSeparateSignalPersistence(
     holdLotChargesUntilSignalSettled: schedule.holdLotChargesUntilBrokerageSettled,
     financialAccountId,
     requestKey: requestKey([
-      input.tenantId,
+      tenantId,
       schedule.lotPriceCents,
       schedule.brokerageTotalCents,
       schedule.paidAtActCents,
@@ -344,6 +406,31 @@ function saleFirstDue(rows: SeparateSignalReceiptDraft[]): string {
   return rows.find((row) => row.installmentNumber === 1)?.dueDate ?? '';
 }
 
+function scheduleFingerprint(sale: SeparateSignalSaleDraft, receipts: SeparateSignalReceiptDraft[]): string {
+  const rows = [...receipts].sort((left, right) => receiptIdentity(left).localeCompare(receiptIdentity(right)));
+  return [
+    sale.tenantId,
+    sale.companyId,
+    sale.financialAccountId ?? '',
+    sale.signalContractCents,
+    sale.paidAtActCents,
+    sale.signalBalanceCents,
+    sale.lotInstallmentCount,
+    sale.lotStartMode,
+    sale.lotFirstDueDate,
+    ...rows.map((row) => [
+      row.scheduleGroup,
+      row.installmentNumber,
+      row.amountCents,
+      row.dueDate,
+      row.status,
+      row.tenantId,
+      row.financialAccountId ?? '',
+      row.signalAddonAmountCents,
+    ].join(':')),
+  ].join('|');
+}
+
 export type SeparateSignalSimulationOptions = {
   schemaApplied?: boolean;
   persistEnabled?: boolean;
@@ -362,17 +449,36 @@ export function simulateSeparateSignalPersistence(
     throw new RecantoSeparateSignalPersistenceError(RECANTO_SEPARATE_SIGNAL_CHARGES_BLOCKED_MESSAGE);
   }
 
+  if (plan.sale.companyId !== plan.sale.tenantId) {
+    throw new RecantoSeparateSignalPersistenceError('A empresa da venda não pode ser escolhida pelo cliente.');
+  }
+  if (plan.receipts.some((row) => row.tenantId !== plan.sale.tenantId || row.saleId !== plan.sale.saleId)) {
+    throw new RecantoSeparateSignalPersistenceError('Os recebíveis não pertencem a esta empresa.');
+  }
+  if (plan.receipts.some((row) => (row.financialAccountId ?? null) !== (plan.sale.financialAccountId ?? null))) {
+    throw new RecantoSeparateSignalPersistenceError('A conta financeira do sinal precisa ser a conta autorizada da venda.');
+  }
+  if (plan.brokerCommissions.length > 0) {
+    throw new RecantoSeparateSignalPersistenceError('O sinal separado não gera repasse automático.');
+  }
+
   for (const sale of state.sales.values()) {
     if (sale.saleId === plan.sale.saleId && sale.requestKey !== plan.sale.requestKey) {
       throw new RecantoSeparateSignalPersistenceError('A mesma venda já possui outro cronograma.');
+    }
+    if (sale.saleId === plan.sale.saleId && sale.tenantId !== plan.sale.tenantId) {
+      throw new RecantoSeparateSignalPersistenceError('A confirmação pertence a outra empresa.');
     }
   }
 
   const existing = state.sales.get(plan.sale.requestKey);
   if (existing) {
+    if (existing.tenantId !== plan.sale.tenantId) {
+      throw new RecantoSeparateSignalPersistenceError('A confirmação pertence a outra empresa.');
+    }
     const stored = state.receipts.get(plan.sale.requestKey) ?? [];
-    if (stored.length !== plan.receipts.length) {
-      throw new RecantoSeparateSignalPersistenceError('A mesma venda já possui outro cronograma.');
+    if (scheduleFingerprint(existing, stored) !== scheduleFingerprint(plan.sale, plan.receipts)) {
+      throw new RecantoSeparateSignalPersistenceError('A confirmação já foi registrada com outros valores.');
     }
     return { created: false, receiptCount: stored.length };
   }
