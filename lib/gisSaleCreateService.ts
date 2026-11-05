@@ -48,6 +48,7 @@ import {
   shouldCreatePendingCommissionFromPlan,
 } from '@/lib/brokerCommissionMode';
 import { SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE } from '@/lib/saleHistoricalContract';
+import { rejectUnpersistedSeparateSignalRequest } from '@/lib/recantoSeparateSignalPersistence';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -382,6 +383,7 @@ export async function executeGisSaleCreate(
   logSaleStep('validate_payload', startedAt);
 
   const { tenantId, projectId, lot, finalPrice, customerData, brokerId } = input;
+  rejectUnpersistedSeparateSignalRequest(customerData);
   const lotId = lot.id;
 
   const { data: blockRow, error: blockLoadErr } = await supabase
