@@ -7,6 +7,8 @@
 -- intervalo permaneceria válida para is_super_admin().
 -- Falha antes do COMMIT desfaz as duas partes. Não recriar policy aberta.
 -- Os arquivos 20261105180000 e 20261105170000 continuam sendo a especificação.
+-- Inventário Develop: remover também finance_receipts_*_by_tenant.
+-- users.company_id não existe. Não alterar o USER sem empresa.
 
 BEGIN;
 
@@ -229,7 +231,9 @@ END $$;
 -- Leitura e escrita usam o mesmo predicado. Uma parcela com tenant_id de uma
 -- empresa e company_id de outra não fica visível para nenhuma das duas.
 -- SUPER_ADMIN da aplicação, pela função is_super_admin(), continua vendo todas.
--- OWNER permanece nas policies restritivas já existentes; este arquivo não as apaga.
+-- No Develop, finance_receipts não tem as policies restritivas do OWNER.
+-- Esta transação as cria só nesta tabela. Não apaga as de outras tabelas.
+-- users.company_id não existe. current_tenant_id() passa a ler só tenant_id.
 --
 -- Se qualquer verificação final falhar, a transação inteira desfaz o que ainda
 -- não foi confirmado. Isso não é o procedimento de contingência de uma mudança
@@ -238,10 +242,59 @@ END $$;
 
 ALTER TABLE public.finance_receipts ENABLE ROW LEVEL SECURITY;
 
+DO $$
+DECLARE
+  current_def text;
+BEGIN
+  SELECT pg_get_functiondef(p.oid)
+    INTO current_def
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'current_tenant_id'
+    AND p.pronargs = 0;
+
+  IF current_def IS NULL THEN
+    RAISE EXCEPTION 'SEG2A_CURRENT_TENANT_MISSING';
+  END IF;
+
+  IF position('company_id' in current_def) > 0 THEN
+    EXECUTE $fn$
+      CREATE OR REPLACE FUNCTION public.current_tenant_id() RETURNS uuid
+      LANGUAGE sql
+      STABLE
+      SECURITY DEFINER
+      SET search_path = public
+      AS $body$
+        SELECT tenant_id
+        FROM public.users
+        WHERE id = auth.uid();
+      $body$
+    $fn$;
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.is_owner_readonly_user() RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.users
+    WHERE id = auth.uid()
+      AND upper(trim(coalesce(role, ''))) = 'OWNER'
+  );
+$$;
+
 DROP POLICY IF EXISTS "Allow select finance_receipts" ON public.finance_receipts;
 DROP POLICY IF EXISTS "Allow insert finance_receipts" ON public.finance_receipts;
 DROP POLICY IF EXISTS "Allow update finance_receipts" ON public.finance_receipts;
 DROP POLICY IF EXISTS "Allow delete finance_receipts for authenticated users" ON public.finance_receipts;
+DROP POLICY IF EXISTS finance_receipts_select_by_tenant ON public.finance_receipts;
+DROP POLICY IF EXISTS finance_receipts_insert_by_tenant ON public.finance_receipts;
+DROP POLICY IF EXISTS finance_receipts_update_by_tenant ON public.finance_receipts;
 
 DROP POLICY IF EXISTS "tenant_isolation_finance_receipts" ON public.finance_receipts;
 
@@ -282,6 +335,31 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.finance_receipts TO authent
 
 COMMENT ON POLICY "tenant_isolation_finance_receipts" ON public.finance_receipts IS
   'Isola parcelas pela empresa da sessão. SUPER_ADMIN da aplicação continua vendo todas.';
+
+DROP POLICY IF EXISTS owner_readonly_no_insert ON public.finance_receipts;
+CREATE POLICY owner_readonly_no_insert
+  ON public.finance_receipts
+  AS RESTRICTIVE
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (NOT public.is_owner_readonly_user());
+
+DROP POLICY IF EXISTS owner_readonly_no_update ON public.finance_receipts;
+CREATE POLICY owner_readonly_no_update
+  ON public.finance_receipts
+  AS RESTRICTIVE
+  FOR UPDATE
+  TO authenticated
+  USING (NOT public.is_owner_readonly_user())
+  WITH CHECK (NOT public.is_owner_readonly_user());
+
+DROP POLICY IF EXISTS owner_readonly_no_delete ON public.finance_receipts;
+CREATE POLICY owner_readonly_no_delete
+  ON public.finance_receipts
+  AS RESTRICTIVE
+  FOR DELETE
+  TO authenticated
+  USING (NOT public.is_owner_readonly_user());
 
 DO $$
 DECLARE

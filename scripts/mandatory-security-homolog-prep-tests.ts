@@ -76,9 +76,40 @@ assert(
   'policy fora da lista aborta usuários',
 );
 assert(
-  policyWouldAbort(FINANCE_POLICIES_REMOVED, FINANCE_POLICIES_REMOVED, FINANCE_POLICY_ALLOWLIST).length === 0,
-  'policies amplas de recebíveis são removidas antes da checagem',
+  policyWouldAbort(
+    [
+      'Allow delete finance_receipts for authenticated users',
+      'Allow insert finance_receipts',
+      'Allow select finance_receipts',
+      'Allow update finance_receipts',
+      'finance_receipts_insert_by_tenant',
+      'finance_receipts_select_by_tenant',
+      'finance_receipts_update_by_tenant',
+    ],
+    FINANCE_POLICIES_REMOVED,
+    FINANCE_POLICY_ALLOWLIST,
+  ).length === 0,
+  'as sete policies reais de recebíveis não abortam depois do ajuste',
 );
+assert(
+  policyWouldAbort(
+    [
+      'Enable insert for authenticated users only',
+      'Enable read access for all users',
+      'Tenant admin gerencia usuários locais',
+      'Usuário atualiza próprio perfil',
+    ],
+    USERS_POLICIES_REMOVED,
+    USERS_POLICY_ALLOWLIST,
+  ).length === 0,
+  'as quatro policies reais de usuários não abortam',
+);
+assert(finance.includes('finance_receipts_select_by_tenant'), 'recebíveis removem a policy por empresa');
+assert(finance.includes('SELECT tenant_id'), 'current_tenant_id deixa de ler company_id de users');
+assert(finance.includes('AS RESTRICTIVE'), 'OWNER fica restritivo só em finance_receipts');
+assert(!coordinated.includes('BEFORE INSERT OR UPDATE OR TRUNCATE'), 'TRUNCATE não depende de trigger de linha');
+assert(coordinated.includes('REVOKE ALL ON TABLE public.users FROM authenticated'), 'TRUNCATE de users depende de REVOKE');
+assert(coordinated.includes('REVOKE ALL ON TABLE public.finance_receipts FROM authenticated'), 'TRUNCATE de recebíveis depende de REVOKE');
 
 assert(securityHomologBlockReason({}) === 'NOT_AUTHORIZED', 'sem flag não homologa');
 assert(

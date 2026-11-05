@@ -32,6 +32,9 @@ export const FINANCE_POLICIES_REMOVED = [
   'Allow insert finance_receipts',
   'Allow update finance_receipts',
   'Allow delete finance_receipts for authenticated users',
+  'finance_receipts_select_by_tenant',
+  'finance_receipts_insert_by_tenant',
+  'finance_receipts_update_by_tenant',
 ] as const;
 
 export type SecurityHomologStep = {

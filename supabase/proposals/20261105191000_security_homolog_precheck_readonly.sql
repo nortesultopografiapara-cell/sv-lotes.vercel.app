@@ -14,7 +14,8 @@ SELECT current_database() AS database_name,
 
 SELECT c.relname AS table_name,
        c.reltuples::bigint AS planner_estimate,
-       c.relrowsecurity AS rls_enabled
+       c.relrowsecurity AS rls_enabled,
+       c.relacl::text AS granted_access
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
