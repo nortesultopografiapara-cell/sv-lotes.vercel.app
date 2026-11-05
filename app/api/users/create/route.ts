@@ -7,6 +7,7 @@ import {
 } from '@/lib/brokerAccessLevels';
 import { canCreateBroker } from '@/lib/saasPlanEnforcement';
 import { isPlatformAdmin } from '@/lib/rls';
+import { brokerCreateTenantDecision } from '@/lib/security/usersIdentityGuard';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 import { normalizeUserRole } from '@/lib/rolePermissions';
 
@@ -45,27 +46,46 @@ export async function POST(req: Request) {
     assertBrokerModuleRole(role || BROKER_USER_ROLE);
     const brokerUserRole = BROKER_USER_ROLE;
 
-    // Verify calling user is ADMIN or SUPER_ADMIN
-    // For now we trust the payload but ideally extract from token
-
     if (!tenantId) {
       throw new Error("O tenantId é obrigatório para cadastrar um corretor.");
     }
 
     const { user: caller, configError: authConfigError } = await getRequestAuthUser(req);
-    let callerRole = 'USER';
-    if (caller) {
-      const { client: adminLookup } = createAdminSupabase();
-      if (adminLookup) {
-        const { data: profile } = await adminLookup
-          .from('users')
-          .select('role')
-          .eq('id', caller.id)
-          .maybeSingle();
-        callerRole = normalizeUserRole(profile?.role || caller.user_metadata?.role);
+    if (!caller?.id) {
+      return NextResponse.json(
+        { error: authConfigError || 'Sessão expirada.' },
+        { status: 401 },
+      );
+    }
+
+    const { client: adminLookup } = createAdminSupabase();
+    if (!adminLookup) {
+      return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
+    }
+    const { data: profile } = await adminLookup
+      .from('users')
+      .select('role, tenant_id')
+      .eq('id', caller.id)
+      .maybeSingle();
+    let callerTenantId = profile?.tenant_id ?? null;
+    if (!callerTenantId) {
+      const { data: companyProfile, error: companyProfileError } = await adminLookup
+        .from('users')
+        .select('company_id')
+        .eq('id', caller.id)
+        .maybeSingle();
+      if (!companyProfileError) {
+        callerTenantId = (companyProfile as { company_id?: string | null } | null)?.company_id ?? null;
       }
-    } else if (authConfigError) {
-      console.warn('[users/create] auth lookup:', authConfigError);
+    }
+    const callerRole = normalizeUserRole(profile?.role);
+    const tenantDecision = brokerCreateTenantDecision({
+      callerRole,
+      callerTenantId,
+      requestedTenantId: tenantId,
+    });
+    if (!tenantDecision.allow) {
+      return NextResponse.json({ error: 'O corretor não pertence à empresa autenticada.' }, { status: 403 });
     }
 
     const skipBrokerLimit = isPlatformAdmin(callerRole);

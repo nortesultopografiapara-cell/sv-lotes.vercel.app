@@ -268,10 +268,8 @@ export async function resolveOwnersRequestCaller(
     authConfigError: configError || null,
   });
 
-  let authUserId = user?.id || callerUserIdFromClient;
-
-  if (!authUserId) {
-    logOwnersAuthDebug('reject', { reason: 'missing_auth_user_and_callerUserId' });
+  if (!user?.id) {
+    logOwnersAuthDebug('reject', { reason: 'missing_session_user' });
     return {
       ok: false,
       error: OWNERS_SESSION_EXPIRED_MESSAGE,
@@ -279,7 +277,9 @@ export async function resolveOwnersRequestCaller(
     };
   }
 
-  if (user?.id && callerUserIdFromClient && user.id !== callerUserIdFromClient) {
+  const authUserId = user.id;
+
+  if (callerUserIdFromClient && user.id !== callerUserIdFromClient) {
     logOwnersAuthDebug('reject', {
       reason: 'session_caller_mismatch',
       sessionUserId: user.id,

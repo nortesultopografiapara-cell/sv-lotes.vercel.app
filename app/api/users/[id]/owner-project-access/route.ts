@@ -5,7 +5,9 @@ import {
   type OwnerProjectAccessInput,
 } from '@/lib/ownerProjectAccess';
 import { isPlatformAdmin } from '@/lib/rls';
+import { sessionCallerDecision } from '@/lib/security/usersIdentityGuard';
 import { USERS_CALLER_SELECT, resolveUsersTenantId } from '@/lib/ownersAdmin';
+import { getRequestAuthUser } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
@@ -21,29 +23,40 @@ function createServiceSupabase(): SupabaseClient | null {
 }
 
 async function assertCallerCanManage(
+  request: Request,
   client: SupabaseClient,
   callerUserId?: string | null,
-): Promise<{ ok: boolean; error?: string; tenantId?: string }> {
-  if (!callerUserId) {
-    return { ok: false, error: 'callerUserId é obrigatório.' };
+): Promise<{ ok: boolean; error?: string; status?: number; tenantId?: string; platform?: boolean }> {
+  const { user } = await getRequestAuthUser(request);
+  const session = sessionCallerDecision({
+    sessionUserId: user?.id,
+    claimedCallerId: callerUserId,
+  });
+  if (!session.allow || !user?.id) {
+    return {
+      ok: false,
+      error: session.reason === 'missing_session' ? 'Sessão expirada.' : 'Permissão negada.',
+      status: session.reason === 'missing_session' ? 401 : 403,
+    };
   }
   const { data, error } = await client
     .from('users')
     .select(USERS_CALLER_SELECT)
-    .eq('id', callerUserId)
+    .eq('id', user.id)
     .maybeSingle();
   if (error || !data) {
     return { ok: false, error: 'Usuário autenticador não encontrado.' };
   }
   const role = String(data.role || '').toUpperCase();
-  if (!isPlatformAdmin(role) && !isTenantAdminRole(role)) {
-    return { ok: false, error: 'Permissão negada. Apenas administradores da empresa.' };
+  const platform = isPlatformAdmin(role);
+  if (!platform && !isTenantAdminRole(role)) {
+    return { ok: false, error: 'Permissão negada. Apenas administradores da empresa.', status: 403 };
   }
   const tenantId = resolveUsersTenantId(data);
-  if (!tenantId && !isPlatformAdmin(role)) {
-    return { ok: false, error: 'Empresa não vinculada ao administrador.' };
+  if (!tenantId && !platform) {
+    return { ok: false, error: 'Empresa não vinculada ao administrador.', status: 403 };
   }
-  return { ok: true, tenantId: tenantId || undefined };
+  return { ok: true, tenantId: tenantId || undefined, platform };
 }
 
 export async function GET(
@@ -59,9 +72,9 @@ export async function GET(
   const url = new URL(request.url);
   const callerUserId = url.searchParams.get('callerUserId');
 
-  const auth = await assertCallerCanManage(client, callerUserId);
+  const auth = await assertCallerCanManage(request, client, callerUserId);
   if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
+    return NextResponse.json({ error: auth.error }, { status: auth.status || 403 });
   }
 
   let query = client
@@ -99,14 +112,17 @@ export async function PUT(
     const tenantId = body.tenantId as string | undefined;
     const entries = (body.entries || []) as OwnerProjectAccessInput[];
 
-    const auth = await assertCallerCanManage(client, callerUserId);
+    const auth = await assertCallerCanManage(request, client, callerUserId);
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 403 });
     }
 
     const effectiveTenantId = tenantId || auth.tenantId;
     if (!effectiveTenantId) {
       return NextResponse.json({ error: 'tenantId é obrigatório.' }, { status: 400 });
+    }
+    if (!auth.platform && auth.tenantId && effectiveTenantId !== auth.tenantId) {
+      return NextResponse.json({ error: 'Usuário pertence a outra empresa.' }, { status: 403 });
     }
 
     const { data: targetUser, error: targetErr } = await client
