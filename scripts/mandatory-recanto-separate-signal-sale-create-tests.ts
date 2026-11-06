@@ -462,6 +462,82 @@ assert(
 );
 assert(!service.includes('create-charge'), 'serviço emite cobrança');
 
+const blockTenantMigration = readFileSync(resolve(
+  process.cwd(),
+  'supabase/migrations/20261106221000_separate_signal_block_tenant_text.sql',
+), 'utf8');
+const blockFrom = blockTenantMigration.indexOf('FROM public.blocks');
+const blockSection = blockTenantMigration.slice(blockFrom, blockTenantMigration.indexOf('END IF;', blockFrom));
+const customerSection = blockTenantMigration.slice(
+  blockTenantMigration.indexOf('FROM public.customers'),
+  blockTenantMigration.indexOf('FROM public.blocks'),
+);
+assert(blockSection.includes('btrim(tenant_id)::uuid = v_tenant'), 'lote ainda compara tenant texto com uuid');
+assert(!blockSection.includes('tenant_id = v_tenant'), 'consulta do lote manteve a comparação inválida');
+assert(blockSection.includes("project_id = NULLIF(p_sale->>'project_id', '')::uuid"), 'lote de outro empreendimento segue');
+assert(blockSection.includes('tenant_id IS NULL'), 'lote sem tenant segue');
+assert(customerSection.includes('btrim(tenant_id)::uuid = v_tenant'), 'validação do cliente foi removida');
+assert(customerSection.includes('SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN'), 'cliente de outro tenant deixou de ser recusado');
+assert(
+  blockTenantMigration.indexOf('FROM public.customers')
+    < blockTenantMigration.indexOf('FROM public.blocks')
+    && blockTenantMigration.indexOf('FROM public.blocks')
+      < blockTenantMigration.indexOf('INSERT INTO public.sales'),
+  'rejeição do lote acontece depois da gravação',
+);
+assert(!/ALTER TABLE/i.test(blockTenantMigration), 'migration do lote altera coluna');
+assert(!/CREATE POLICY/i.test(blockTenantMigration), 'migration do lote altera policy');
+assert(!/UPDATE\s+public\.(sales|blocks|customers|finance_receipts)/i.test(blockTenantMigration), 'rejeição grava ou altera dados');
+assert(blockTenantMigration.includes('REVOKE ALL ON FUNCTION public.create_separate_signal_sale_with_receipts(jsonb, jsonb) FROM authenticated'), 'migration do lote devolve execução ao autenticado');
+assert(blockTenantMigration.includes('GRANT EXECUTE ON FUNCTION public.create_separate_signal_sale_with_receipts(jsonb, jsonb) TO service_role'), 'migration do lote amplia o serviço');
+assert(blockTenantMigration.includes('WHERE tenant_id = v_tenant'), 'idempotência da venda uuid foi removida');
+const proposalBlockFrom = proposal.indexOf('FROM public.blocks');
+const proposalBlock = proposal.slice(proposalBlockFrom, proposal.indexOf('END IF;', proposalBlockFrom));
+assert(proposalBlock.includes('btrim(tenant_id)::uuid = v_tenant'), 'proposta do lote manteve a comparação inválida');
+
+const lotUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const saleTenant = '11111111-1111-4111-8111-111111111111';
+const saleProject = '33333333-3333-4333-8333-333333333331';
+const saleBlock = '44444444-4444-4444-8444-444444444444';
+function lotAccepted(block: { id: string; tenant_id: string | null; project_id: string | null } | null): boolean {
+  if (!block || !lotUuid.test(saleBlock) || !lotUuid.test(saleProject) || block.id !== saleBlock) return false;
+  const tenant = String(block.tenant_id ?? '').trim();
+  if (!lotUuid.test(tenant) || tenant.toLowerCase() !== saleTenant) return false;
+  return block.project_id === saleProject;
+}
+assert(lotAccepted({ id: saleBlock, tenant_id: saleTenant, project_id: saleProject }), 'lote do mesmo tenant e empreendimento');
+assert(!lotAccepted({ id: saleBlock, tenant_id: '55555555-5555-4555-8555-555555555555', project_id: saleProject }), 'lote de outro tenant');
+assert(!lotAccepted({ id: saleBlock, tenant_id: null, project_id: saleProject }), 'lote sem tenant');
+assert(!lotAccepted({ id: saleBlock, tenant_id: 'tenant-invalido', project_id: saleProject }), 'tenant em formato inválido');
+assert(!lotAccepted({ id: saleBlock, tenant_id: saleTenant, project_id: '66666666-6666-4666-8666-666666666666' }), 'lote de outro empreendimento');
+assert(!lotAccepted(null), 'lote inexistente');
+
+const longSchedule = buildRecantoSeparateSaleCreate(customer({
+  signal_contract_value: 3500,
+  signal_paid_at_sale: 1000,
+  signal_installment_count: 5,
+  installments_count: 120,
+  down_payment_due_date: '2026-11-06',
+  signal_first_due_date: '2026-12-10',
+  lot_schedule_start_mode: 'AFTER_BROKERAGE',
+  first_installment_due_date: '2027-05-10',
+}), {
+  ...context,
+  lotPrice: 66188.05,
+});
+const longReceipts = separateSignalReceiptRows(longSchedule, {
+  saleId: 'venda-ficticia-nao-gravada',
+  tenantId: context.tenantId,
+  customerId: context.customerId,
+  projectId: context.projectId,
+  blockId: context.blockId,
+});
+assert(longReceipts.filter((row) => row.schedule_group === 'SIGNAL').length === 6, 'cronograma sem 6 recebíveis de sinal');
+assert(longReceipts.filter((row) => row.schedule_group === 'LOT').length === 120, 'cronograma sem 120 parcelas do lote');
+const signalCents = longReceipts.filter((row) => row.schedule_group === 'SIGNAL').reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
+const lotCents = longReceipts.filter((row) => row.schedule_group === 'LOT').reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
+assert(signalCents === 350_000 && lotCents === 6_618_805, 'cronograma longo não fecha os valores');
+
 console.log('mandatory-recanto-separate-signal-sale-create-tests: ok');
 }
 

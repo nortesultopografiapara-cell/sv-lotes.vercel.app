@@ -133,11 +133,24 @@ BEGIN
     RAISE EXCEPTION 'SEPARATE_SIGNAL_RECEIPTS_INCOMPLETE:Falha ao gravar as parcelas. Nenhuma venda foi mantida.';
   END IF;
 
+  -- No Develop, blocks.tenant_id é text e blocks.project_id é uuid.
+  -- Identificador inválido não é convertido. Lote sem tenant, de outra empresa ou de outro empreendimento é recusado antes de qualquer insert.
+  IF COALESCE(p_sale->>'block_id', '') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR COALESCE(p_sale->>'project_id', '') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  THEN
+    RAISE EXCEPTION 'SEPARATE_SIGNAL_TENANT_MISMATCH:Os recebíveis não pertencem a esta empresa.';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM public.blocks
     WHERE id = NULLIF(p_sale->>'block_id', '')::uuid
-      AND tenant_id = v_tenant
+      AND CASE
+        WHEN tenant_id IS NULL
+          OR btrim(tenant_id) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          THEN false
+        ELSE btrim(tenant_id)::uuid = v_tenant
+      END
       AND project_id = NULLIF(p_sale->>'project_id', '')::uuid
   ) THEN
     RAISE EXCEPTION 'SEPARATE_SIGNAL_TENANT_MISMATCH:Os recebíveis não pertencem a esta empresa.';
