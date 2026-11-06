@@ -5,6 +5,7 @@
 
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { normalizeSaleContractModel } from '@/lib/contractModel';
+import { validateRecantoSignalPlan } from '@/lib/recantoSignalRemaining';
 import {
   buildRecantoBrokerageSchedule,
   reaisToCents,
@@ -100,6 +101,39 @@ function reaisNumberToCents(value: number, label: string): number {
     throw new RecantoBrokerageScheduleError(`${label} é inválido.`);
   }
   return reaisToCents(value.toFixed(2));
+}
+
+/**
+ * Na modalidade SEPARATE a quantidade fica em signalInstallmentCount.
+ * O campo antigo remainingInstallments pertence só ao sinal embutido.
+ */
+export function validateRecantoSaleSignalOnSubmit(input: {
+  separateActive: boolean;
+  separateInstallmentCount: number;
+  contractValue: number;
+  paidAtSale: number;
+  embeddedPaymentMode?: string | null;
+  embeddedRemainingInstallments?: number | null;
+  totalInstallments: number;
+}): { valid: true } | { valid: false; message: string } {
+  if (input.separateActive) {
+    const remaining = input.contractValue - input.paidAtSale;
+    const count = Math.floor(Number(input.separateInstallmentCount) || 0);
+    if (remaining > 0.009 && count <= 0) {
+      return {
+        valid: false,
+        message: 'Informe a quantidade de parcelas do sinal.',
+      };
+    }
+    return { valid: true };
+  }
+  return validateRecantoSignalPlan({
+    contractValue: input.contractValue,
+    paidAtSale: input.paidAtSale,
+    paymentMode: input.embeddedPaymentMode || 'FIRST_INSTALLMENTS',
+    remainingInstallments: input.embeddedRemainingInstallments,
+    totalInstallments: input.totalInstallments,
+  });
 }
 
 export function buildRecantoSeparateSignalPreview(

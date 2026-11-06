@@ -15,6 +15,7 @@ import {
   describeCentsInstallments,
   RECANTO_SEPARATE_SIGNAL_ENABLED,
   RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE,
+  validateRecantoSaleSignalOnSubmit,
   type RecantoSeparateSignalFormInput,
 } from '../lib/recantoSeparateSignalForm';
 import type { RecantoLotStartMode } from '../lib/recantoBrokerageInstallments';
@@ -167,6 +168,51 @@ function main() {
   assert(modal.includes('preview.confirmBlocked'), '12. aviso distingue simulação e gravação');
   assert(modal.includes('RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING'), '12. confirmação avisa a gravação no Develop');
   assert(modal.includes('RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL'), '12. simulação continua quando a gravação está bloqueada');
+  const embeddedAlert = validateRecantoSaleSignalOnSubmit({
+    separateActive: false,
+    separateInstallmentCount: 5,
+    contractValue: 3500,
+    paidAtSale: 1000,
+    embeddedPaymentMode: 'FIRST_INSTALLMENTS',
+    embeddedRemainingInstallments: null,
+    totalInstallments: 120,
+  });
+  assert(
+    embeddedAlert.valid === false
+      && embeddedAlert.message === 'Informe a quantidade de parcelas para cobrar o restante do sinal.',
+    '13. modalidade antiga continua exigindo a quantidade embutida',
+  );
+  const separateSubmit = validateRecantoSaleSignalOnSubmit({
+    separateActive: true,
+    separateInstallmentCount: 5,
+    contractValue: 3500,
+    paidAtSale: 1000,
+    embeddedPaymentMode: 'FIRST_INSTALLMENTS',
+    embeddedRemainingInstallments: null,
+    totalInstallments: 120,
+  });
+  assert(separateSubmit.valid === true, '13. cinco parcelas do sinal separado passam na confirmação');
+  const homolog = preview({
+    writeEnabled: true,
+    lotPrice: 70753.29,
+    signalContract: 3500,
+    paidAtAct: 1000,
+    signalInstallmentCount: 5,
+    actDate: '2026-11-06',
+    signalFirstDueDate: '2026-12-06',
+    lotInstallmentCount: 120,
+    lotStartMode: 'AFTER_BROKERAGE',
+  });
+  const homologSignal = (homolog.schedule?.brokerageLines ?? []).filter((line) => line.kind === 'INSTALLMENT');
+  assert(homologSignal.length === 5 && homologSignal.every((line) => line.amountCents === 50_000), '13. saldo em cinco de 500');
+  assert(homolog.schedule?.lotLines.length === 120, '13. lote em 120 parcelas');
+  assert(homolog.schedule?.lotPriceCents === 7_075_329, '13. preço do lote preservado');
+  assert(
+    modal.includes('validateRecantoSaleSignalOnSubmit')
+      && modal.includes('separateInstallmentCount: Number(separateSignalInstallmentCount)'),
+    '13. confirmação usa a quantidade do sinal separado',
+  );
+
   assert(modal.includes('enabled: separateSignalEnabled'), '2. interruptor vem de fora');
   assert(!modal.includes('RECANTO_SEPARATE_SIGNAL_ENABLED = true'), '1. modal não liga a flag');
 

@@ -50,12 +50,12 @@ import {
 import {
   applySignalAddonToInstallmentAmounts,
   resolveRecantoSignalPlan,
-  validateRecantoSignalPlan,
   type SignalRemainingPaymentMode,
 } from '@/lib/recantoSignalRemaining';
 import {
   buildRecantoSeparateSignalPreview,
   describeCentsInstallments,
+  validateRecantoSaleSignalOnSubmit,
   RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING,
   RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL,
   type RecantoSeparateSignalPreview,
@@ -792,11 +792,13 @@ export function CustomerLotFormModal({
             alert(lotValidation.message);
             return;
           }
-          const signalValidation = validateRecantoSignalPlan({
+          const signalValidation = validateRecantoSaleSignalOnSubmit({
+            separateActive: separateSignalPreview.active,
+            separateInstallmentCount: Number(separateSignalInstallmentCount) || 0,
             contractValue: signalContractValue,
             paidAtSale: signalPaidAtSale,
-            paymentMode: formData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS',
-            remainingInstallments: formData.signal_remaining_installments
+            embeddedPaymentMode: formData.signal_remaining_payment_mode,
+            embeddedRemainingInstallments: formData.signal_remaining_installments
               ? Number(formData.signal_remaining_installments)
               : null,
             totalInstallments: installmentsResult.value,
