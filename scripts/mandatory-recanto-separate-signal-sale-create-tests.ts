@@ -402,6 +402,21 @@ const migrationPath = resolve(
 const migration = readFileSync(migrationPath, 'utf8');
 assert(migration.includes('CREATE OR REPLACE FUNCTION public.create_separate_signal_sale_with_receipts'), 'migration sem função');
 assert(migration.includes('SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN'), 'migration sem o cliente');
+const companyTypeMigration = readFileSync(resolve(
+  process.cwd(),
+  'supabase/migrations/20261106201000_separate_signal_customer_id_types.sql',
+), 'utf8');
+assert(companyTypeMigration.includes('btrim(tenant_id)::uuid = v_tenant'), 'tenant texto comparado como uuid cru');
+assert(companyTypeMigration.includes('company_id IS NULL OR company_id = v_tenant'), 'company_id uuid sem nulo');
+assert(
+  companyTypeMigration.indexOf('btrim(tenant_id)::uuid = v_tenant')
+    < companyTypeMigration.indexOf('INSERT INTO public.sales'),
+  'tipo do cliente conferido depois do insert',
+);
+assert(!/ALTER TABLE/i.test(companyTypeMigration), 'migration altera coluna');
+assert(!/CREATE POLICY/i.test(companyTypeMigration), 'migration altera policy');
+assert(companyTypeMigration.includes('REVOKE ALL ON FUNCTION public.create_separate_signal_sale_with_receipts(jsonb, jsonb) FROM authenticated'), 'migration devolve execução ao autenticado');
+assert(proposal.includes('btrim(tenant_id)::uuid = v_tenant'), 'proposta mantém comparação inválida');
 assert(migration.includes('GRANT EXECUTE ON FUNCTION public.create_separate_signal_sale_with_receipts(jsonb, jsonb) TO service_role'), 'migration amplia o serviço');
 assert(migration.includes('REVOKE ALL ON FUNCTION public.create_separate_signal_sale_with_receipts(jsonb, jsonb) FROM authenticated'), 'migration devolve execução ao autenticado');
 assert(!/GRANT EXECUTE[\s\S]*TO authenticated/i.test(migration), 'migration libera authenticated');

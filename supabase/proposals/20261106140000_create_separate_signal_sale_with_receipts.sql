@@ -63,13 +63,23 @@ BEGIN
       RAISE EXCEPTION 'SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN:O cliente não pertence a esta empresa.';
   END;
 
-  -- tenant_id é obrigatório. company_id nulo permanece válido; preenchido, só o mesmo tenant.
+  -- No Develop, customers.tenant_id é text e customers.company_id é uuid.
+  -- Texto inválido não é convertido. company_id nulo permanece válido; preenchido, só o mesmo tenant.
   -- Cliente inexistente ou sem tenant é recusado antes de qualquer insert. A função não altera o cadastro.
-  IF v_customer IS NULL OR NOT EXISTS (
+  IF v_customer IS NULL THEN
+    RAISE EXCEPTION 'SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN:O cliente não pertence a esta empresa.';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1
     FROM public.customers
     WHERE id = v_customer
-      AND tenant_id = v_tenant
+      AND CASE
+        WHEN tenant_id IS NULL
+          OR btrim(tenant_id) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          THEN false
+        ELSE btrim(tenant_id)::uuid = v_tenant
+      END
       AND (company_id IS NULL OR company_id = v_tenant)
   ) THEN
     RAISE EXCEPTION 'SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN:O cliente não pertence a esta empresa.';
