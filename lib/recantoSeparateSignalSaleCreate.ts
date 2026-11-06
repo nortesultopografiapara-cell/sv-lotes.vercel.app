@@ -264,6 +264,9 @@ export async function insertSeparateSignalSaleAtomically(
     if (/SEPARATE_SIGNAL_ALREADY_REGISTERED|já foi registrada/i.test(message)) {
       throw new RecantoSeparateSignalPersistenceError('Esta confirmação de sinal já foi registrada.');
     }
+    if (/SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN/i.test(message)) {
+      throw new RecantoSeparateSignalPersistenceError('O cliente não pertence a esta empresa.');
+    }
     if (/SEPARATE_SIGNAL_TENANT_MISMATCH|outra empresa/i.test(message)) {
       throw new RecantoSeparateSignalPersistenceError('A confirmação pertence a outra empresa.');
     }

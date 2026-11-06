@@ -542,6 +542,73 @@ export function mergeCustomerPatchFromForm(
   return merged;
 }
 
+export const SALE_CUSTOMER_TENANT_FORBIDDEN = 'O cliente não pertence a esta empresa.';
+
+export type SaleCustomerOwnership = 'same_tenant' | 'other_tenant' | 'missing' | 'unassigned';
+
+/**
+ * Cliente da venda SEPARATE.
+ * tenant_id é a posse. company_id pode ser nulo no esquema atual;
+ * se estiver preenchido, precisa ser o mesmo tenant. Cliente sem tenant não é adotado.
+ */
+export function classifySaleCustomerOwnership(
+  customer: { tenant_id?: unknown; company_id?: unknown } | null | undefined,
+  saleTenantId: string,
+): SaleCustomerOwnership {
+  if (!customer) return 'missing';
+  const saleTenant = String(saleTenantId ?? '').trim();
+  const tenant = String(customer.tenant_id ?? '').trim();
+  const company = String(customer.company_id ?? '').trim();
+  if (!saleTenant || !tenant) return 'unassigned';
+  if (tenant !== saleTenant) return 'other_tenant';
+  if (company && company !== saleTenant) return 'other_tenant';
+  return 'same_tenant';
+}
+
+export function assertSaleCustomerOwned(
+  customer: { tenant_id?: unknown; company_id?: unknown } | null | undefined,
+  saleTenantId: string,
+): void {
+  if (classifySaleCustomerOwnership(customer, saleTenantId) !== 'same_tenant') {
+    throw new Error(SALE_CUSTOMER_TENANT_FORBIDDEN);
+  }
+}
+
+export function prepareSaleCustomerPersistence(input: {
+  requireOwnedCustomer: boolean;
+  saleTenantId: string;
+  existing: Record<string, unknown> | null;
+  payload: Record<string, unknown>;
+}): { action: 'insert' | 'update'; payload: Record<string, unknown> } {
+  if (input.existing) {
+    if (!input.requireOwnedCustomer) {
+      return { action: 'update', payload: input.payload };
+    }
+    assertSaleCustomerOwned(input.existing, input.saleTenantId);
+    const next = { ...input.payload };
+    for (const key of ['tenant_id', 'company_id'] as const) {
+      if (!(key in next)) continue;
+      const incoming = String(next[key] ?? '').trim();
+      const current = String(input.existing[key] ?? '').trim();
+      if (incoming && incoming !== current) {
+        throw new Error(SALE_CUSTOMER_TENANT_FORBIDDEN);
+      }
+      delete next[key];
+    }
+    return { action: 'update', payload: next };
+  }
+
+  if (input.requireOwnedCustomer) {
+    const saleTenant = input.saleTenantId.trim();
+    const tenant = String(input.payload.tenant_id ?? '').trim();
+    const company = String(input.payload.company_id ?? '').trim();
+    if (!saleTenant || tenant !== saleTenant || company !== saleTenant) {
+      throw new Error(SALE_CUSTOMER_TENANT_FORBIDDEN);
+    }
+  }
+  return { action: 'insert', payload: input.payload };
+}
+
 export function buildCustomerPayload(
   form: CustomerFormValues,
   ctx: { tenantId: string; projectId: string },
@@ -591,6 +658,7 @@ export async function resolveOrCreateCustomer(
     isSuperAdmin: boolean;
     lotTenantId?: string | null;
     changedBy?: string | null;
+    requireOwnedCustomer?: boolean;
   },
 ): Promise<{ customerId: string; reused: boolean; clientId: string | null }> {
   const { form, tenantId, projectId, isSuperAdmin, lotTenantId, changedBy } =
@@ -628,9 +696,15 @@ export async function resolveOrCreateCustomer(
       unknown
     > | null;
     if (!existingRecord) {
+      if (params.requireOwnedCustomer) {
+        assertSaleCustomerOwned(null, tenantId);
+      }
       throw new Error(
         `Cliente selecionado não encontrado (ID: ${customerId}). Selecione novamente na busca.`,
       );
+    }
+    if (params.requireOwnedCustomer) {
+      assertSaleCustomerOwned(existingRecord, tenantId);
     }
     console.log('CUSTOMER_RESOLVE_SELECTED', {
       customer_id: customerId,
@@ -655,6 +729,9 @@ export async function resolveOrCreateCustomer(
       customerId = existing[0].id;
       reused = true;
       existingRecord = existing[0] as Record<string, unknown>;
+      if (params.requireOwnedCustomer) {
+        assertSaleCustomerOwned(existingRecord, tenantId);
+      }
       console.log('CUSTOMER_REUSED', { customerId, source: 'cpf_cnpj' });
       console.log('CUSTOMER_DUPLICATE_PREVENTED', { customerId });
     } else if (existing.length > 1) {
@@ -669,13 +746,19 @@ export async function resolveOrCreateCustomer(
     }
   }
 
-  const payload = buildCustomerPayload(
-    form,
-    { tenantId, projectId },
-    existingRecord,
-  );
+  const persistence = prepareSaleCustomerPersistence({
+    requireOwnedCustomer: params.requireOwnedCustomer === true,
+    saleTenantId: tenantId,
+    existing: customerId ? existingRecord : null,
+    payload: buildCustomerPayload(
+      form,
+      { tenantId, projectId },
+      existingRecord,
+    ),
+  });
+  const payload = persistence.payload;
 
-  if (customerId) {
+  if (customerId && persistence.action === 'update') {
     if (decision.action === 'use_selected') {
       console.log('CUSTOMER_REUSED', { customerId, source: 'selected' });
     }

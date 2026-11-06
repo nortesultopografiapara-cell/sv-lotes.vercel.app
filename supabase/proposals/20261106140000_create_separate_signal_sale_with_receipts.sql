@@ -28,6 +28,7 @@ DECLARE
   v_signal_initial_count bigint;
   v_lot_first date;
   v_signal_first date;
+  v_customer uuid;
 BEGIN
   IF p_sale IS NULL OR jsonb_typeof(p_sale) <> 'object' THEN
     RAISE EXCEPTION 'SEPARATE_SIGNAL_INVALID:A venda separada está incompleta.';
@@ -53,6 +54,25 @@ BEGIN
   IF NULLIF(p_sale->>'company_id', '') IS NOT NULL
      AND NULLIF(p_sale->>'company_id', '')::uuid IS DISTINCT FROM v_tenant THEN
     RAISE EXCEPTION 'SEPARATE_SIGNAL_TENANT_MISMATCH:Os recebíveis não pertencem a esta empresa.';
+  END IF;
+
+  BEGIN
+    v_customer := NULLIF(p_sale->>'customer_id', '')::uuid;
+  EXCEPTION
+    WHEN invalid_text_representation THEN
+      RAISE EXCEPTION 'SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN:O cliente não pertence a esta empresa.';
+  END;
+
+  -- tenant_id é obrigatório. company_id nulo permanece válido; preenchido, só o mesmo tenant.
+  -- Cliente inexistente ou sem tenant é recusado antes de qualquer insert. A função não altera o cadastro.
+  IF v_customer IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM public.customers
+    WHERE id = v_customer
+      AND tenant_id = v_tenant
+      AND (company_id IS NULL OR company_id = v_tenant)
+  ) THEN
+    RAISE EXCEPTION 'SEPARATE_SIGNAL_CUSTOMER_FORBIDDEN:O cliente não pertence a esta empresa.';
   END IF;
 
   IF EXISTS (

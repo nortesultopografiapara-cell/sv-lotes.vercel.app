@@ -443,6 +443,7 @@ export async function executeGisSaleCreate(
     isSuperAdmin: input.isSuperAdmin === true,
     lotTenantId: lot.tenant_id,
     changedBy: input.userId,
+    requireOwnedCustomer: clientRequestedSeparateSignal(customerData),
   });
 
   const projDataSnapshot = await loadProjectSnapshotForSale(supabase, projectId);
