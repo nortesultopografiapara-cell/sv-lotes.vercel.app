@@ -4075,6 +4075,26 @@ export default function GISMap({
     mode?: "create" | "edit";
     editContext?: SaleEditLoadedContext;
   } | null>(null);
+  const [separateSignalServer, setSeparateSignalServer] = useState({
+    formEnabled: false,
+    writeEnabled: false,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/recanto-separate-signal/status')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (cancelled || !body || typeof body !== 'object') return;
+        setSeparateSignalServer({
+          formEnabled: body.formEnabled === true,
+          writeEnabled: body.writeEnabled === true,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [brokersList, setBrokersList] = useState<
     {
       id: string;
@@ -6253,6 +6273,8 @@ export default function GISMap({
           }
           brokers={brokersList}
           contractModel={tenantContractModel}
+          separateSignalEnabled={separateSignalServer.formEnabled}
+          separateSignalWriteEnabled={separateSignalServer.writeEnabled}
           onClose={() => setCustomerForm(null)}
           onCustomerValidationFailed={setCustomerContractValidation}
           onConfirm={async (data) => {

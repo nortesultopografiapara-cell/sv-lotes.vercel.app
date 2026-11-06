@@ -144,6 +144,8 @@ function main() {
   assert((legacyLines[0]?.signalAddonAmount ?? 0) > 0, '11. sinal embutido antigo continua somando na parcela');
 
   assert(on.confirmBlocked === true, '12. modalidade nova não confirma');
+  const authorized = preview({ writeEnabled: true });
+  assert(authorized.confirmBlocked === false, '12. servidor pode liberar a confirmação');
   assert(on.confirmBlockMessage === RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE, '12. mensagem de preparação');
   const invalid = preview({ signalFirstDueDate: '' });
   assert(invalid.confirmBlocked && invalid.schedule === null, '12. prévia inválida também não confirma');
@@ -158,11 +160,13 @@ function main() {
   const confirmEnd = modal.indexOf('setSubmitting(false);', confirmStart);
   const payload = modal.slice(confirmStart, confirmEnd);
   assert(confirmStart > 0 && payload.includes('...formData'), '12. payload antigo preservado');
-  assert(!payload.includes('separateSignal'), '12. estado novo não vai no payload');
-  assert(!payload.includes('holdLotCharges'), '12. retenção não vai no payload');
-  assert(!payload.includes('lotStartMode'), '12. início do lote não vai no payload');
+  assert(payload.includes('separateSignalWriteEnabled && separateSignalPreview.active'), '12. payload novo só com liberação');
+  assert(modal.includes('separateSignalWriteEnabled = false'), '12. cliente não liga a gravação');
   assert(modal.includes('if (separateSignalPreview.confirmBlocked)'), '12. submit interrompido');
   assert(modal.includes('Parcelar sinal separadamente das parcelas do lote'), '2. rótulo da opção');
+  assert(modal.includes('preview.confirmBlocked'), '12. aviso distingue simulação e gravação');
+  assert(modal.includes('RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING'), '12. confirmação avisa a gravação no Develop');
+  assert(modal.includes('RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL'), '12. simulação continua quando a gravação está bloqueada');
   assert(modal.includes('enabled: separateSignalEnabled'), '2. interruptor vem de fora');
   assert(!modal.includes('RECANTO_SEPARATE_SIGNAL_ENABLED = true'), '1. modal não liga a flag');
 

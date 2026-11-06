@@ -56,6 +56,7 @@ import {
 import {
   buildRecantoSeparateSignalPreview,
   describeCentsInstallments,
+  RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING,
   RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL,
   type RecantoSeparateSignalPreview,
 } from '@/lib/recantoSeparateSignalForm';
@@ -135,6 +136,11 @@ export type LotFormState = CustomerFormValues &
   signal_remaining_payment_mode?: SignalRemainingPaymentMode | '';
   /** Recanto: qtd de parcelas para o restante (primeiras parcelas). */
   signal_remaining_installments?: string;
+  signal_schedule_mode?: 'SEPARATE' | '';
+  signal_installment_count?: string;
+  signal_first_due_date?: string;
+  lot_schedule_start_mode?: string;
+  hold_lot_charges_until_signal_settled?: boolean;
   /** Recanto: BY_COUNT | FIXED_AMOUNT */
   installment_definition_mode?: string;
   /** Recanto FIXED_AMOUNT: valor fixo da parcela regular (string currency). */
@@ -231,6 +237,8 @@ type Props = {
    * Omitido, permanece desligada. Só tem efeito em RECANTO_PRIMAVERA.
    */
   separateSignalEnabled?: boolean;
+  /** Liberação vinda do servidor. O padrão false impede o cliente de confirmar. */
+  separateSignalWriteEnabled?: boolean;
   /** Venda existente — necessário para a aba Documentos. */
   saleId?: string | null;
   onClose: () => void;
@@ -251,6 +259,7 @@ export function CustomerLotFormModal({
   brokers = [],
   contractModel = 'PADRAO',
   separateSignalEnabled,
+  separateSignalWriteEnabled = false,
   saleId = null,
   onClose,
   onConfirm,
@@ -661,6 +670,7 @@ export function CustomerLotFormModal({
     () => buildRecantoSeparateSignalPreview({
       contractModel,
       enabled: separateSignalEnabled,
+      writeEnabled: separateSignalWriteEnabled,
       selected: separateSignalSelected,
       installmentSale: paymentMode.isInstallment,
       lotPrice: finalValue,
@@ -677,6 +687,7 @@ export function CustomerLotFormModal({
     [
       contractModel,
       separateSignalEnabled,
+      separateSignalWriteEnabled,
       separateSignalSelected,
       paymentMode.isInstallment,
       finalValue,
@@ -929,6 +940,17 @@ export function CustomerLotFormModal({
         sale_commission_fixed_amount: String(
           parseCurrencyBRLNumber(formData.sale_commission_fixed_amount) || 0,
         ),
+        ...(separateSignalWriteEnabled && separateSignalPreview.active
+          ? {
+              signal_schedule_mode: 'SEPARATE' as const,
+              signal_installment_count: separateSignalInstallmentCount,
+              signal_first_due_date: separateSignalFirstDueDate,
+              lot_schedule_start_mode: separateLotStartMode,
+              hold_lot_charges_until_signal_settled: holdLotChargesUntilSignalSettled,
+              signal_remaining_payment_mode: '' as const,
+              signal_remaining_installments: '',
+            }
+          : {}),
       });
     } catch (err) {
       console.error('CUSTOMER_LOT_FORM_SUBMIT_ERROR', err);
@@ -2539,7 +2561,11 @@ function SeparateSignalSchedulePanel({
         Configuração visual. Nesta fase os boletos não são retidos nem emitidos.
       </p>
       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950 space-y-2">
-        <p className="font-semibold">{RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL}</p>
+        <p className="font-semibold">
+          {preview.confirmBlocked
+            ? RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL
+            : RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING}
+        </p>
         {preview.error ? <p className="text-red-700">{preview.error}</p> : null}
         {schedule ? (
           <>

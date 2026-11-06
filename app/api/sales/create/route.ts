@@ -73,6 +73,7 @@ export async function POST(request: Request) {
 
     const profile = await resolveCallerProfile(supabase, user.id);
     const userRole = String(profile?.role || user.role || '').toUpperCase();
+    const callerTenantId = String(profile?.tenant_id || '').trim() || null;
 
     const result = await executeGisSaleCreate(supabase, {
       userId: user.id,
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       tenantContractModel: body.tenantContractModel,
       financialAccountId: body.financialAccountId?.trim() || null,
       isSuperAdmin: userRole === 'SUPER_ADMIN',
+      callerTenantId,
     });
 
     mark('response', { status: 200, saleId: result.saleId });

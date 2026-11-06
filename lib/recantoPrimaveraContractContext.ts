@@ -57,6 +57,7 @@ import {
   buildRecantoSignalClauseText,
   resolveRecantoSignalPlan,
 } from '@/lib/recantoSignalRemaining';
+import { buildSeparateSignalContractSchedule } from '@/lib/recantoSeparateSignalContract';
 import {
   resolveInstallmentPrincipal,
   splitInstallmentAmounts,
@@ -148,6 +149,8 @@ export type RecantoPrimaveraContractContext = {
   signalClauseText: string;
   hasSignalRemaining: boolean;
   signalPaidFullyAtSale: boolean;
+  /** true somente quando sales.signal_schedule_mode = SEPARATE. */
+  separateSignalSchedule: boolean;
   valorParcelaBaseFmt: string;
   valorParcelaComAcrescimoFmt: string;
   parcelasResumoSinalHtml: string;
@@ -501,6 +504,13 @@ export function buildRecantoPrimaveraContractContext(
     remainingInstallments: sale?.signal_remaining_installments as number | null,
     totalInstallments: qtdParcelas,
   });
+  const separateView = swapFinance
+    ? null
+    : buildSeparateSignalContractSchedule({
+        sale: sale as Record<string, unknown>,
+        contractSnapshot,
+        receipts: financeReceipts,
+      });
 
   // Recanto: parcela base = valor total da chácara / parcelas (sinal NÃO abate).
   // FIXED_AMOUNT: N × valor fixo + residual opcional (parcela final de ajuste).
@@ -564,35 +574,45 @@ export function buildRecantoPrimaveraContractContext(
             qtdParcelas,
           )
       : [];
+  const lotLinesWithoutSignal = regularBaseAmounts.map((baseAmount) => ({
+    baseAmount,
+    signalAddonAmount: 0,
+    amount: baseAmount,
+  }));
   const compositions = swapFinance
-    ? regularBaseAmounts.map((baseAmount) => ({
-        baseAmount,
-        signalAddonAmount: 0,
-        amount: baseAmount,
-      }))
-    : hasExplicitSignalPaid && !isSinglePayment
-      ? applySignalAddonToInstallmentAmounts(regularBaseAmounts, signalPlan)
-      : regularBaseAmounts.map((baseAmount) => ({
-          baseAmount,
-          signalAddonAmount: 0,
-          amount: baseAmount,
-        }));
+    ? lotLinesWithoutSignal
+    : separateView
+      ? separateView.lotLines.length > 0
+        ? separateView.lotLines.map((line) => ({
+            baseAmount: line.amountReais,
+            signalAddonAmount: 0,
+            amount: line.amountReais,
+          }))
+        : lotLinesWithoutSignal
+      : hasExplicitSignalPaid && !isSinglePayment
+        ? applySignalAddonToInstallmentAmounts(regularBaseAmounts, signalPlan)
+        : lotLinesWithoutSignal;
   const valorParcela = compositions[0]?.amount ?? valorParcelaBase;
   const valorParcelaComAcrescimo =
     compositions.find((c) => c.signalAddonAmount > 0)?.amount ?? valorParcela;
-  const signalClauseText =
-    swapFinance || !hasExplicitSignalPaid
+  const signalClauseText = separateView
+    ? separateView.clauseText
+    : swapFinance || !hasExplicitSignalPaid
       ? ''
       : buildRecantoSignalClauseText(signalPlan, qtdParcelas);
 
-  const baseDisplay = regularBaseAmounts[0] ?? valorParcelaBase;
+  const baseDisplay =
+    separateView?.lotLines[0]?.amountReais ??
+    regularBaseAmounts[0] ??
+    valorParcelaBase;
   const addonDisplay = signalPlan.remainingInstallmentValue;
   const totalComAddonDisplay =
     compositions.find((c) => c.signalAddonAmount > 0)?.amount ??
     valorParcelaComAcrescimo;
 
-  let parcelasResumoSinalHtml = '';
+  let parcelasResumoSinalHtml = separateView ? separateView.scheduleHtml : '';
   const shouldShowPaymentQuadro =
+    !separateView &&
     !isSinglePayment &&
     ((signalPlan.hasRemaining && hasExplicitSignalPaid) || hasResidualInstallment);
   if (shouldShowPaymentQuadro) {
@@ -792,20 +812,33 @@ export function buildRecantoPrimaveraContractContext(
     foroText,
     valorTotalFmt: formatBRL(valTotal),
     valorTotalExtenso: formatExtensoCurrency(valTotal),
-    valorSinalFmt: formatBRL(valSinal),
-    valorSinalExtenso: formatExtensoCurrency(valSinal),
-    valorSinalPagoNoAtoFmt: formatBRL(signalPlan.paidAtSale),
-    valorSinalRestanteFmt: formatBRL(signalPlan.remainingValue),
-    valorAcrescimoSinalFmt: formatBRL(signalPlan.remainingInstallmentValue),
-    qtdParcelasSinalRestante: signalPlan.remainingInstallments || 0,
-    signalRemainingPaymentMode: signalPlan.paymentMode,
+    valorSinalFmt: formatBRL(separateView ? separateView.signalTotalCents / 100 : valSinal),
+    valorSinalExtenso: formatExtensoCurrency(
+      separateView ? separateView.signalTotalCents / 100 : valSinal,
+    ),
+    valorSinalPagoNoAtoFmt: formatBRL(
+      separateView ? separateView.paidAtActCents / 100 : signalPlan.paidAtSale,
+    ),
+    valorSinalRestanteFmt: formatBRL(
+      separateView ? separateView.balanceCents / 100 : signalPlan.remainingValue,
+    ),
+    valorAcrescimoSinalFmt: formatBRL(
+      separateView ? 0 : signalPlan.remainingInstallmentValue,
+    ),
+    qtdParcelasSinalRestante: separateView
+      ? separateView.signalInstallmentCount
+      : signalPlan.remainingInstallments || 0,
+    signalRemainingPaymentMode: separateView ? null : signalPlan.paymentMode,
     signalClauseText,
-    hasSignalRemaining: Boolean(
-      !swapFinance && signalPlan.hasRemaining && hasExplicitSignalPaid,
-    ),
-    signalPaidFullyAtSale: Boolean(
-      !swapFinance && hasExplicitSignalPaid && !signalPlan.hasRemaining && valSinal > 0,
-    ),
+    hasSignalRemaining: separateView
+      ? separateView.balanceCents > 0
+      : Boolean(!swapFinance && signalPlan.hasRemaining && hasExplicitSignalPaid),
+    signalPaidFullyAtSale: separateView
+      ? separateView.signalTotalCents > 0 && separateView.balanceCents === 0
+      : Boolean(
+          !swapFinance && hasExplicitSignalPaid && !signalPlan.hasRemaining && valSinal > 0,
+        ),
+    separateSignalSchedule: Boolean(separateView),
     valorParcelaBaseFmt: formatBRL(baseDisplay),
     valorParcelaComAcrescimoFmt: formatBRL(totalComAddonDisplay),
     parcelasResumoSinalHtml,
@@ -817,7 +850,10 @@ export function buildRecantoPrimaveraContractContext(
     ),
     valorParcelaFmt: formatBRL(valorParcela),
     valorParcelaExtenso: formatExtensoCurrency(valorParcela),
-    qtdParcelas,
+    qtdParcelas:
+      separateView && separateView.lotLines.length > 0
+        ? separateView.lotLines.length
+        : qtdParcelas,
     installmentDefinitionMode,
     hasResidualInstallment,
     valorResidualFmt: formatBRL(residualAmount),

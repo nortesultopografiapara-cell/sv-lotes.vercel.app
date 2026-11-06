@@ -113,7 +113,9 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       ctx.balloonSummary?.hasBalloon,
   );
 
-  const saldoLine = hasBalloon
+  const saldoLine = ctx.separateSignalSchedule
+    ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas do lote, em cronograma separado do SINAL`
+    : hasBalloon
     ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt}), com parcelas balão discriminadas no Quadro Financeiro`
     : ctx.hasResidualInstallment
       ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaBaseFmt} e uma parcela final de ajuste de ${ctx.valorResidualFmt}`
@@ -130,7 +132,7 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       : ctx.valorSinalFmt;
 
   // Com balão: quadro executivo compacto (sem listagem de parcelas / quadro de composição).
-  if (hasBalloon && ctx.balloonSummary) {
+  if (hasBalloon && ctx.balloonSummary && !ctx.separateSignalSchedule) {
     return `
     <div class="contract-payment-block">
       <table style="width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt;">
@@ -195,8 +197,9 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
     ? 'com início da primeira parcela do saldo remanescente em'
     : 'com início em';
   /** Nunca afirma valor único “cada” — parcelas podem variar por complemento do sinal e centavos. */
-  const dueText =
-    ctx.hasLotSwapFinance && ctx.qtdParcelas <= 0
+  const dueText = ctx.separateSignalSchedule
+    ? 'Os vencimentos de cada parcela do SINAL e de cada parcela do lote são os constantes nos cronogramas próprios deste contrato. O SINAL não reduz o preço do lote.'
+    : ctx.hasLotSwapFinance && ctx.qtdParcelas <= 0
       ? 'Não restam parcelas do saldo remanescente neste instrumento.'
       : ctx.dueDay && ctx.dataPrimeiraParcelaFmt
         ? `${remainingDueIntro}, todo dia <strong>${ctx.dueDay}</strong>, ${remainingFirstDue} <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`

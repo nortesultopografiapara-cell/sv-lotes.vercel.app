@@ -22,6 +22,9 @@ export const RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE =
 export const RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL =
   'Simulação — estes valores não são gravados.';
 
+export const RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING =
+  'Confirmar a venda grava estes registros no Supabase Develop.';
+
 export type RecantoSeparateSignalFormInput = {
   contractModel: unknown;
   /** Quando omitido, usa RECANTO_SEPARATE_SIGNAL_ENABLED. */
@@ -39,6 +42,8 @@ export type RecantoSeparateSignalFormInput = {
   lotStartMode: RecantoLotStartMode;
   lotSpecificStartDate?: string | null;
   holdLotChargesUntilSignalSettled?: boolean;
+  /** Só o servidor pode ligar. Omitido, a confirmação continua bloqueada. */
+  writeEnabled?: boolean;
 };
 
 export type RecantoSeparateSignalPreview = {
@@ -125,8 +130,10 @@ export function buildRecantoSeparateSignalPreview(
       active: true,
       schedule,
       error: null,
-      confirmBlocked: true,
-      confirmBlockMessage: RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE,
+      confirmBlocked: input.writeEnabled !== true,
+      confirmBlockMessage: input.writeEnabled === true
+        ? null
+        : RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE,
     };
   } catch (error) {
     const message = error instanceof RecantoBrokerageScheduleError

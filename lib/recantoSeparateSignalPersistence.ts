@@ -5,6 +5,7 @@
  */
 
 import { normalizeSaleContractModel } from '@/lib/contractModel';
+import { isRecantoSeparateSignalWriteEnabled } from '@/lib/recantoSeparateSignalRuntime';
 import {
   buildRecantoBrokerageSchedule,
   reaisToCents,
@@ -139,8 +140,12 @@ export function clientRequestedSeparateSignal(customerData: Record<string, unkno
   return mode === 'SEPARATE' || customerData.separate_signal === true;
 }
 
-export function rejectUnpersistedSeparateSignalRequest(customerData: Record<string, unknown>): void {
+export function rejectUnpersistedSeparateSignalRequest(
+  customerData: Record<string, unknown>,
+  env: Record<string, string | undefined> = process.env,
+): void {
   if (!clientRequestedSeparateSignal(customerData)) return;
+  if (isRecantoSeparateSignalWriteEnabled(env)) return;
   assertRecantoSeparateSignalPersistAuthorized();
 }
 

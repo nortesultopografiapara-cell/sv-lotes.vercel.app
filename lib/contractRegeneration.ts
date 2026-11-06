@@ -758,11 +758,24 @@ export async function loadFreshRegenerationEntities(
   if (saleId) {
     let recQuery = supabase
       .from('finance_receipts')
-      .select('amount, due_date, status, installment_number')
+      .select('amount, due_date, status, installment_number, schedule_group')
       .eq('sale_id', saleId)
       .neq('status', 'cancelado');
     recQuery = recQuery.eq('tenant_id', tenantId);
     let { data: recs, error: recErr } = await recQuery;
+
+    if (recErr?.message?.includes('schedule_group')) {
+      const withoutGroup = await supabase
+        .from('finance_receipts')
+        .select('amount, due_date, status, installment_number')
+        .eq('sale_id', saleId)
+        .neq('status', 'cancelado')
+        .eq('tenant_id', tenantId);
+      recs = withoutGroup.data
+        ? withoutGroup.data.map((row) => ({ ...row, schedule_group: null }))
+        : null;
+      recErr = withoutGroup.error;
+    }
 
     if (recErr?.message?.includes('tenant_id')) {
       const fallback = await supabase
@@ -770,7 +783,9 @@ export async function loadFreshRegenerationEntities(
         .select('amount, due_date, status, installment_number')
         .eq('sale_id', saleId)
         .neq('status', 'cancelado');
-      recs = fallback.data;
+      recs = fallback.data
+        ? fallback.data.map((row) => ({ ...row, schedule_group: null }))
+        : null;
       recErr = fallback.error;
     }
 
