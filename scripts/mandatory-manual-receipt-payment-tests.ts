@@ -324,7 +324,7 @@ function testKClientUpdateBlocked() {
   const markPaid = page.slice(markStart, markEnd);
   assert(!markPaid.includes("from('finance_receipts')"), 'handleMarkPaid não faz UPDATE client');
   assert(!page.includes('Confirmar pagamento desta parcela?'), 'confirm antigo removido');
-  assert(page.includes('ManualPaymentAuthModal'), 'modal profissional');
+  assert(page.includes('MarkPaidAuthModal'), 'modal profissional');
 
   const sql = read('supabase/migrations/20261021120000_manual_receipt_payment_authorization.sql');
   assert(sql.includes('finance_receipts_block_client_paid_update'), 'trigger RLS/DB');

@@ -13,7 +13,7 @@ import {
   PaymentTableRow,
 } from '@/components/finance/FinancePremiumUI';
 import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
-import { ManualPaymentAuthModal } from '@/components/finance/ManualPaymentAuthModal';
+import { MarkPaidAuthModal } from '@/components/finance/MarkPaidAuthModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -3408,7 +3408,7 @@ export default function FinancePage() {
         </div>
       )}
 
-      <ManualPaymentAuthModal
+      <MarkPaidAuthModal
         receiptId={manualPaymentReceiptId}
         onClose={() => setManualPaymentReceiptId(null)}
         onSuccess={() => {
