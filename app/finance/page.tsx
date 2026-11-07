@@ -52,6 +52,10 @@ import {
   FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
 } from '@/lib/finance/financeReceiptsEmbed';
 import {
+  formatFinanceParcelLabel,
+  futureSignalCountsBySale,
+} from '@/lib/finance/separateScheduleParcelLabel';
+import {
   DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
   FINANCE_RECEIPTS_UI_PAGE_SIZES,
   fetchAllFinanceReceiptsPaged,
@@ -748,6 +752,27 @@ export default function FinancePage() {
       return matchProject && matchStartDate && matchEndDate;
     });
   }, [cashFlowItems, projectFilter, startDate, endDate]);
+
+  const signalFutureCountBySale = useMemo(
+    () => futureSignalCountsBySale(payments.map((row) => ({
+      saleId: row?.sale_id,
+      scheduleGroup: row?.schedule_group,
+      installmentNumber: row?.installment_number,
+    }))),
+    [payments],
+  );
+  const parcelLabelFor = (payment: {
+    sale_id?: string | null;
+    schedule_group?: string | null;
+    installment_number?: number | string | null;
+    sales?: { installments_count?: number | null; signal_installment_count?: number | null } | null;
+  }) => formatFinanceParcelLabel({
+    scheduleGroup: payment?.schedule_group,
+    installmentNumber: payment?.installment_number,
+    lotInstallmentCount: payment?.sales?.installments_count,
+    signalFutureCount: signalFutureCountBySale.get(String(payment?.sale_id || ''))
+      ?? payment?.sales?.signal_installment_count,
+  });
 
   // Client-side filtering
   const filteredPayments = payments.filter(p => {
@@ -3491,6 +3516,7 @@ export default function FinancePage() {
                     onWhatsApp={() => handleWhatsApp(p)}
                     onCarne={() => handleGenerateCarne(p)}
                     onDelete={() => handleDeleteReceipt(p)}
+                    signalFutureCount={signalFutureCountBySale.get(String(p.sale_id || '')) ?? null}
                     readOnly={ownerReadOnly}
                     asaasEnabled={companyAsaasActive && bankingUiEnabled && asaasAccessAvailable}
                     asaasCharge={asaasChargesByInstallment[p.id] ?? null}
@@ -3797,11 +3823,7 @@ export default function FinancePage() {
                 <div>
                   <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Parcela</span>
                   <div>
-                    {selectedPayment.installment_number === 0 || selectedPayment.installment_number === '0' ? (
-                       <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
-                    ) : (
-                       `${selectedPayment.installment_number || 1}${selectedPayment.sales?.installments_count ? ` / ${selectedPayment.sales.installments_count}` : ''}`
-                    )}
+                    {parcelLabelFor(selectedPayment)}
                   </div>
                 </div>
                 <div>

@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import { formatFinanceParcelLabel } from '@/lib/finance/separateScheduleParcelLabel';
 import { AsaasInstallmentChargePanel } from '@/components/finance/AsaasInstallmentChargePanel';
 import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
 
@@ -144,6 +145,8 @@ export type PaymentRowProps = {
   onCancelAsaasCharge?: () => void;
   onRegenerateAsaasCharge?: (billingType: 'PIX' | 'BOLETO') => void;
   onClearAsaasError?: () => void;
+  /** Quantidade futura do sinal, sem o pagamento inicial. */
+  signalFutureCount?: number | null;
 };
 
 export const PaymentTableRow = memo(
@@ -167,12 +170,14 @@ export const PaymentTableRow = memo(
     onCancelAsaasCharge,
     onRegenerateAsaasCharge,
     onClearAsaasError,
+    signalFutureCount = null,
   }: PaymentRowProps) {
     const projects = p.projects as { name?: string } | undefined;
     const sales = p.sales as {
       projects?: { name?: string };
       contracts?: { contract_number?: string }[];
       installments_count?: number;
+      signal_installment_count?: number;
       id?: string;
     } | undefined;
     const blocks = p.blocks as {
@@ -197,14 +202,6 @@ export const PaymentTableRow = memo(
         ? `CT-${new Date((p.created_at as string) || Date.now()).getFullYear()}-${String(sales.id).substring(0, 6).toUpperCase()}`
         : 'S/N');
     const clientName = customers?.name || '—';
-    const isEntry =
-      p.installment_number === 0 || p.installment_number === '0';
-    const parcelInfo = isEntry ? 'ENTRADA' : String(p.installment_number || 1);
-    const maxParcel =
-      sales?.installments_count && !isEntry
-        ? ` / ${sales.installments_count}`
-        : '';
-
     const pStatusRaw = String(p.status || 'pendente').toLowerCase();
     const dueStr = String(p.due_date || '').split('T')[0];
     const todayStr = new Date().toISOString().split('T')[0];
@@ -223,9 +220,12 @@ export const PaymentTableRow = memo(
     const dueFmt = dueStr
       ? new Date(`${dueStr}T12:00:00Z`).toLocaleDateString('pt-BR')
       : '—';
-    const parcelLabel = isEntry
-      ? 'Entrada'
-      : `Parcela ${parcelInfo}${maxParcel}`;
+    const parcelLabel = formatFinanceParcelLabel({
+      scheduleGroup: p.schedule_group as string | null | undefined,
+      installmentNumber: p.installment_number as number | string | null | undefined,
+      lotInstallmentCount: sales?.installments_count,
+      signalFutureCount: signalFutureCount ?? sales?.signal_installment_count,
+    });
 
     return (
       <>

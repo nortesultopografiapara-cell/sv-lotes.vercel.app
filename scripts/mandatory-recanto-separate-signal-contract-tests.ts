@@ -5,7 +5,10 @@
 
 import { buildRecantoBrokerageSchedule } from '../lib/recantoBrokerageInstallments';
 import { generateRecantoPrimaveraContract } from '../lib/recantoPrimaveraContractTemplate';
-import { buildSeparateSignalContractSchedule } from '../lib/recantoSeparateSignalContract';
+import {
+  buildSeparateSignalContractSchedule,
+  groupSeparateSignalScheduleLines,
+} from '../lib/recantoSeparateSignalContract';
 import { RECANTO_SEPARATE_SIGNAL_ENABLED } from '../lib/recantoSeparateSignalForm';
 import {
   RECANTO_SEPARATE_SIGNAL_PERSIST_ENABLED,
@@ -158,14 +161,26 @@ function assertSchedule(
   return resolved;
 }
 
+function dateBr(iso: string): string {
+  const [year, month, day] = iso.split('-');
+  return `${day}/${month}/${year}`;
+}
+
 function assertDatesInHtml(
   html: string,
   schedule: ReturnType<typeof buildRecantoBrokerageSchedule>,
 ) {
   const normalized = text(html);
-  for (const line of [...schedule.brokerageLines, ...schedule.lotLines]) {
-    const [year, month, day] = line.dueDate.split('-');
-    assert(normalized.includes(`${day}/${month}/${year}`), `vencimento ${line.dueDate} no contrato`);
+  const signalFuture = schedule.brokerageLines.filter((line) => line.sequence > 0);
+  const endpoints = [
+    schedule.brokerageLines.find((line) => line.sequence === 0),
+    signalFuture[0],
+    signalFuture[signalFuture.length - 1],
+    schedule.lotLines[0],
+    schedule.lotLines[schedule.lotLines.length - 1],
+  ].filter((line): line is NonNullable<typeof line> => Boolean(line));
+  for (const line of endpoints) {
+    assert(normalized.includes(dateBr(line.dueDate)), `vencimento ${line.dueDate} no resumo`);
   }
   assert(normalized.includes('Cronograma do SINAL'), 'cronograma do sinal');
   assert(normalized.includes('Cronograma do lote'), 'cronograma do lote');
@@ -173,6 +188,8 @@ function assertDatesInHtml(
   assert(!/corretagem/i.test(normalized), 'contrato sem a palavra corretagem');
   assert(normalized.includes('data-party-role="VENDOR"'), 'assinatura do vendedor preservada');
   assert(normalized.includes('data-party-role="BUYER"'), 'assinatura do comprador preservada');
+  const bands = normalized.match(/data-schedule-band=/g)?.length ?? 0;
+  assert(bands > 0 && bands < schedule.brokerageLines.length + schedule.lotLines.length, 'o resumo continua com uma linha por parcela');
 }
 
 const scenarioA = scheduleFor({ paidAtActCents: 350_000, brokerageInstallmentCount: 0 });
@@ -250,6 +267,95 @@ const frozenHtml = text(generateRecantoPrimaveraContract({
 }));
 assert(frozenHtml.includes('sinal contratual'), 'snapshot da emissão preserva a cláusula antiga');
 assert(!frozenHtml.includes('Cronograma do SINAL'), 'snapshot da emissão não recebe o cronograma novo');
+
+const longSchedule = buildRecantoBrokerageSchedule({
+  lotPriceCents: 6_618_805,
+  brokerageTotalCents: 350_000,
+  paidAtActCents: 100_000,
+  brokerageInstallmentCount: 5,
+  actDate: '2026-11-06',
+  brokerageFirstDueDate: '2026-12-06',
+  lotInstallmentCount: 120,
+  lotStartMode: 'AFTER_BROKERAGE',
+});
+const longReceipts = receiptsOf(longSchedule).map((row) => ({
+  ...row,
+  status: row.installment_number === 0 ? 'pago' : 'pendente',
+}));
+const longView = buildSeparateSignalContractSchedule({
+  sale: { signal_schedule_mode: 'SEPARATE', signal_contract_value: 3500 },
+  receipts: longReceipts,
+});
+assert(longView != null, 'prévia do contrato longo');
+const longResolved = longView as NonNullable<typeof longView>;
+assert(longResolved.signalLines.length === 6, 'recebíveis de sinal preservados');
+assert(longResolved.lotLines.length === 120, 'recebíveis de lote preservados');
+assert(longResolved.signalInstallmentCount === 5, 'pagamento inicial fora das cinco parcelas');
+assert(longResolved.financialTotalCents === 6_968_805, 'total financeiro da operação');
+const signalBands = groupSeparateSignalScheduleLines(longResolved.signalLines);
+const lotBands = groupSeparateSignalScheduleLines(longResolved.lotLines);
+assert(signalBands.length === 2 && signalBands[0]?.kind === 'initial' && signalBands[1]?.fromNumber === 1 && signalBands[1]?.toNumber === 5, 'sinal 1 a 5');
+assert(signalBands[1]?.amountCents === 50_000, 'valor das parcelas do sinal');
+assert(lotBands.length === 2 && lotBands[0]?.fromNumber === 1 && lotBands[0]?.toNumber === 119 && lotBands[0]?.amountCents === 55_157, 'lote 1 a 119');
+assert(lotBands[1]?.fromNumber === 120 && lotBands[1]?.amountCents === 55_122, 'ajuste da parcela 120');
+const longHtml = text(longResolved.scheduleHtml);
+assert(longHtml.includes('Pagamento inicial') && longHtml.includes('pago em 06/11/2026'), 'pagamento inicial destacado');
+assert(longHtml.includes('Parcelas 1 a 5') && longHtml.includes('06/12/2026') && longHtml.includes('06/04/2027'), 'intervalo do sinal');
+assert(longHtml.includes('Parcelas 1 a 119') && longHtml.includes('06/05/2027') && longHtml.includes('06/03/2037'), 'intervalo do lote');
+assert(longHtml.includes('Parcela 120') && longHtml.includes('06/04/2037'), 'vencimento final');
+assert(longHtml.includes('Total do SINAL') && longHtml.includes('Total do lote') && longHtml.includes('Total financeiro da operação'), 'totais do quadro');
+assert((longHtml.match(/data-schedule-band=/g) || []).length === 4, 'quadro resumido');
+assert(longReceipts.length === 126, 'a prévia não remove recebíveis');
+
+const irregular = groupSeparateSignalScheduleLines([
+  { scheduleGroup: 'SIGNAL', installmentNumber: 1, amountCents: 50_000, amountReais: 500, dueDate: '2026-12-06', status: 'pendente', signalAddonCents: 0 },
+  { scheduleGroup: 'SIGNAL', installmentNumber: 2, amountCents: 50_000, amountReais: 500, dueDate: '2027-01-06', status: 'pendente', signalAddonCents: 0 },
+  { scheduleGroup: 'SIGNAL', installmentNumber: 3, amountCents: 50_000, amountReais: 500, dueDate: '2027-03-06', status: 'pendente', signalAddonCents: 0 },
+]);
+assert(irregular.length === 2 && irregular[0]?.toNumber === 2 && irregular[1]?.fromNumber === 3, 'vencimento irregular fica separado');
+
+const mixedStatus = groupSeparateSignalScheduleLines([
+  { scheduleGroup: 'LOT', installmentNumber: 1, amountCents: 55_157, amountReais: 551.57, dueDate: '2027-05-06', status: 'pendente', signalAddonCents: 0 },
+  { scheduleGroup: 'LOT', installmentNumber: 2, amountCents: 55_157, amountReais: 551.57, dueDate: '2027-06-06', status: 'pago', signalAddonCents: 0 },
+]);
+assert(mixedStatus.length === 2, 'status diferente fica separado');
+
+const balloon = groupSeparateSignalScheduleLines([
+  { scheduleGroup: 'LOT', installmentNumber: 1, amountCents: 55_157, amountReais: 551.57, dueDate: '2027-05-06', status: 'pendente', signalAddonCents: 0 },
+  { scheduleGroup: 'LOT', installmentNumber: 2, amountCents: 55_157, amountReais: 551.57, dueDate: '2027-06-06', status: 'pendente', signalAddonCents: 10_000 },
+]);
+assert(balloon.length === 2 && balloon[1]?.signalAddonCents === 10_000, 'parcela com complemento fica separada');
+
+const longContract = text(generateRecantoPrimaveraContract({
+  tenant,
+  customer,
+  project,
+  block,
+  sale: {
+    payment_type: 'Parcelado',
+    installments_count: 120,
+    total_value: 66188.05,
+    signal_contract_value: 3500,
+    signal_paid_at_sale: 1000,
+    signal_schedule_mode: 'SEPARATE',
+    signal_remaining_payment_mode: null,
+    created_at: '2026-11-06',
+  },
+  financeReceipts: longReceipts,
+  contractDate: '2026-11-06',
+}));
+const scheduleRows = (longContract.match(/data-schedule-band=/g) || []).length;
+const oldRowPages = Math.ceil(126 * 10 / 250);
+const summaryRowPages = Math.ceil(scheduleRows * 10 / 250);
+assert(longContract.includes('CLÁUSULA TERCEIRA'), 'cláusula de pagamento preservada');
+assert(!/corretagem/i.test(longContract), 'prévia sem corretagem');
+assert(scheduleRows === 4, 'prévia do contrato usa o quadro resumido');
+console.log(JSON.stringify({
+  scheduleBands: scheduleRows,
+  previousSchedulePagesEstimate: oldRowPages,
+  summarySchedulePagesEstimate: summaryRowPages,
+  fullContractPagesEstimate: 6 + summaryRowPages,
+}));
 
 assert(RECANTO_SEPARATE_SIGNAL_SCHEMA_APPLIED === false, 'schema flag desligada');
 assert(RECANTO_SEPARATE_SIGNAL_PERSIST_ENABLED === false, 'persistência desligada');

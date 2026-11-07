@@ -1,3 +1,5 @@
+import { addMonthsKeepingEndOfMonth } from '@/lib/recantoBrokerageInstallments';
+
 /**
  * Cláusula do contrato Recanto quando o sinal tem cronograma próprio.
  * A modalidade é sales.signal_schedule_mode = SEPARATE.
@@ -9,6 +11,7 @@ export type SeparateSignalContractReceipt = {
   due_date?: string | null;
   installment_number?: number | string | null;
   amount?: number | null;
+  status?: string | null;
   schedule_group?: string | null;
   scheduleGroup?: string | null;
   signal_addon_amount?: number | null;
@@ -20,6 +23,21 @@ export type SeparateSignalContractLine = {
   amountCents: number;
   amountReais: number;
   dueDate: string | null;
+  status: string | null;
+  signalAddonCents: number;
+};
+
+export type SeparateSignalScheduleBand = {
+  scheduleGroup: 'SIGNAL' | 'LOT';
+  kind: 'initial' | 'range';
+  fromNumber: number | null;
+  toNumber: number | null;
+  count: number;
+  amountCents: number;
+  firstDue: string | null;
+  lastDue: string | null;
+  monthly: boolean;
+  status: string | null;
   signalAddonCents: number;
 };
 
@@ -97,14 +115,71 @@ function toLine(
   group: 'SIGNAL' | 'LOT',
 ): SeparateSignalContractLine {
   const amountCents = toCents(row.amount);
+  const status = String(row.status ?? '').trim().toLowerCase();
   return {
     scheduleGroup: group,
     installmentNumber: installmentNumber(row),
     amountCents,
     amountReais: amountCents / 100,
     dueDate: dueDate(row),
+    status: status || null,
     signalAddonCents: toCents(row.signal_addon_amount),
   };
+}
+
+function isNextMonth(previous: string | null, next: string | null): boolean {
+  if (!previous || !next) return false;
+  try {
+    return addMonthsKeepingEndOfMonth(previous, 1) === next;
+  } catch {
+    return false;
+  }
+}
+
+function canExtendBand(
+  current: SeparateSignalContractLine[],
+  next: SeparateSignalContractLine,
+): boolean {
+  const previous = current[current.length - 1];
+  if (!previous || previous.installmentNumber === 0 || next.installmentNumber === 0) return false;
+  if (previous.amountCents !== next.amountCents) return false;
+  if (previous.signalAddonCents !== next.signalAddonCents) return false;
+  if ((previous.status || '') !== (next.status || '')) return false;
+  if (previous.installmentNumber == null || next.installmentNumber == null) return false;
+  if (next.installmentNumber !== previous.installmentNumber + 1) return false;
+  return isNextMonth(previous.dueDate, next.dueDate);
+}
+
+/** Agrupa parcelas consecutivas de mesmo valor, status e vencimento mensal. */
+export function groupSeparateSignalScheduleLines(
+  lines: SeparateSignalContractLine[],
+): SeparateSignalScheduleBand[] {
+  const groups: SeparateSignalContractLine[][] = [];
+  for (const line of lines) {
+    const current = groups[groups.length - 1];
+    if (line.installmentNumber === 0 || !current || !canExtendBand(current, line)) {
+      groups.push([line]);
+      continue;
+    }
+    current.push(line);
+  }
+  return groups.map((group) => {
+    const first = group[0];
+    const last = group[group.length - 1];
+    return {
+      scheduleGroup: first.scheduleGroup,
+      kind: first.installmentNumber === 0 ? 'initial' : 'range',
+      fromNumber: first.installmentNumber,
+      toNumber: last.installmentNumber,
+      count: group.length,
+      amountCents: first.amountCents,
+      firstDue: first.dueDate,
+      lastDue: last.dueDate,
+      monthly: group.length > 1,
+      status: first.status,
+      signalAddonCents: first.signalAddonCents,
+    };
+  });
 }
 
 function bySchedule(a: SeparateSignalContractLine, b: SeparateSignalContractLine): number {
@@ -122,13 +197,50 @@ function escapeHtml(value: string): string {
     .replaceAll('"', '&quot;');
 }
 
-function rowHtml(line: SeparateSignalContractLine, label: string): string {
-  return `<tr data-schedule-group="${line.scheduleGroup}" data-installment="${
-    line.installmentNumber ?? ''
-  }" data-amount-cents="${line.amountCents}" data-due="${line.dueDate ?? ''}">
-    <td style="border: 1px solid #111; padding: 6px;">${escapeHtml(label)}</td>
-    <td style="border: 1px solid #111; padding: 6px; text-align: right;">${money(line.amountCents)}</td>
-    <td style="border: 1px solid #111; padding: 6px; text-align: center;">${formatDue(line.dueDate)}</td>
+function bandLabel(band: SeparateSignalScheduleBand): string {
+  if (band.kind === 'initial') return 'Pagamento inicial';
+  if (band.count > 1 && band.fromNumber != null && band.toNumber != null) {
+    return `Parcelas ${band.fromNumber} a ${band.toNumber}`;
+  }
+  return `Parcela ${band.fromNumber ?? ''}`.trim();
+}
+
+function bandValue(band: SeparateSignalScheduleBand): string {
+  const base = band.count > 1 ? `${money(band.amountCents)} cada` : money(band.amountCents);
+  if (band.signalAddonCents > 0) {
+    return `${base}, com complemento de ${money(band.signalAddonCents)}`;
+  }
+  return base;
+}
+
+function bandPeriod(band: SeparateSignalScheduleBand): string {
+  if (band.kind === 'initial') {
+    const pending = band.status === 'pendente' || band.status === 'pending';
+    return pending
+      ? `vencimento em ${formatDue(band.firstDue)}`
+      : `pago em ${formatDue(band.firstDue)}`;
+  }
+  if (band.count > 1) {
+    return `mensais, de ${formatDue(band.firstDue)} a ${formatDue(band.lastDue)}`;
+  }
+  return formatDue(band.firstDue);
+}
+
+function bandRowHtml(band: SeparateSignalScheduleBand): string {
+  return `<tr data-schedule-band="${band.scheduleGroup}" data-kind="${band.kind}" data-from="${
+    band.fromNumber ?? ''
+  }" data-to="${band.toNumber ?? ''}" data-count="${band.count}" data-amount-cents="${band.amountCents}">
+    <td style="border: 1px solid #111; padding: 6px;${band.kind === 'initial' ? ' font-weight: 700;' : ''}">${escapeHtml(bandLabel(band))}</td>
+    <td style="border: 1px solid #111; padding: 6px; text-align: right;">${bandValue(band)}</td>
+    <td style="border: 1px solid #111; padding: 6px;">${escapeHtml(bandPeriod(band))}</td>
+  </tr>`;
+}
+
+function totalRowHtml(label: string, cents: number): string {
+  return `<tr>
+    <td style="border: 1px solid #111; padding: 6px;"><strong>${escapeHtml(label)}</strong></td>
+    <td style="border: 1px solid #111; padding: 6px; text-align: right;"><strong>${money(cents)}</strong></td>
+    <td style="border: 1px solid #111; padding: 6px;"></td>
   </tr>`;
 }
 
@@ -137,9 +249,9 @@ function tableHtml(title: string, rows: string): string {
     <table style="width: 100%; border-collapse: collapse; font-size: 10.5pt;">
       <thead>
         <tr>
-          <th style="border: 1px solid #111; padding: 6px; text-align: left;">Parcela</th>
-          <th style="border: 1px solid #111; padding: 6px;">Valor</th>
-          <th style="border: 1px solid #111; padding: 6px;">Vencimento</th>
+          <th style="border: 1px solid #111; padding: 6px; text-align: left;">Discriminação</th>
+          <th style="border: 1px solid #111; padding: 6px;">Valor individual</th>
+          <th style="border: 1px solid #111; padding: 6px;">Periodicidade e vencimentos</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -218,18 +330,11 @@ export function buildSeparateSignalContractSchedule(input: {
     : Math.max(0, signalTotalCents - paidAtActCents);
   const lotTotalCents = lotLines.reduce((sum, line) => sum + line.amountCents, 0);
 
-  const signalRows = signalLines
-    .map((line) =>
-      rowHtml(
-        line,
-        line.installmentNumber === 0
-          ? 'Pagamento inicial do SINAL'
-          : `Parcela ${line.installmentNumber ?? ''} do SINAL`.replace('  ', ' '),
-      ),
-    )
+  const signalRows = groupSeparateSignalScheduleLines(signalLines)
+    .map((band) => bandRowHtml(band))
     .join('');
-  const lotRows = lotLines
-    .map((line) => rowHtml(line, `Parcela ${line.installmentNumber ?? ''} do lote`.trim()))
+  const lotRows = groupSeparateSignalScheduleLines(lotLines)
+    .map((band) => bandRowHtml(band))
     .join('');
 
   const lotIntro =
@@ -240,10 +345,17 @@ export function buildSeparateSignalContractSchedule(input: {
       : 'As condições de pagamento do lote permanecem em cronograma separado do SINAL. O preço do lote não é reduzido pelo SINAL.';
 
   const scheduleHtml = `${
-    signalLines.length > 0 ? tableHtml('Cronograma do SINAL', signalRows) : ''
+    signalLines.length > 0
+      ? tableHtml('Cronograma do SINAL', `${signalRows}${totalRowHtml('Total do SINAL', signalTotalCents)}`)
+      : ''
   }
     <p style="margin: 10px 0 6px 0;">${lotIntro}</p>
-    ${lotLines.length > 0 ? tableHtml('Cronograma do lote', lotRows) : ''}`;
+    ${
+      lotLines.length > 0
+        ? tableHtml('Cronograma do lote', `${lotRows}${totalRowHtml('Total do lote', lotTotalCents)}`)
+        : ''
+    }
+    <p style="margin: 8px 0 0 0;"><strong>Total financeiro da operação: ${money(signalTotalCents + lotTotalCents)}.</strong> O SINAL não reduz o preço do lote.</p>`;
 
   return {
     signalTotalCents,
