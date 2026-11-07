@@ -175,7 +175,6 @@ export type RecantoPrimaveraContractContext = {
   dueDay: string;
   dataPrimeiraParcelaFmt: string;
   dataUltimaParcelaFmt: string;
-  bankBoletoText: string;
   brokerNome: string;
   brokerDocumento: string;
   brokerCreci: string;
@@ -255,18 +254,6 @@ function resolveBroker(
     creci: resolved.creci,
     role: resolved.role,
   };
-}
-
-function buildBankBoletoText(profile: RecantoPrimaveraCompanyProfile): string {
-  const parts: string[] = [];
-  if (profile.bankName) parts.push(`Banco <strong>${profile.bankName}</strong>`);
-  if (profile.bankBranch) parts.push(`Agência <strong>${profile.bankBranch}</strong>`);
-  if (profile.bankAccount) parts.push(`Conta <strong>${profile.bankAccount}</strong>`);
-  if (profile.bankBeneficiary) {
-    parts.push(`Favorecido(a) <strong>${profile.bankBeneficiary}</strong>`);
-  }
-  if (parts.length === 0) return '';
-  return parts.join(', ');
 }
 
 function buildLotObjectText(
@@ -872,7 +859,6 @@ export function buildRecantoPrimaveraContractContext(
     dueDay,
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
-    bankBoletoText: buildBankBoletoText(profile),
     brokerNome: broker.nome,
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,

@@ -11,7 +11,7 @@ import {
   RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1,
   RECANTO_PRIMAVERA_LEGAL_MARKER,
 } from '../lib/recantoPrimaveraContractLegal';
-import { RECANTO_PRIMAVERA_CLAUSE_MARKERS, RECANTO_PRIMAVERA_LITERAL_PHRASES, RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES } from '../lib/recantoPrimaveraContractClauses';
+import { RECANTO_PRIMAVERA_BOLETO_PARAGRAPH, RECANTO_PRIMAVERA_CLAUSE_MARKERS, RECANTO_PRIMAVERA_LITERAL_PHRASES, RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES } from '../lib/recantoPrimaveraContractClauses';
 import { buildRecantoPrimaveraPdfChrome } from '../lib/recantoPrimaveraContractPdf';
 
 function assert(cond: boolean, msg: string) {
@@ -181,7 +181,7 @@ function testSpouseBlockConditional() {
   });
   assertNotIncludes(htmlNoSpouse, '<strong>Esposo(A)/Cônjuge:</strong>', 'sem bloco cônjuge');
   assertNotIncludes(htmlNoSpouse, 'CÔNJUGE ANUENTE', 'sem assinatura cônjuge');
-  assertNotIncludes(htmlNoSpouse, 'contract-spouse-block', 'sem div cônjuge');
+  assertNotIncludes(htmlNoSpouse, 'class="contract-clause contract-spouse-block"', 'sem div cônjuge');
   console.log('OK testSpouseBlockConditional');
 }
 
@@ -680,17 +680,45 @@ function testObjectClauseFormat() {
 }
 
 function testBankBoletoParagraph() {
+  const modes = [
+    sale,
+    { ...sale, payment_type: 'À vista', installments_count: 0, down_payment: 95000 },
+    {
+      ...sale,
+      payment_type: 'Pagamento único futuro',
+      installments_count: 1,
+      first_installment_due_date: '2026-08-15',
+    },
+  ];
+  for (const current of modes) {
+    const html = generateContractHTML({
+      tenant: ivanildeTenant,
+      customer,
+      project: recantoProject,
+      block,
+      sale: current,
+      contractDate: '2026-06-17',
+    });
+    const paragraph = (html.match(/Parágrafo Segundo:<\/strong>\s*([^<]+)/)?.[1] || '').trim();
+    assert(paragraph === RECANTO_PRIMAVERA_BOLETO_PARAGRAPH, 'parágrafo segundo neutro');
+    for (const forbidden of ['Sicredi', '0804', '91047-5', 'Agência', 'Conta', 'Favorecido', 'Banco', 'conta bancária']) {
+      assert(!paragraph.includes(forbidden), `parágrafo segundo sem ${forbidden}`);
+    }
+  }
+
   const html = buildHtml();
-  assert(html.includes('exclusivamente por <strong>boleto bancário</strong>'), 'pagamento por boleto');
-  assert(html.includes('A falta de recebimento do boleto bancário não isenta'), 'parágrafo quarto boleto');
-  assert(html.includes('Sicredi'), 'banco');
-  assert(html.includes('0804'), 'agência');
-  assert(html.includes('91047-5'), 'conta');
-  assert(
-    html.includes('Ivanilde De Moura Silva') || html.includes('Ivanilde de Moura Silva'),
-    'favorecido',
-  );
+  assert(html.includes('não possui natureza de entrada, não sendo abatido do valor da chácara'), 'parágrafo primeiro');
+  assert(html.includes('todo dia <strong>15</strong>'), 'parágrafo terceiro');
+  assert(html.includes('A falta de recebimento do boleto bancário não isenta'), 'parágrafo quarto');
+  assertNotIncludes(html, '91047-5', 'conta bancária fora do parágrafo');
+  assertNotIncludes(html, '0804', 'agência fora do parágrafo');
+
+  const clauses = fs.readFileSync(path.join(process.cwd(), 'lib/recantoPrimaveraContractClauses.ts'), 'utf8');
+  const context = fs.readFileSync(path.join(process.cwd(), 'lib/recantoPrimaveraContractContext.ts'), 'utf8');
+  assert(!clauses.includes('bankBoletoText'), 'cláusula não relê dados bancários');
+  assert(!context.includes('buildBankBoletoText') && !context.includes('bankBoletoText'), 'contexto não monta dados bancários');
   console.log('OK testBankBoletoParagraph');
+  console.log(JSON.stringify({ paragraph: RECANTO_PRIMAVERA_BOLETO_PARAGRAPH }));
 }
 
 function testDueDayParagraph() {
@@ -1142,6 +1170,7 @@ async function writeSampleArtifacts() {
 }
 
 async function main() {
+  testBankBoletoParagraph();
   testTitleMatchesOriginal();
   testVendorAndBuyerStructuredBlocks();
   testSpouseBlockConditional();
@@ -1175,7 +1204,6 @@ async function main() {
   testCompanyEnterpriseFieldsIgnoredWhenProjectPresent();
   testCompanyEnterpriseFieldsFallbackWhenProjectEmpty();
   testSettingsPageNoDuplicateEnterpriseFields();
-  testBankBoletoParagraph();
   testDueDayParagraph();
   testSignaturesFormat();
   testNoBodyFooter();
