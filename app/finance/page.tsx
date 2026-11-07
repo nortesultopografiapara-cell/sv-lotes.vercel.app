@@ -13,6 +13,7 @@ import {
   PaymentTableRow,
 } from '@/components/finance/FinancePremiumUI';
 import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
+import { MarkPaidAuthModal } from '@/components/finance/MarkPaidAuthModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -249,6 +250,7 @@ export default function FinancePage() {
   const [editingCashMovementId, setEditingCashMovementId] = useState<string | null>(null);
   const [selectedFlowItem, setSelectedFlowItem] = useState<CashFlowItem | null>(null);
   const [financeToast, setFinanceToast] = useState<string | null>(null);
+  const [markPaidTarget, setMarkPaidTarget] = useState<any>(null);
   const [financeToastIsError, setFinanceToastIsError] = useState(false);
   const [syncingAsaasCash, setSyncingAsaasCash] = useState(false);
 
@@ -1103,22 +1105,17 @@ export default function FinancePage() {
     }
   };
 
-  const handleMarkPaid = async (p: any) => {
+  const handleMarkPaid = (p: any) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    console.log('FINANCE MARK PAID', p);
-    if (!window.confirm("Confirmar pagamento desta parcela?")) return;
-    try {
-      const response = await fetch(`/api/finance/receipts/${p.id}/mark-paid`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        alert(json.error || 'Erro ao registrar pagamento.');
-        if (response.status === 409) await loadFinance();
-        return;
-      }
+    if (!p?.id) return;
+    setMarkPaidTarget(p);
+  };
 
+  const completeMarkPaid = async () => {
+    const p = markPaidTarget;
+    setMarkPaidTarget(null);
+    if (!p) return;
+    try {
       const rlsCtx = await resolveRlsContext(user);
       if (p.block_id) {
         void logLotAuditEvent(supabase, {
@@ -3147,6 +3144,13 @@ export default function FinancePage() {
 
   return (
     <div className="finance-premium sv-page--mobile-pad flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto sv-scrollbar sv-scrollbar-dark p-3 md:p-4 lg:p-5 h-full font-sans">
+      {markPaidTarget?.id ? (
+        <MarkPaidAuthModal
+          receiptId={String(markPaidTarget.id)}
+          onClose={() => setMarkPaidTarget(null)}
+          onSuccess={() => { void completeMarkPaid(); }}
+        />
+      ) : null}
       {financeToast && (
         <div
           role="status"

@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { decideManualReceiptMarkPaid } from '../lib/finance/manualReceiptMarkPaid';
+import { verifyPrimaryAdminPassword } from '../lib/primaryAdminReauth';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -187,18 +188,26 @@ assert(!otherCompany.ok && otherCompany.code === 'tenant_mismatch', 'outra empre
 const root = process.cwd();
 const page = fs.readFileSync(path.join(root, 'app/finance/page.tsx'), 'utf8');
 const handler = page.slice(page.indexOf('const handleMarkPaid'), page.indexOf('const handleDeleteReceipt'));
-assert(handler.includes('/api/finance/receipts/${p.id}/mark-paid'), 'financeiro chama a baixa do servidor');
+const modal = fs.readFileSync(path.join(root, 'components/finance/MarkPaidAuthModal.tsx'), 'utf8');
+assert(!handler.includes('Confirmar pagamento desta parcela'), 'baixa não depende só da confirmação visual');
 assert(!handler.includes("from('finance_receipts')"), 'navegador não grava a parcela');
 assert(!handler.includes('cash_movements'), 'navegador não cria caixa');
+assert(modal.includes('/api/finance/receipts/${receiptId}/mark-paid'), 'financeiro chama a baixa do servidor');
+assert(modal.includes('Authorization'), 'sessão vai no token da API');
+assert(modal.includes('type="password"'), 'pede a senha do administrador principal');
+assert(!modal.includes('console.log'), 'modal não registra a senha');
 
 const route = fs.readFileSync(
   path.join(root, 'app/api/finance/receipts/[receiptId]/mark-paid/route.ts'),
   'utf8',
 );
 assert(route.includes('execute_authorized_manual_receipt_payment'), 'usa a RPC existente');
-assert(route.includes('p_amount: decision.amount'), 'valor sai do recebível');
-assert(route.indexOf('decideManualReceiptMarkPaid') < route.indexOf('execute_authorized_manual_receipt_payment'), 'autorização antes da RPC');
-assert(!route.includes('request.json'), 'não lê papel nem valor do navegador');
+assert(route.includes('p_amount: loaded.decision.amount'), 'valor sai do recebível');
+assert(route.indexOf('verifyPrimaryAdminPassword') < route.indexOf('execute_authorized_manual_receipt_payment'), 'senha antes da RPC');
+assert(route.includes("const USER_SELECT = 'id, role, status, tenant_id'"), 'não consulta company_id do usuário');
+assert(route.includes('readPrimaryAdminVerifyRequest'), 'lê somente a senha enviada');
+assert(!route.includes('console.log(password'), 'rota não registra a senha');
+assert(route.includes("error: messageFor('unauthenticated')"), 'sessão ausente continua não autenticada');
 assert(!/SUPABASE_SERVICE_ROLE_KEY|service_role/.test(page), 'chave de serviço fora do navegador');
 assert(!/asaas|inter|c6|create-charge/i.test(route), 'baixa não emite cobrança');
 
@@ -225,4 +234,51 @@ assert(!sql.includes('EXCEPTION'), 'falha no caixa desfaz a baixa na mesma trans
 assert(!/CREATE POLICY|ALTER TABLE|ENABLE ROW LEVEL SECURITY/.test(sql), 'migration não mexe em tabela nem policy');
 assert(sql.includes('GRANT EXECUTE') && sql.includes('TO service_role'), 'RPC continua só no servidor');
 
-console.log('ok separate signal manual payment');
+const primary = {
+  id: 'principal',
+  tenant_id: company,
+  role: 'ADMIN',
+  status: 'ACTIVE',
+  email: 'principal@empresa.test',
+  full_name: 'Principal',
+};
+
+function passwordDeps(verifiedUserId: string | null, primaryId: string | null = primary.id) {
+  return {
+    loadOperator: async () => ({ id: 'op', tenant_id: company, role: 'ADMIN', status: 'ACTIVE' }),
+    loadCompanyPrimaryAdminUserId: async () => primaryId,
+    loadUser: async () => (primaryId ? primary : null),
+    verifyPassword: async () => ({ userId: verifiedUserId }),
+    now: () => 1_700_000_000_000,
+  };
+}
+
+async function testPrimaryAdminPassword() {
+  const accepted = await verifyPrimaryAdminPassword(passwordDeps(primary.id), {
+    operatorUserId: 'op',
+    password: 'senha-correta',
+    companyId: company,
+  });
+  assert(accepted.ok === true, 'senha correta do administrador principal');
+
+  const rejected = await verifyPrimaryAdminPassword(passwordDeps(null), {
+    operatorUserId: 'op',
+    password: 'senha-incorreta',
+    companyId: company,
+  });
+  assert(!rejected.ok && rejected.reason === 'password_rejected', 'senha incorreta');
+
+  const missing = await verifyPrimaryAdminPassword(passwordDeps(primary.id, null), {
+    operatorUserId: 'op',
+    password: 'senha-correta',
+    companyId: company,
+  });
+  assert(!missing.ok && missing.reason === 'missing_primary', 'administrador principal não configurado');
+}
+
+testPrimaryAdminPassword()
+  .then(() => console.log('ok separate signal manual payment'))
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
