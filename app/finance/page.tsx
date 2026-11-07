@@ -63,10 +63,7 @@ import {
   paginateFinanceReceiptRows,
   type FinanceReceiptsUiPageSize,
 } from '@/lib/finance/fetchFinanceReceiptsPaged';
-import {
-  buildManualFinanceReceiptCashMovement,
-  resolveCashMovementInstallmentId,
-} from '@/lib/finance/cashMovementsSchema';
+import { resolveCashMovementInstallmentId } from '@/lib/finance/cashMovementsSchema';
 import {
   calculateEnterpriseValueSummary,
   type EnterpriseValueSummary,
@@ -1111,40 +1108,18 @@ export default function FinancePage() {
     console.log('FINANCE MARK PAID', p);
     if (!window.confirm("Confirmar pagamento desta parcela?")) return;
     try {
-      const paidAt = new Date().toISOString();
-      const { error } = await supabase
-        .from('finance_receipts')
-        .update({
-          status: 'pago',
-          paid_amount: p.amount,
-          paid_at: paidAt,
-        })
-        .eq('id', p.id);
-      if (error) throw error;
-
-      const rlsCtx = await resolveRlsContext(user);
-      const movementPayload = buildManualFinanceReceiptCashMovement({
-        tenantId: rlsCtx.tenantId || '',
-        receiptId: p.id,
-        amount: p.amount,
-        installmentNumber: p.installment_number,
-        contractNumber: p.sales?.contracts?.[0]?.contract_number,
-        customerId: p.customer_id,
-        saleId: p.sale_id,
-        projectId: p.project_id ?? p.sales?.project_id ?? null,
-        userId: user.id,
-        paidAt,
+      const response = await fetch(`/api/finance/receipts/${p.id}/mark-paid`, {
+        method: 'POST',
+        credentials: 'include',
       });
-      const { error: cashError } = await supabase
-        .from('cash_movements')
-        .insert(movementPayload);
-      if (cashError) {
-        console.error(
-          '[finance/mark-paid] cash_movements insert failed (parcela mantida paga)',
-          cashError,
-        );
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(json.error || 'Erro ao registrar pagamento.');
+        if (response.status === 409) await loadFinance();
+        return;
       }
 
+      const rlsCtx = await resolveRlsContext(user);
       if (p.block_id) {
         void logLotAuditEvent(supabase, {
           companyId: rlsCtx.tenantId,
