@@ -29,10 +29,13 @@ function testSuccessfulSaleRequiresPersistedContract() {
   assert(gis.includes('insertContractForSale'), 'INSERT de contrato da venda');
   assert(gis.includes('persistSaleContractLink'), 'grava sales.contract_id');
   assert(gis.includes('.update({ contract_id: contractId })'), 'sales.contract_id explícito');
-  assert(gis.includes("status: 'Vendido'"), 'marca lote vendido');
   assert(
-    gis.indexOf("logSaleStep('generate_contract'") < gis.indexOf("logSaleStep('update_lot_status'"),
-    'contrato persistido antes de concluir o lote',
+    read('supabase/migrations/20261107133000_sale_financial_core.sql').includes("status = 'Vendido'"),
+    'marca lote vendido',
+  );
+  assert(
+    gis.indexOf("logSaleStep('update_lot_status'") < gis.indexOf("logSaleStep('generate_contract'"),
+    'núcleo financeiro confirma o lote antes do contrato',
   );
   assert(gis.includes('contract_id: contractId'), 'lote recebe o contrato da venda nova');
   assert(!gis.includes('from(\'contracts\').update'), 'GIS não atualiza contrato existente');
@@ -44,8 +47,8 @@ function testSuccessfulSaleRequiresPersistedContract() {
 
   const map = read('components/map/GISMap.tsx');
   assert(
-    map.includes(SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE),
-    'operador vê erro visível no GIS',
+    map.includes('O lote não foi liberado'),
+    'operador vê que o lote vendido não foi liberado',
   );
   console.log('OK testSuccessfulSaleRequiresPersistedContract');
 }
@@ -57,21 +60,10 @@ function testContractFailureRollsBackSaleAndLot() {
     'falha de contrato não vira warning',
   );
   assert(!gis.includes('Contrato não criado:'), 'insert falho não vira warning');
-  assert(gis.includes('throw new Error(`${SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE}'), 'erro visível');
-  assert(gis.includes('rollbackPartialSale'), 'rollback compensatório');
-  const rollback = gis.slice(
-    gis.indexOf('async function rollbackPartialSale'),
-    gis.indexOf('export async function executeGisSaleCreate'),
-  );
-  assert(
-    rollback.indexOf(".from('contracts').delete().eq('sale_id', params.saleId)") <
-      rollback.indexOf(".from('sales').delete().eq('id', params.saleId)"),
-    'apaga contrato da venda nova antes da sale',
-  );
-  assert(rollback.includes("status: 'Disponível'"), 'lote volta a Disponível');
-  assert(rollback.includes('sale_id: null'), 'limpa blocks.sale_id');
-  assert(rollback.includes('contract_id: null'), 'limpa blocks.contract_id');
-  assert(!rollback.includes(".eq('block_id'"), 'rollback não apaga contrato de outra venda pelo lote');
+  assert(gis.includes('SALE_CONTRACT_PENDING_MESSAGE'), 'erro visível');
+  assert(!gis.includes('rollbackPartialSale'), 'falha do contrato não apaga a venda');
+  assert(gis.includes('lotReleased: false'), 'lote vendido não é liberado');
+  assert(gis.includes(".eq('sale_id', saleId)"), 'vínculo do contrato exige a venda desta operação');
 
   const route = read('app/api/sales/create/route.ts');
   assert(route.includes('status: 500'), 'API devolve erro, não 200 com warning');

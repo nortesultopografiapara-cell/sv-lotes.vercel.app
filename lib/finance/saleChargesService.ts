@@ -4,6 +4,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  isMissingScheduleGroupColumn,
+  mergeScheduleGroups,
+} from '@/lib/finance/recantoReceiptSchedule';
+import {
   createCompanyInstallmentCharge,
   CompanyAsaasChargePaidError,
   CompanyAsaasCustomerDocumentMissingError,
@@ -76,7 +80,18 @@ export async function loadSaleScopedInstallments(
     .order('installment_number', { ascending: true });
 
   if (error) throw new Error(error.message);
-  return (data || []) as SaleChargeInstallmentRow[];
+  const rows = (data || []) as SaleChargeInstallmentRow[];
+  const grouped = await admin
+    .from('finance_receipts')
+    .select('id, schedule_group')
+    .eq('sale_id', saleId)
+    .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`);
+  if (isMissingScheduleGroupColumn(grouped.error)) return rows;
+  if (grouped.error) throw new Error(grouped.error.message);
+  return mergeScheduleGroups(
+    rows,
+    (grouped.data || []) as unknown as Array<{ id: string; schedule_group: string | null }>,
+  );
 }
 
 export async function loadSaleContext(

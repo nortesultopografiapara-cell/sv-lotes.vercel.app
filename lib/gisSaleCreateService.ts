@@ -1,6 +1,6 @@
 /**
  * Criação de venda pelo GIS — core transacional com logs [sales/create].
- * A venda só é concluída depois do contrato persistido. Falha no contrato reverte a venda.
+ * O núcleo financeiro é uma transação. Falha posterior do contrato não libera o lote.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -11,6 +11,7 @@ import {
 } from '@/lib/contractGenerationGuard';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
+import { type SaleInitialReceipt } from '@/lib/finance/saleInitialReceiptCash';
 import {
   BALLOON_MIGRATION_REQUIRED_MESSAGE,
   resolveSaleBalloonPlan,
@@ -56,6 +57,23 @@ import {
   shouldCreatePendingCommissionFromPlan,
 } from '@/lib/brokerCommissionMode';
 import { SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE } from '@/lib/saleHistoricalContract';
+import {
+  invokeSaleFinancialCore,
+  resolveContractRetry,
+  SALE_CONTRACT_PENDING_MESSAGE,
+  type CoreContractRow,
+} from '@/lib/finance/saleFinancialCore';
+import {
+  clientRequestedSeparateSignal,
+  rejectUnpersistedSeparateSignalRequest,
+} from '@/lib/recantoSeparateSignalPersistence';
+import { isRecantoSeparateSignalAllowed } from '@/lib/recantoSeparateSignalRuntime';
+import {
+  buildRecantoSeparateSaleCreate,
+  requireCompleteSeparateReceipts,
+  separateSignalReceiptRows,
+  type SeparateSaleCreateDraft,
+} from '@/lib/recantoSeparateSignalSaleCreate';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -80,7 +98,9 @@ export type GisSaleCreateInput = {
   brokerId: string | null;
   tenantContractModel?: string | null;
   isSuperAdmin?: boolean;
+  callerTenantId?: string | null;
   financialAccountId?: string | null;
+  saleRequestKey?: string | null;
 };
 
 export type GisSaleCreateResult = {
@@ -142,7 +162,7 @@ async function insertRowWithColumnFallback(
       .single();
 
     if (!error && data) {
-      return { data: data as Record<string, unknown>, error: null };
+      return { data: data as unknown as Record<string, unknown>, error: null };
     }
 
     const missingCol = parseMissingColumn(error?.message);
@@ -161,8 +181,8 @@ async function insertRowWithColumnFallback(
 /**
  * Insert em lote com o mesmo fallback de coluna ausente do insert unitário.
  * Usado para finance_receipts (160–300 parcelas) — evita N round-trips e gravação parcial
- * no meio do cronograma. Sem RPC/transação nova: ainda depende de rollbackPartialSale
- * no catch externo se a operação falhar após a venda já criada.
+ * no meio do cronograma. A criação da venda grava venda, recebíveis, caixa e lote
+ * juntos em create_sale_financial_core.
  *
  * @returns operations = quantidade de chamadas .insert() (1 para até chunkSize rows).
  */
@@ -171,7 +191,7 @@ export async function insertRowsWithColumnFallback(
   table: string,
   payloads: Record<string, unknown>[],
   select = 'id',
-  options?: { chunkSize?: number },
+  options?: { chunkSize?: number; preserveColumns?: readonly string[] },
 ): Promise<{
   data: Record<string, unknown>[];
   error: { message?: string } | null;
@@ -213,6 +233,13 @@ export async function insertRowsWithColumnFallback(
       }
 
       const missingCol = parseMissingColumn(error?.message);
+      if (missingCol && options?.preserveColumns?.includes(missingCol)) {
+        return {
+          data: allInserted,
+          error: { message: `A coluna ${missingCol} é obrigatória para o sinal separado.` },
+          operations,
+        };
+      }
       if (missingCol && attemptKeys.includes(missingCol)) {
         attemptKeys = attemptKeys.filter((k) => k !== missingCol);
         continue;
@@ -348,7 +375,7 @@ async function insertContractForSale(
       .single();
 
     if (!error && data) {
-      return { data: data as Record<string, unknown>, error: null };
+      return { data: data as unknown as Record<string, unknown>, error: null };
     }
 
     lastError = error;
@@ -370,36 +397,26 @@ async function insertContractForSale(
   return { data: null, error: lastError };
 }
 
-async function rollbackPartialSale(
-  supabase: SupabaseClient,
-  params: {
-    saleId?: string | null;
-    contractId?: string | null;
-    lotId: string;
-  },
-) {
-  if (params.saleId) {
-    await supabase.from('sale_balloon_installments').delete().eq('sale_id', params.saleId);
-    await supabase.from('finance_receipts').delete().eq('sale_id', params.saleId);
-    await supabase.from('broker_commissions').delete().eq('sale_id', params.saleId);
-    await supabase.from('contracts').delete().eq('sale_id', params.saleId);
-  }
-  if (params.contractId) {
-    await supabase.from('contracts').delete().eq('id', params.contractId);
-  }
-  if (params.saleId) {
-    await supabase.from('sales').delete().eq('id', params.saleId);
-  }
-  await supabase
-    .from('blocks')
-    .update({
-      status: 'Disponível',
-      customer_id: null,
-      sale_id: null,
-      contract_id: null,
-      broker_id: null,
-    })
-    .eq('id', params.lotId);
+function rememberInitialReceipts(
+  rows: Array<Record<string, unknown>>,
+  tenantId: string,
+  saleId: string,
+): SaleInitialReceipt[] {
+  return rows.map((row) => ({
+    id: String(row.id || ''),
+    tenantId: String(row.tenant_id || tenantId),
+    companyId: String(row.company_id || tenantId),
+    saleId: String(row.sale_id || saleId),
+    amount: Number(row.amount) || 0,
+    paidAmount: row.paid_amount == null || String(row.paid_amount).trim() === ''
+      ? null
+      : Number(row.paid_amount),
+    status: row.status == null ? null : String(row.status),
+    installmentNumber: row.installment_number as number | string | null,
+    scheduleGroup: row.schedule_group == null ? null : String(row.schedule_group),
+    projectId: row.project_id == null ? null : String(row.project_id),
+    customerId: row.customer_id == null ? null : String(row.customer_id),
+  }));
 }
 
 export async function executeGisSaleCreate(
@@ -410,10 +427,16 @@ export async function executeGisSaleCreate(
   const warnings: string[] = [];
   let saleId: string | null = null;
   let contractId: string | null = null;
+  let persistedContractNumber: string | null = null;
+  let initialReceipts: SaleInitialReceipt[] = [];
 
   logSaleStep('validate_payload', startedAt);
 
   const { tenantId, projectId, lot, finalPrice, customerData, brokerId } = input;
+  rejectUnpersistedSeparateSignalRequest(customerData, process.env, {
+    companyId: tenantId,
+    projectId,
+  });
   const lotId = lot.id;
 
   const { data: blockRow, error: blockLoadErr } = await supabase
@@ -434,6 +457,17 @@ export async function executeGisSaleCreate(
     throw new Error('Este lote já possui venda registrada.');
   }
 
+  if (clientRequestedSeparateSignal(customerData)) {
+    const callerTenant = String(input.callerTenantId || '').trim();
+    const lotTenant = String(blockRow.tenant_id || '').trim();
+    if (input.isSuperAdmin !== true && callerTenant !== tenantId) {
+      throw new Error('A confirmação pertence a outra empresa.');
+    }
+    if (lotTenant !== tenantId) {
+      throw new Error('A confirmação pertence a outra empresa.');
+    }
+  }
+
   logSaleStep('upsert_customer', startedAt);
   const { customerId, clientId } = await resolveOrCreateCustomer(supabase, {
     form: customerData,
@@ -442,6 +476,7 @@ export async function executeGisSaleCreate(
     isSuperAdmin: input.isSuperAdmin === true,
     lotTenantId: lot.tenant_id,
     changedBy: input.userId,
+    requireOwnedCustomer: clientRequestedSeparateSignal(customerData),
   });
 
   const projDataSnapshot = await loadProjectSnapshotForSale(supabase, projectId);
@@ -656,19 +691,64 @@ export async function executeGisSaleCreate(
       : {}),
   };
 
+  const separateDraft: SeparateSaleCreateDraft | null =
+    clientRequestedSeparateSignal(customerData) && isRecantoSeparateSignalAllowed(tenantId, projectId)
+      ? buildRecantoSeparateSaleCreate(customerData, {
+          tenantId,
+          customerId,
+          projectId,
+          blockId: lotId,
+          financialAccountId,
+          brokerId,
+          lotPrice: Number(customerData.final_value || finalPrice),
+          contractModel: saleContractModel,
+        })
+      : null;
+  if (separateDraft && balloonPlan.enabled) {
+    throw new Error('Parcelas balão não podem ser usadas com o sinal separado.');
+  }
+  if (separateDraft) {
+    Object.assign(salePayload, separateDraft.saleFields);
+    salePayload.separate_signal_request_key = input.saleRequestKey;
+  }
+
+  const receiptPayloads: Array<Record<string, unknown>> = separateDraft
+    ? separateSignalReceiptRows(separateDraft, {
+        saleId: '00000000-0000-0000-0000-000000000000',
+        tenantId,
+        customerId,
+        projectId,
+        blockId: lotId,
+        brokerId,
+        financialAccountId,
+      })
+    : buildSaleEditFinancePayloads(
+        tenantId,
+        '00000000-0000-0000-0000-000000000000',
+        customerId,
+        brokerId,
+        { id: lotId, project_id: lot.project_id || projectId },
+        customerData,
+        { contractModel: saleContractModel, cashInstallmentPaid: false, financialAccountId },
+      );
+  if (separateDraft) {
+    requireCompleteSeparateReceipts(separateDraft.plan.receipts.length, receiptPayloads.length);
+  }
+
   logSaleStep('create_sale', startedAt);
   try {
-    const { data: saleData, error: saleError } = await insertRowWithColumnFallback(
-      supabase,
-      'sales',
-      salePayload,
-      'id',
-    );
-
-    if (saleError || !saleData?.id) {
-      throw new Error(saleError?.message || 'Falha ao criar venda');
-    }
-    saleId = saleData.id as string;
+    logSaleStep('create_receipts', startedAt, { count: receiptPayloads.length });
+    logSaleStep('create_receipts_batch', startedAt, { count: receiptPayloads.length });
+    const financialCore = await invokeSaleFinancialCore(supabase, {
+      sale: salePayload,
+      receipts: receiptPayloads,
+      requestKey: String(input.saleRequestKey || ''),
+      userId: input.userId,
+    });
+    saleId = financialCore.saleId;
+    initialReceipts = rememberInitialReceipts(financialCore.receipts, tenantId, saleId);
+    if (financialCore.contractId) contractId = financialCore.contractId;
+    logSaleStep('update_lot_status', startedAt, { saleId, replayed: financialCore.replayed });
 
     if (
       customerData.update_spouse_registry === true &&
@@ -687,48 +767,6 @@ export async function executeGisSaleCreate(
       if (!registryResult.ok && registryResult.error) {
         warnings.push(
           `Cônjuge salvo na venda; cadastro reutilizável não atualizado: ${registryResult.error}`,
-        );
-      }
-    }
-
-    const contractModel = saleContractModel;
-
-    const financePayloads = buildSaleEditFinancePayloads(
-      tenantId,
-      saleId,
-      customerId,
-      brokerId,
-      { id: lotId, project_id: lot.project_id || projectId },
-      customerData,
-      { contractModel, cashInstallmentPaid: false, financialAccountId },
-    );
-
-    logSaleStep('create_receipts', startedAt, { count: financePayloads.length });
-    if (financePayloads.length > 0) {
-      const payloadBytes = estimateFinanceReceiptsPayloadBytes(financePayloads);
-      logSaleStep('create_receipts_batch', startedAt, {
-        count: financePayloads.length,
-        approxBytes: payloadBytes,
-      });
-      const {
-        data: insertedReceipts,
-        error: financeError,
-        operations,
-      } = await insertRowsWithColumnFallback(
-        supabase,
-        'finance_receipts',
-        financePayloads,
-        'id, amount, due_date, status, installment_number',
-      );
-      logSaleStep('create_receipts_done', startedAt, {
-        inserted: insertedReceipts.length,
-        operations,
-        approxBytes: payloadBytes,
-      });
-      if (financeError || insertedReceipts.length !== financePayloads.length) {
-        throw new Error(
-          financeError?.message ||
-            `Falha ao criar parcelas (inseridas ${insertedReceipts.length}/${financePayloads.length}).`,
         );
       }
     }
@@ -801,7 +839,34 @@ export async function executeGisSaleCreate(
 
     logSaleStep('generate_contract', startedAt);
     try {
-      await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
+      if (!contractId && saleId) {
+        const { data: existingContracts, error: existingContractError } = await supabase
+          .from('contracts')
+          .select('id, sale_id, tenant_id, is_current, contract_number')
+          .eq('sale_id', saleId)
+          .eq('tenant_id', tenantId);
+        if (existingContractError) {
+          throw new Error(existingContractError.message || 'Falha ao localizar o contrato da venda.');
+        }
+        const decision = resolveContractRetry(
+          saleId,
+          tenantId,
+          ((existingContracts || []) as Array<Record<string, unknown>>).map((row) => ({
+            id: String(row.id || ''),
+            saleId: String(row.sale_id || ''),
+            tenantId: String(row.tenant_id || ''),
+            current: row.is_current !== false,
+          } satisfies CoreContractRow)),
+        );
+        if (decision.action === 'reuse' && decision.contractId) {
+          contractId = decision.contractId;
+          const reused = (existingContracts || []).find((row) => String((row as { id?: string }).id) === contractId);
+          persistedContractNumber = reused
+            ? String((reused as { contract_number?: string }).contract_number || '') || null
+            : null;
+        }
+      }
+      if (!contractId) await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
         const contractNumber = await getNextContractNumber(
           supabase,
           tenantId,
@@ -914,6 +979,7 @@ export async function executeGisSaleCreate(
         }
 
         contractId = String(insertedContract.id || '').trim();
+        persistedContractNumber = String(insertedContract.contract_number || contractNumber).trim() || null;
         if (!contractId) {
           throw new Error('Contrato persistido sem identificador.');
         }
@@ -938,28 +1004,24 @@ export async function executeGisSaleCreate(
     } catch (contractErr: unknown) {
       const msg =
         contractErr instanceof Error ? contractErr.message : String(contractErr);
-      throw new Error(`${SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE} ${msg}`);
+      throw new Error(`${saleId ? SALE_CONTRACT_PENDING_MESSAGE : SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE} ${msg}`);
     }
 
-    if (!contractId) {
-      throw new Error(SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE);
+    if (!contractId || !saleId) {
+      throw new Error(saleId ? SALE_CONTRACT_PENDING_MESSAGE : SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE);
     }
 
-    logSaleStep('update_lot_status', startedAt, { saleId, contractId });
-    const { error: blockUpdErr } = await supabase
+    await persistSaleContractLink(supabase, saleId, contractId);
+
+    const { data: linkedLot, error: blockUpdErr } = await supabase
       .from('blocks')
-      .update({
-        status: 'Vendido',
-        price: finalPrice,
-        customer_id: customerId,
-        sale_id: saleId,
-        contract_id: contractId,
-        broker_id: brokerId,
-      })
-      .eq('id', lotId);
+      .update({ contract_id: contractId })
+      .eq('id', lotId)
+      .eq('sale_id', saleId)
+      .select('id');
 
-    if (blockUpdErr) {
-      throw new Error(blockUpdErr.message || 'Falha ao marcar lote como vendido');
+    if (blockUpdErr || !linkedLot?.length) {
+      throw new Error(blockUpdErr?.message || SALE_CONTRACT_PENDING_MESSAGE);
     }
 
     if (saleId && contractId) {
@@ -993,11 +1055,10 @@ export async function executeGisSaleCreate(
       warnings,
     };
   } catch (err) {
-    logSaleStep('response', startedAt, { rollback: true, error: String(err) });
-    await rollbackPartialSale(supabase, {
-      saleId,
-      contractId,
-      lotId,
+    logSaleStep('response', startedAt, {
+      financialCoreCommitted: Boolean(saleId),
+      lotReleased: false,
+      error: String(err),
     });
     throw err;
   }

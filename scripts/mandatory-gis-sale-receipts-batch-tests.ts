@@ -159,7 +159,7 @@ function testSourceUsesBatchNotLoop() {
     !src.includes('for (const financePayload of financePayloads)'),
     'loop 1-a-1 removido',
   );
-  assert(src.includes('rollbackPartialSale'), 'rollback compensatório mantido');
+  assert(src.includes('create_sale_financial_core'), 'gravação financeira única');
   // Importação já usava array — alinhamento intencional
   const importSrc = fs.readFileSync(
     'lib/imports/modules/sales/executeSaleRow.ts',
@@ -234,8 +234,8 @@ async function testChunkPartialThenFailDocumentsRisk() {
   assert(Boolean(result.error), '2º chunk falhou');
   assert(result.data.length === 5, 'parcial: 5 do 1º chunk (limitação conhecida)');
   assert(
-    fs.readFileSync('lib/gisSaleCreateService.ts', 'utf8').includes('rollbackPartialSale'),
-    'rollback ainda cobre o caso',
+    fs.readFileSync('lib/gisSaleCreateService.ts', 'utf8').includes('create_sale_financial_core'),
+    'a venda não grava parcelas fora da transação',
   );
   console.log(
     'OK testChunkPartialThenFailDocumentsRisk — default não usa chunks; se chunked, parcial até rollback',

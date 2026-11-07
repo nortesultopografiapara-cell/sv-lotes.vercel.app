@@ -6,6 +6,7 @@ import {
 } from './companyAsaasChargeRepository';
 import type { CompanyAsaasChargeResponse } from './companyAsaasChargeTypes';
 import { buildCashMovementEntradaPayload } from './cashMovementsSchema';
+import { assertSettlementTargetsReceipt } from '@/lib/finance/recantoReceiptSchedule';
 
 export const COMPANY_ASAAS_PAID_WEBHOOK_EVENTS = [
   'PAYMENT_RECEIVED',
@@ -490,6 +491,7 @@ async function reconcilePaidCompanyAsaasChargeRecord(
       `Parcela vinculada não encontrada para baixa automática (installment_id=${installmentId}).`,
     );
   }
+  assertSettlementTargetsReceipt(installmentId, receipt.id);
 
   const receiptAlreadyPaid = isReceiptPaidStatus(receipt.status);
 

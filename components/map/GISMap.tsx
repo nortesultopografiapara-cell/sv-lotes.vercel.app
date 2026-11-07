@@ -31,6 +31,11 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
+  clearSaleRequestKey,
+  loadSaleRequestKey,
+  persistSaleRequestKey,
+} from "@/lib/finance/saleFinancialCore";
+import {
   BLOCKS_GIS_SELECT,
   fetchAllBlocksForProject,
 } from "@/lib/blocksFetchAll";
@@ -3113,6 +3118,7 @@ export default function GISMap({
     currentSource?: import('@/lib/confrontantTypes').ConfrontantSource | null;
   } | null>(null);
   const pendingLotPricesRef = useRef<Map<string, number | null>>(new Map());
+  const saleRequestKeyRef = useRef<Map<string, string>>(new Map());
   const streetGuidesRef = useRef(streetGuides);
   streetGuidesRef.current = streetGuides;
   const [customerContractValidation, setCustomerContractValidation] =
@@ -4084,6 +4090,29 @@ export default function GISMap({
     mode?: "create" | "edit";
     editContext?: SaleEditLoadedContext;
   } | null>(null);
+  const [separateSignalServer, setSeparateSignalServer] = useState({
+    formEnabled: false,
+    writeEnabled: false,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (user?.tenant_id) params.set('companyId', user.tenant_id);
+    if (projectId) params.set('projectId', projectId);
+    fetch(`/api/recanto-separate-signal/status?${params.toString()}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (cancelled || !body || typeof body !== 'object') return;
+        setSeparateSignalServer({
+          formEnabled: body.formEnabled === true,
+          writeEnabled: body.writeEnabled === true,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, user?.tenant_id]);
   const [brokersList, setBrokersList] = useState<
     {
       id: string;
@@ -5116,6 +5145,13 @@ export default function GISMap({
       if (isVendidoStatus(newStatus)) {
         const wasReserved = isLotReservedStatus(lot.status);
         console.log("[sales/create] client_start", { lotId: lot.id });
+        const lotKey = String(lot.id);
+        const saleRequestStores = [window.sessionStorage, window.localStorage];
+        let saleRequestKey = saleRequestKeyRef.current.get(lotKey)
+          || loadSaleRequestKey(saleRequestStores, finalTenantId, lotKey);
+        if (!saleRequestKey) saleRequestKey = crypto.randomUUID();
+        saleRequestKey = persistSaleRequestKey(saleRequestStores, finalTenantId, lotKey, saleRequestKey);
+        saleRequestKeyRef.current.set(lotKey, saleRequestKey);
         const { ok, data, error } = await fetchJsonWithTimeout<{
           success?: boolean;
           saleId?: string;
@@ -5148,6 +5184,7 @@ export default function GISMap({
               brokerId: finalBrokerId,
               tenantContractModel,
               financialAccountId: customerData.financial_account_id || null,
+              saleRequestKey,
             }),
           },
           SALES_CREATE_FETCH_TIMEOUT_MS,
@@ -5160,9 +5197,11 @@ export default function GISMap({
         }
         if (!String(data.contractId || "").trim()) {
           throw new Error(
-            "Não foi possível concluir a venda: o contrato não foi gerado. O lote permanece disponível.",
+            "A venda e o lote já foram confirmados, mas o contrato não foi gerado. Repita a mesma operação para concluir o contrato. O lote não foi liberado.",
           );
         }
+        clearSaleRequestKey([window.sessionStorage, window.localStorage], finalTenantId, lotKey);
+        saleRequestKeyRef.current.delete(lotKey);
 
         if (wasReserved) {
           void logLotAuditEvent(supabase, {
@@ -6274,6 +6313,8 @@ export default function GISMap({
           }
           brokers={brokersList}
           contractModel={tenantContractModel}
+          separateSignalEnabled={separateSignalServer.formEnabled}
+          separateSignalWriteEnabled={separateSignalServer.writeEnabled}
           onClose={() => setCustomerForm(null)}
           onCustomerValidationFailed={setCustomerContractValidation}
           onConfirm={async (data) => {

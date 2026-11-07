@@ -51,9 +51,17 @@ import {
 import {
   applySignalAddonToInstallmentAmounts,
   resolveRecantoSignalPlan,
-  validateRecantoSignalPlan,
   type SignalRemainingPaymentMode,
 } from '@/lib/recantoSignalRemaining';
+import {
+  buildRecantoSeparateSignalPreview,
+  describeCentsInstallments,
+  validateRecantoSaleSignalOnSubmit,
+  RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING,
+  RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL,
+  type RecantoSeparateSignalPreview,
+} from '@/lib/recantoSeparateSignalForm';
+import type { RecantoLotStartMode } from '@/lib/recantoBrokerageInstallments';
 import {
   formatRecantoLotInstallmentPreview,
   normalizeRecantoInstallmentDefinitionMode,
@@ -142,6 +150,11 @@ export type LotFormState = CustomerFormValues &
   signal_remaining_payment_mode?: SignalRemainingPaymentMode | '';
   /** Recanto: qtd de parcelas para o restante (primeiras parcelas). */
   signal_remaining_installments?: string;
+  signal_schedule_mode?: 'SEPARATE' | '';
+  signal_installment_count?: string;
+  signal_first_due_date?: string;
+  lot_schedule_start_mode?: string;
+  hold_lot_charges_until_signal_settled?: boolean;
   /** Recanto: BY_COUNT | FIXED_AMOUNT */
   installment_definition_mode?: string;
   /** Recanto FIXED_AMOUNT: valor fixo da parcela regular (string currency). */
@@ -233,6 +246,13 @@ type Props = {
     commission_fixed_amount?: number | string | null;
   }[];
   contractModel?: SaleContractModel | string | null;
+  /**
+   * Liga a opção de parcelar o sinal fora das parcelas do lote.
+   * Omitido, permanece desligada. Só tem efeito em RECANTO_PRIMAVERA.
+   */
+  separateSignalEnabled?: boolean;
+  /** Liberação vinda do servidor. O padrão false impede o cliente de confirmar. */
+  separateSignalWriteEnabled?: boolean;
   /** Venda existente — necessário para a aba Documentos. */
   saleId?: string | null;
   onClose: () => void;
@@ -252,6 +272,8 @@ export function CustomerLotFormModal({
   initialFormData,
   brokers = [],
   contractModel = 'PADRAO',
+  separateSignalEnabled,
+  separateSignalWriteEnabled = false,
   saleId = null,
   onClose,
   onConfirm,
@@ -284,6 +306,11 @@ export function CustomerLotFormModal({
     ...initialFormData,
   }));
   const [submitting, setSubmitting] = useState(false);
+  const [separateSignalSelected, setSeparateSignalSelected] = useState(false);
+  const [separateSignalInstallmentCount, setSeparateSignalInstallmentCount] = useState('');
+  const [separateSignalFirstDueDate, setSeparateSignalFirstDueDate] = useState('');
+  const [separateLotStartMode, setSeparateLotStartMode] = useState<RecantoLotStartMode>('AFTER_BROKERAGE');
+  const [holdLotChargesUntilSignalSettled, setHoldLotChargesUntilSignalSettled] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [prefillBanner, setPrefillBanner] = useState<string | null>(null);
   const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
@@ -694,9 +721,49 @@ export function CustomerLotFormModal({
     recantoLotPlan && installmentDefinitionMode === 'FIXED_AMOUNT'
       ? formatRecantoLotInstallmentPreview(recantoLotPlan)
       : null;
+  const separateSignalPreview = useMemo(
+    () => buildRecantoSeparateSignalPreview({
+      contractModel,
+      enabled: separateSignalEnabled,
+      writeEnabled: separateSignalWriteEnabled,
+      selected: separateSignalSelected,
+      installmentSale: paymentMode.isInstallment,
+      lotPrice: finalValue,
+      signalContract: signalContractValue,
+      paidAtAct: signalPaidAtSale,
+      signalInstallmentCount: Number(separateSignalInstallmentCount) || 0,
+      actDate: formData.down_payment_due_date,
+      signalFirstDueDate: separateSignalFirstDueDate,
+      lotInstallmentCount: installmentsCount,
+      lotStartMode: separateLotStartMode,
+      lotSpecificStartDate: formData.first_installment_due_date,
+      holdLotChargesUntilSignalSettled,
+    }),
+    [
+      contractModel,
+      separateSignalEnabled,
+      separateSignalWriteEnabled,
+      separateSignalSelected,
+      paymentMode.isInstallment,
+      finalValue,
+      signalContractValue,
+      signalPaidAtSale,
+      separateSignalInstallmentCount,
+      formData.down_payment_due_date,
+      separateSignalFirstDueDate,
+      installmentsCount,
+      separateLotStartMode,
+      formData.first_installment_due_date,
+      holdLotChargesUntilSignalSettled,
+    ],
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (separateSignalPreview.confirmBlocked) {
+      alert(separateSignalPreview.confirmBlockMessage);
+      return;
+    }
     let confirmedInstallmentsCount = installmentsCountStr;
     let confirmedInstallmentValue = installmentValue;
 
@@ -784,11 +851,13 @@ export function CustomerLotFormModal({
             alert(lotValidation.message);
             return;
           }
-          const signalValidation = validateRecantoSignalPlan({
+          const signalValidation = validateRecantoSaleSignalOnSubmit({
+            separateActive: separateSignalPreview.active,
+            separateInstallmentCount: Number(separateSignalInstallmentCount) || 0,
             contractValue: signalContractValue,
             paidAtSale: signalPaidAtSale,
-            paymentMode: formData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS',
-            remainingInstallments: formData.signal_remaining_installments
+            embeddedPaymentMode: formData.signal_remaining_payment_mode,
+            embeddedRemainingInstallments: formData.signal_remaining_installments
               ? Number(formData.signal_remaining_installments)
               : null,
             totalInstallments: installmentsResult.value,
@@ -936,6 +1005,17 @@ export function CustomerLotFormModal({
         sale_commission_fixed_amount: String(
           parseCurrencyBRLNumber(formData.sale_commission_fixed_amount) || 0,
         ),
+        ...(separateSignalWriteEnabled && separateSignalPreview.active
+          ? {
+              signal_schedule_mode: 'SEPARATE' as const,
+              signal_installment_count: separateSignalInstallmentCount,
+              signal_first_due_date: separateSignalFirstDueDate,
+              lot_schedule_start_mode: separateLotStartMode,
+              hold_lot_charges_until_signal_settled: holdLotChargesUntilSignalSettled,
+              signal_remaining_payment_mode: '' as const,
+              signal_remaining_installments: '',
+            }
+          : {}),
       });
     } catch (err) {
       console.error('CUSTOMER_LOT_FORM_SUBMIT_ERROR', err);
@@ -1917,7 +1997,34 @@ export function CustomerLotFormModal({
                             className={GIS_INPUT_DATE}
                           />
                         </div>
-                        {(recantoSignalPlan?.remainingValue ?? 0) > 0 ? (
+                        {separateSignalPreview.offered ? (
+                          <label className="md:col-span-2 flex items-start gap-2 text-sm text-gray-800">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={separateSignalSelected}
+                              disabled={submitting || prefillLoading}
+                              onChange={(e) => setSeparateSignalSelected(e.target.checked)}
+                            />
+                            <span>Parcelar sinal separadamente das parcelas do lote.</span>
+                          </label>
+                        ) : null}
+                        {separateSignalPreview.active ? (
+                          <SeparateSignalSchedulePanel
+                            preview={separateSignalPreview}
+                            remainingValue={recantoSignalPlan?.remainingValue ?? 0}
+                            fullyPaid={signalContractValue > 0 && (recantoSignalPlan?.remainingValue ?? 0) === 0}
+                            installmentCount={separateSignalInstallmentCount}
+                            firstDueDate={separateSignalFirstDueDate}
+                            lotStartMode={separateLotStartMode}
+                            holdCharges={holdLotChargesUntilSignalSettled}
+                            disabled={submitting || prefillLoading}
+                            onInstallmentCountChange={setSeparateSignalInstallmentCount}
+                            onFirstDueDateChange={setSeparateSignalFirstDueDate}
+                            onLotStartModeChange={setSeparateLotStartMode}
+                            onHoldChargesChange={setHoldLotChargesUntilSignalSettled}
+                          />
+                        ) : (recantoSignalPlan?.remainingValue ?? 0) > 0 ? (
                           <>
                             <div className="md:col-span-2">
                               <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -2096,7 +2203,7 @@ export function CustomerLotFormModal({
                           ) : null}
                           <p>{recantoPreviewLines?.totalLine}</p>
                           <p>{recantoPreviewLines?.dueDatesLine}</p>
-                          {recantoInstallmentPreview && recantoSignalPlan?.hasRemaining ? (
+                          {recantoInstallmentPreview && recantoSignalPlan?.hasRemaining && !separateSignalPreview.active ? (
                             <>
                               <p className="pt-1 font-semibold text-amber-900">
                                 Com complemento do sinal
@@ -2164,6 +2271,7 @@ export function CustomerLotFormModal({
                         </label>
                       ) : null}
                       {isRecantoSinal &&
+                      !separateSignalPreview.active &&
                       installmentDefinitionMode === 'BY_COUNT' &&
                       recantoInstallmentPreview &&
                       recantoSignalPlan?.hasRemaining ? (
@@ -2448,7 +2556,8 @@ export function CustomerLotFormModal({
           <button
             type="submit"
             form="customer-lot-form"
-            disabled={submitting || prefillLoading}
+            disabled={submitting || prefillLoading || separateSignalPreview.confirmBlocked}
+            title={separateSignalPreview.confirmBlockMessage || undefined}
             className={`${isWorkspaceDesktop ? "w-full sm:w-auto sm:min-w-[180px] px-5 py-2.5 font-bold shadow-sm" : "w-full sm:w-1/2 px-4 py-3 font-semibold"} text-white rounded-lg text-sm flex items-center justify-center gap-2 ${
               actionName === 'Reservado' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'
             } disabled:opacity-50`}
@@ -2475,6 +2584,175 @@ export function CustomerLotFormModal({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SeparateSignalSchedulePanel({
+  preview,
+  remainingValue,
+  fullyPaid,
+  installmentCount,
+  firstDueDate,
+  lotStartMode,
+  holdCharges,
+  disabled,
+  onInstallmentCountChange,
+  onFirstDueDateChange,
+  onLotStartModeChange,
+  onHoldChargesChange,
+}: {
+  preview: RecantoSeparateSignalPreview;
+  remainingValue: number;
+  fullyPaid: boolean;
+  installmentCount: string;
+  firstDueDate: string;
+  lotStartMode: RecantoLotStartMode;
+  holdCharges: boolean;
+  disabled: boolean;
+  onInstallmentCountChange: (value: string) => void;
+  onFirstDueDateChange: (value: string) => void;
+  onLotStartModeChange: (value: RecantoLotStartMode) => void;
+  onHoldChargesChange: (value: boolean) => void;
+}) {
+  const schedule = preview.schedule;
+  const signalInstallments = schedule?.brokerageLines.filter((line) => line.kind === 'INSTALLMENT') ?? [];
+  const paidAtAct = schedule?.brokerageLines.find((line) => line.kind === 'INITIAL_PAYMENT') ?? null;
+  const signalAmounts = signalInstallments.map((line) => line.amountCents);
+  const lotAmounts = schedule?.lotLines.map((line) => line.amountCents) ?? [];
+  const money = (cents: number) => formatCurrencyBRL(cents / 100);
+
+  return (
+    <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+      <p className="text-xs font-semibold text-slate-800">Parcelamento separado do sinal</p>
+      {remainingValue > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              Quantidade de parcelas do sinal
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={installmentCount}
+              disabled={disabled}
+              onChange={(e) => onInstallmentCountChange(e.target.value)}
+              className={GIS_INPUT}
+              placeholder="Ex: 5"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              Primeiro vencimento do sinal
+            </label>
+            <input
+              type="date"
+              value={firstDueDate}
+              disabled={disabled}
+              onChange={(e) => onFirstDueDateChange(e.target.value)}
+              className={GIS_INPUT_DATE}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              Valor de cada parcela do sinal
+            </label>
+            <input
+              readOnly
+              value={signalAmounts.length ? describeCentsInstallments(signalAmounts) : '—'}
+              className={GIS_INPUT_READONLY}
+            />
+          </div>
+        </div>
+      ) : fullyPaid ? (
+        <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+          Sinal pago integralmente no ato. Não há parcelas futuras do sinal.
+        </p>
+      ) : null}
+      <div>
+        <label className="block text-xs font-semibold text-gray-700 mb-1">
+          Início das parcelas do lote
+        </label>
+        <select
+          value={lotStartMode}
+          disabled={disabled}
+          onChange={(e) => onLotStartModeChange(e.target.value as RecantoLotStartMode)}
+          className={GIS_INPUT}
+        >
+          <option value="AFTER_BROKERAGE">Após o cronograma do sinal</option>
+          <option value="SIMULTANEOUS">Simultaneamente ao sinal</option>
+          <option value="SPECIFIC_DATE">Em data específica</option>
+        </select>
+        {lotStartMode === 'SPECIFIC_DATE' ? (
+          <p className="mt-1 text-[11px] text-slate-600">
+            A data específica é o campo Vencimento da 1ª parcela do lote.
+          </p>
+        ) : schedule ? (
+          <p className="mt-1 text-[11px] text-slate-600">
+            Início calculado: {formatContractDueDateBr(schedule.lotFirstDueDate)}
+          </p>
+        ) : null}
+      </div>
+      <label className="flex items-start gap-2 text-[11px] text-slate-700">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={holdCharges}
+          disabled={disabled}
+          onChange={(e) => onHoldChargesChange(e.target.checked)}
+        />
+        <span>Reter a emissão dos boletos do lote até a quitação do sinal.</span>
+      </label>
+      <p className="text-[11px] text-slate-500">
+        Configuração visual. Nesta fase os boletos não são retidos nem emitidos.
+      </p>
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950 space-y-2">
+        <p className="font-semibold">
+          {preview.confirmBlocked
+            ? RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL
+            : RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING}
+        </p>
+        {preview.error ? <p className="text-red-700">{preview.error}</p> : null}
+        {schedule ? (
+          <>
+            <div>
+              <p className="font-semibold">SINAL</p>
+              {paidAtAct ? (
+                <p>
+                  Pagamento no ato: {money(paidAtAct.amountCents)} · {formatContractDueDateBr(paidAtAct.dueDate)}
+                </p>
+              ) : (
+                <p>Pagamento no ato: não informado.</p>
+              )}
+              <p>Parcelas futuras: {describeCentsInstallments(signalAmounts)}</p>
+              {signalInstallments.slice(0, 12).map((line) => (
+                <p key={`sinal-${line.sequence}`}>
+                  Parcela {line.sequence}: {money(line.amountCents)} · {formatContractDueDateBr(line.dueDate)}
+                </p>
+              ))}
+            </div>
+            <div>
+              <p className="font-semibold">LOTE</p>
+              <p>Parcelas sobre o preço do lote: {describeCentsInstallments(lotAmounts)}</p>
+              <p>
+                Início: {formatContractDueDateBr(schedule.lotFirstDueDate)}
+                {schedule.lotLines.length > 1
+                  ? ` · Última: ${formatContractDueDateBr(schedule.lotLines[schedule.lotLines.length - 1].dueDate)}`
+                  : ''}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">TOTAL DA OPERAÇÃO</p>
+              <p>Preço do lote: {money(schedule.lotPriceCents)}</p>
+              <p>Sinal contratado: {money(schedule.brokerageTotalCents)}</p>
+              <p>Total financeiro: {money(schedule.financialTotalCents)}</p>
+            </div>
+          </>
+        ) : null}
+        {preview.confirmBlockMessage ? (
+          <p className="font-semibold">{preview.confirmBlockMessage}</p>
+        ) : null}
       </div>
     </div>
   );

@@ -7,6 +7,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  assertSeparateScheduleReleaseSupported,
+  isMissingScheduleGroupColumn,
+  mergeScheduleGroups,
+} from '@/lib/finance/recantoReceiptSchedule';
+import {
   listOpenInterBankChargeIdsForSale,
   resolveInterChargesForRelease,
 } from '@/lib/banking/inter/interChargeCancelForRelease';
@@ -454,6 +459,7 @@ type ReceiptRow = {
   installment_number?: number | string | null;
   paid_amount?: number | string | null;
   due_date?: string | null;
+  schedule_group?: string | null;
 };
 
 type ChargeRow = {
@@ -778,6 +784,7 @@ async function loadSaleContext(
     );
   }
   const receipts = (receiptRows || []) as ReceiptRow[];
+  assertSeparateScheduleReleaseSupported(await attachReleaseScheduleGroups(admin, saleId, companyId, receipts));
 
   const { data: chargeRows } = await admin
     .from('company_asaas_charges')
@@ -2318,4 +2325,25 @@ export async function executeReleaseLot(
       }
     }
   }
+}
+
+async function attachReleaseScheduleGroups(
+  admin: SupabaseClient,
+  saleId: string,
+  companyId: string,
+  rows: ReceiptRow[],
+): Promise<Array<ReceiptRow & { schedule_group: string | null }>> {
+  const grouped = await admin
+    .from('finance_receipts')
+    .select('id, schedule_group')
+    .eq('sale_id', saleId)
+    .or(tenantOrClause(companyId));
+  if (isMissingScheduleGroupColumn(grouped.error)) {
+    return rows.map((row) => ({ ...row, schedule_group: null }));
+  }
+  if (grouped.error) throw new Error(grouped.error.message);
+  return mergeScheduleGroups(
+    rows,
+    (grouped.data || []) as unknown as Array<{ id: string; schedule_group: string | null }>,
+  );
 }

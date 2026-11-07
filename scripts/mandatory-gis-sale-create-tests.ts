@@ -24,9 +24,9 @@ function testGisSaleCreateServiceFlow() {
   assert(service.includes("logSaleStep('update_lot_status'"), 'log update_lot_status');
   assert(service.includes("logSaleStep('generate_contract'"), 'log generate_contract');
   assert(
-    service.indexOf("logSaleStep('generate_contract'") <
-      service.indexOf("logSaleStep('update_lot_status'"),
-    'generate_contract antes de marcar lote vendido',
+    service.indexOf("logSaleStep('update_lot_status'") <
+      service.indexOf("logSaleStep('generate_contract'"),
+    'lote confirmado na transação antes do contrato',
   );
   assert(
     service.includes('SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE'),
@@ -38,7 +38,8 @@ function testGisSaleCreateServiceFlow() {
   );
   assert(service.includes('persistSaleContractLink'), 'grava sales.contract_id');
   assert(service.includes('CONTRACT_GENERATION_TIMEOUT_MS'), 'timeout no contrato');
-  assert(service.includes('rollbackPartialSale'), 'rollback em falha parcial');
+  assert(service.includes('invokeSaleFinancialCore'), 'núcleo financeiro transacional');
+  assert(!service.includes('rollbackPartialSale'), 'sem compensação que libera o lote');
   assert(service.includes('insertRowsWithColumnFallback'), 'parcelas em lote');
   assert(
     !service.includes('for (const financePayload of financePayloads)'),

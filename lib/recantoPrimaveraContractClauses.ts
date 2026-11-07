@@ -33,6 +33,10 @@ export const RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES = [
   'tiveram acesso integral ao conteúdo deste instrumento antes da assinatura',
 ] as const;
 
+/** Parágrafo Segundo da cláusula de pagamento. Não recebe banco, agência, conta ou favorecido. */
+export const RECANTO_PRIMAVERA_BOLETO_PARAGRAPH =
+  'Os pagamentos das parcelas deverão ser realizados exclusivamente por meio de boleto bancário, disponibilizado pelo(a) VENDEDOR(A) ou por instituição financeira por ele(a) indicada, observados os respectivos valores e vencimentos estabelecidos neste contrato.';
+
 /** Frases literais mínimas do DOCX — usadas em testes de não-resumo. */
 export const RECANTO_PRIMAVERA_LITERAL_PHRASES = [
   'sob as penas da lei civil e criminal',
@@ -113,7 +117,9 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       ctx.balloonSummary?.hasBalloon,
   );
 
-  const saldoLine = hasBalloon
+  const saldoLine = ctx.separateSignalSchedule
+    ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas do lote, em cronograma separado do SINAL`
+    : hasBalloon
     ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt}), com parcelas balão discriminadas no Quadro Financeiro`
     : ctx.hasResidualInstallment
       ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaBaseFmt} e uma parcela final de ajuste de ${ctx.valorResidualFmt}`
@@ -130,7 +136,7 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       : ctx.valorSinalFmt;
 
   // Com balão: quadro executivo compacto (sem listagem de parcelas / quadro de composição).
-  if (hasBalloon && ctx.balloonSummary) {
+  if (hasBalloon && ctx.balloonSummary && !ctx.separateSignalSchedule) {
     return `
     <div class="contract-payment-block">
       <table style="width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt;">
@@ -184,9 +190,7 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
 }
 
 function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
-  const bankDetail = ctx.bankBoletoText
-    ? `, mediante pagamento na conta bancária indicada pelo(a) VENDEDOR(A): ${ctx.bankBoletoText}`
-    : ', mediante pagamento na conta bancária indicada pelo(a) VENDEDOR(A)';
+  const boletoParagraph = `<strong>Parágrafo Segundo:</strong> ${RECANTO_PRIMAVERA_BOLETO_PARAGRAPH}`;
 
   const remainingDueIntro = ctx.hasLotSwapFinance
     ? 'O vencimento das parcelas do saldo remanescente ocorrerá mensalmente'
@@ -195,8 +199,9 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
     ? 'com início da primeira parcela do saldo remanescente em'
     : 'com início em';
   /** Nunca afirma valor único “cada” — parcelas podem variar por complemento do sinal e centavos. */
-  const dueText =
-    ctx.hasLotSwapFinance && ctx.qtdParcelas <= 0
+  const dueText = ctx.separateSignalSchedule
+    ? 'Os vencimentos de cada parcela do SINAL e de cada parcela do lote são os constantes nos cronogramas próprios deste contrato. O SINAL não reduz o preço do lote.'
+    : ctx.hasLotSwapFinance && ctx.qtdParcelas <= 0
       ? 'Não restam parcelas do saldo remanescente neste instrumento.'
       : ctx.dueDay && ctx.dataPrimeiraParcelaFmt
         ? `${remainingDueIntro}, todo dia <strong>${ctx.dueDay}</strong>, ${remainingFirstDue} <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
@@ -216,7 +221,7 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
       <p style="margin-bottom: 10px;">
         A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
       </p>
-      <p style="margin-bottom: 10px;"><strong>Parágrafo Segundo:</strong> Os pagamentos deverão ser realizados exclusivamente por <strong>boleto bancário</strong>${bankDetail}.</p>
+      <p style="margin-bottom: 10px;">${boletoParagraph}</p>
       <p style="margin-bottom: 10px;"><strong>Parágrafo Quarto:</strong> A falta de recebimento do boleto bancário não isenta o(a) COMPRADOR(A) do pagamento na data do vencimento, devendo este solicitar nova via ao(à) VENDEDOR(A). O(A) COMPRADOR(A) compromete-se a comunicar ao(à) VENDEDOR(A) qualquer alteração de endereço, e-mail e telefone no prazo máximo de 10 (dez) dias.</p>
     </div>`;
   }
@@ -227,7 +232,7 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA TERCEIRA – DO PREÇO E FORMA DE PAGAMENTO:</strong> O preço total da chácara é de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''}, a ser pago à vista pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A).
       </p>
-      <p style="margin-bottom: 10px;"><strong>Parágrafo Segundo:</strong> Os pagamentos deverão ser realizados exclusivamente por <strong>boleto bancário</strong>${bankDetail}.</p>
+      <p style="margin-bottom: 10px;">${boletoParagraph}</p>
       <p style="margin-bottom: 10px;"><strong>Parágrafo Quarto:</strong> A falta de recebimento do boleto bancário não isenta o(a) COMPRADOR(A) do pagamento na data do vencimento, devendo este solicitar nova via ao(à) VENDEDOR(A). O(A) COMPRADOR(A) compromete-se a comunicar ao(à) VENDEDOR(A) qualquer alteração de endereço, e-mail e telefone no prazo máximo de 10 (dez) dias.</p>
     </div>`;
   }
@@ -260,7 +265,7 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
         }
       </p>
       <p style="margin-bottom: 10px;">
-        <strong>Parágrafo Segundo:</strong> Os pagamentos das parcelas deverão ser realizados exclusivamente por <strong>boleto bancário</strong>${bankDetail}.
+        ${boletoParagraph}
       </p>
       <p style="margin-bottom: 10px;">
         <strong>Parágrafo Terceiro:</strong> ${dueText}
