@@ -63,6 +63,10 @@ const productionEnv = {
   NEXT_PUBLIC_SUPABASE_URL: 'https://aezktedncttwpqeunjej.supabase.co',
 };
 
+const productionOff = {
+  NEXT_PUBLIC_SUPABASE_URL: 'https://aezktedncttwpqeunjej.supabase.co',
+};
+
 const context: SeparateSaleCreateContext = {
   tenantId: 'develop-ficticio-recanto-sinal',
   customerId: 'cliente-ficticio-sinal-b',
@@ -111,31 +115,41 @@ assert(RECANTO_SEPARATE_SIGNAL_SCHEMA_APPLIED === false, 'constante de schema');
 assert(RECANTO_SEPARATE_SIGNAL_PERSIST_ENABLED === false, 'constante de persistência');
 assert(RECANTO_SEPARATE_SIGNAL_ENABLED === false, 'constante do formulário');
 assert(isRecantoSeparateSignalWriteEnabled({}) === false, 'ambiente vazio grava');
-assert(isRecantoSeparateSignalWriteEnabled(productionEnv) === false, 'production grava');
+assert(isRecantoSeparateSignalWriteEnabled(productionOff) === false, 'production sem flags grava');
+assert(isRecantoSeparateSignalWriteEnabled(productionEnv) === true, 'production com as flags de gravação');
 assert(isRecantoSeparateSignalWriteEnabled({
   ...developEnv,
   RECANTO_SEPARATE_SIGNAL_PERSIST_ENABLED: 'false',
 }) === false, 'uma flag basta');
+assert(isRecantoSeparateSignalWriteEnabled({
+  ...developEnv,
+  NEXT_PUBLIC_SUPABASE_URL: 'https://zumwvcxgrpxggyxomzic.supabase.co',
+}) === false, 'clone antigo grava');
 assert(isRecantoSeparateSignalWriteEnabled(developEnv) === true, 'develop com as duas flags de gravação');
 assert(isRecantoSeparateSignalFormEnabled(developEnv) === true, 'formulário só depois da gravação');
+assert(isRecantoSeparateSignalFormEnabled(productionOff) === false, 'formulário de production sem flags');
 const authorized = {
   companyId: RECANTO_SEPARATE_SIGNAL_DEVELOP_COMPANY_ID,
   projectId: RECANTO_SEPARATE_SIGNAL_DEVELOP_PROJECT_ID,
 };
+const otherProject = '22222222-2222-4222-8222-222222222222';
 assert(isRecantoSeparateSignalAllowed(authorized.companyId, authorized.projectId, developEnv), 'par autorizado no Develop');
+assert(isRecantoSeparateSignalAllowed(authorized.companyId, authorized.projectId, productionEnv), 'production exige flags e o par');
 assert(!isRecantoSeparateSignalAllowed('11111111-1111-4111-8111-111111111111', authorized.projectId, developEnv), 'empresa não autorizada');
-assert(!isRecantoSeparateSignalAllowed(authorized.companyId, '22222222-2222-4222-8222-222222222222', developEnv), 'empreendimento não autorizado');
+assert(!isRecantoSeparateSignalAllowed(authorized.companyId, otherProject, developEnv), 'empreendimento não autorizado');
+assert(!isRecantoSeparateSignalAllowed(authorized.companyId, otherProject, productionEnv), 'outro empreendimento em production');
 assert(!isRecantoSeparateSignalAllowed(undefined, undefined, developEnv), 'API sem os identificadores');
-assert(!isRecantoSeparateSignalAllowed(authorized.companyId, authorized.projectId, productionEnv), 'Production bloqueada mesmo com os UUIDs');
+assert(!isRecantoSeparateSignalAllowed(authorized.companyId, authorized.projectId, productionOff), 'production sem flags permanece bloqueada');
 assertThrows(
   () => rejectUnpersistedSeparateSignalRequest(customer(), {}),
   'não pode ser gravado',
 );
 assertThrows(
-  () => rejectUnpersistedSeparateSignalRequest(customer(), productionEnv),
+  () => rejectUnpersistedSeparateSignalRequest(customer(), productionOff),
   'não pode ser gravado',
 );
 rejectUnpersistedSeparateSignalRequest(customer(), developEnv, authorized);
+rejectUnpersistedSeparateSignalRequest(customer(), productionEnv, authorized);
 assertThrows(
   () => rejectUnpersistedSeparateSignalRequest(customer(), developEnv, {
     companyId: '11111111-1111-4111-8111-111111111111',
@@ -144,11 +158,18 @@ assertThrows(
   'não está liberado',
 );
 assertThrows(
+  () => rejectUnpersistedSeparateSignalRequest(customer(), productionEnv, {
+    companyId: authorized.companyId,
+    projectId: otherProject,
+  }),
+  'não está liberado',
+);
+assertThrows(
   () => rejectUnpersistedSeparateSignalRequest(customer(), developEnv),
   'não está liberado',
 );
 assertThrows(
-  () => rejectUnpersistedSeparateSignalRequest(customer(), productionEnv, authorized),
+  () => rejectUnpersistedSeparateSignalRequest(customer(), productionOff, authorized),
   'não pode ser gravado',
 );
 rejectUnpersistedSeparateSignalRequest({ signal_remaining_payment_mode: 'ALL_INSTALLMENTS' }, {});
@@ -427,9 +448,29 @@ assert(service.includes('invokeSaleFinancialCore'), 'SEPARATE e legado usam a me
 assert(service.includes('isRecantoSeparateSignalAllowed(tenantId, projectId)'), 'a gravação consulta a allowlist');
 assert(service.includes('companyId: tenantId'), 'a API informa a empresa à allowlist');
 const runtime = readFileSync(resolve(process.cwd(), 'lib/recantoSeparateSignalRuntime.ts'), 'utf8');
-assert(runtime.includes('if (isProductionSupabaseRuntime(runtimeUrl(env))) return false;'), 'Production segue bloqueada antes da allowlist');
+assert(
+  runtime.includes('isDevelopHomologRuntime(url)') && runtime.includes('isProductionSupabaseRuntime(url)'),
+  'a gravação só existe no Develop e em Production',
+);
+assert(
+  runtime.includes("env.RECANTO_SEPARATE_SIGNAL_SCHEMA_APPLIED === 'true'")
+  && runtime.includes("env.RECANTO_SEPARATE_SIGNAL_PERSIST_ENABLED === 'true'"),
+  'as flags continuam obrigatórias',
+);
+assert(!runtime.includes('if (isProductionSupabaseRuntime(runtimeUrl(env))) return false;'), 'Production segue bloqueada antes das flags');
 const statusRoute = readFileSync(resolve(process.cwd(), 'app/api/recanto-separate-signal/status/route.ts'), 'utf8');
-assert(statusRoute.includes("params.get('companyId')") && statusRoute.includes('isProductionSupabaseRuntime'), 'o formulário exige o par e bloqueia Production');
+assert(statusRoute.includes("params.get('companyId')") && statusRoute.includes('isRecantoSeparateSignalAllowed'), 'o formulário exige o par');
+assert(!statusRoute.includes('isProductionSupabaseRuntime'), 'a rota bloqueia Production antes das flags');
+const allowlistMigration = readFileSync(resolve(
+  process.cwd(),
+  'supabase/migrations/20261107180000_reject_unlisted_separate_signal.sql',
+), 'utf8');
+assert(allowlistMigration.includes('06c7bd77-633f-45f7-8c80-f497c6006ce0'), 'gatilho sem o tenant');
+assert(allowlistMigration.includes('a6893672-257b-40b2-a0c2-fb7f48a404aa'), 'gatilho sem o empreendimento');
+assert(allowlistMigration.includes("IS DISTINCT FROM 'SEPARATE'"), 'gatilho restringe outra modalidade');
+assert(allowlistMigration.includes('REVOKE ALL ON FUNCTION public.reject_unlisted_separate_signal() FROM authenticated'), 'gatilho executável pelo usuário');
+assert(!allowlistMigration.includes('execute_authorized_manual_receipt_payment'), 'gatilho altera a baixa manual');
+assert(!allowlistMigration.includes('create_sale_financial_core'), 'gatilho reescreve o núcleo');
 const map = readFileSync(resolve(process.cwd(), 'components/map/GISMap.tsx'), 'utf8');
 assert(map.includes("params.set('companyId'") && map.includes("params.set('projectId'"), 'o mapa só pede a modalidade para o par informado');
 assert(service.includes('callerTenantId'), 'SEPARATE aceita outra empresa');

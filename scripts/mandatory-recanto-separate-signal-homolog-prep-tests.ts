@@ -112,7 +112,7 @@ function main() {
   assert(sql.includes('company_id IS NOT DISTINCT FROM tenant_id'), 'empresa diferente da autenticada');
   assert(sql.includes('separate_signal_request_key IS NOT NULL'), 'SEPARATE sem chave');
   assert(sql.includes('finance_receipts_separate_signal_without_addon_check'), 'sinal com acréscimo embutido');
-  assert(sql.includes('Não aplicar'), 'arquivo perdeu o aviso de não aplicar');
+  assert(sql.includes('Aplicar em Production somente após a leitura do catálogo e a autorização'), 'arquivo perdeu o aviso de autorização');
   assert(!/DELETE\s+FROM/i.test(sql), 'migration apaga dados');
   assert(!/UPDATE\s+public\.(sales|finance_receipts)/i.test(sql), 'migration reescreve vendas');
   assert(!sql.includes('ON public.finance_receipts (sale_id, installment_number)'), 'índice antigo de parcela');

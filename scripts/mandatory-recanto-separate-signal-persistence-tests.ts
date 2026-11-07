@@ -183,7 +183,7 @@ function main() {
     'utf8',
   );
   assert(migration.includes('schedule_group'), 'migration distingue os cronogramas');
-  assert(migration.includes('Não aplicar'), 'migration não é instrução de execução');
+  assert(migration.includes('Aplicar em Production somente após a leitura do catálogo e a autorização'), 'migration não é instrução de execução');
   assert(!migration.toLowerCase().includes('delete from'), 'migration não apaga dados');
 
   console.log('mandatory-recanto-separate-signal-persistence: ok');

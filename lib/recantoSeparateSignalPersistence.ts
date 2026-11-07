@@ -164,13 +164,13 @@ export function assertRecantoSeparateSignalPersistAuthorized(): void {
 }
 
 export const RECANTO_SEPARATE_SIGNAL_ACTIVATION_STEPS = [
-  'Confirmar o schema no Supabase Develop, sem tocar em Production.',
-  'Validar os testes de integração no banco de homologação.',
-  'Habilitar a gravação somente nessa homologação.',
-  'Gravar uma venda fictícia.',
+  'Manter as três flags desligadas até a autorização explícita.',
+  'Aplicar o gatilho da allowlist antes de qualquer flag.',
+  'Liberar só o par autorizado, com as flags e o gatilho juntos.',
+  'Gravar uma venda fictícia no ambiente autorizado.',
   'Conferir os recebíveis de sinal e de lote.',
   'Validar que boleto, Pix, edição e distrato seguem bloqueados.',
-  'Só então autorizar a fase seguinte.',
+  'Recanto Primavera I e os demais tenants permanecem recusados.',
 ] as const;
 
 export type SeparateSignalSchemaProbe =
