@@ -25,6 +25,7 @@ export async function insertCompanyAsaasCharge(
     pixQrCode?: string | null;
     pixCopyPaste?: string | null;
     financialAccountId?: string | null;
+    scheduleGroup?: string | null;
     rawPayload?: Record<string, unknown>;
   },
 ): Promise<CompanyAsaasChargeResponse> {
@@ -47,6 +48,7 @@ export async function insertCompanyAsaasCharge(
       pix_qr_code: row.pixQrCode ?? null,
       pix_copy_paste: row.pixCopyPaste ?? null,
       financial_account_id: row.financialAccountId ?? null,
+      ...(row.scheduleGroup !== undefined ? { schedule_group: row.scheduleGroup } : {}),
       raw_payload: row.rawPayload ?? {},
       updated_at: now,
     })

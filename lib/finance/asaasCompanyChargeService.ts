@@ -14,8 +14,15 @@ import {
   asaasCompanyCancelPayment,
   asaasCompanyCreatePayment,
   asaasCompanyEnrichPaymentArtifacts,
+  asaasCompanyFindActivePaymentByExternalReference,
   asaasCompanyFindOrCreateCustomer,
 } from './asaasCompanyClient';
+import { runGuardedAsaasCreate } from './asaasChargeAttempt';
+import { createSupabaseAsaasChargeAttemptPorts } from './companyAsaasChargeAttemptStore';
+import {
+  assertAsaasSeparateScheduleChargeAllowed,
+  buildAsaasInstallmentChargeDescription,
+} from './asaasSeparateScheduleCharge';
 import {
   getCompanyAsaasChargeByPaymentId,
   getLatestCompanyAsaasChargeForInstallment,
@@ -53,10 +60,7 @@ import {
 import { assertCompanyAsaasEnabled } from './companyAsaasAccess';
 import { ASAAS_BOLETO_MIN_AMOUNT } from '@/lib/saasMasterConfig';
 import { FINANCE_RECEIPTS_CHARGE_SELECT } from './financeReceiptsEmbed';
-import {
-  assertSeparateScheduleChargeAllowed,
-  isMissingScheduleGroupColumn,
-} from '@/lib/finance/recantoReceiptSchedule';
+import { isMissingScheduleGroupColumn } from '@/lib/finance/recantoReceiptSchedule';
 import {
   isValidBrazilianTaxDocument,
   resolveCustomerDocumentDigits,
@@ -230,18 +234,30 @@ async function loadInstallment(
   if (grouped.error && !isMissingScheduleGroupColumn(grouped.error)) {
     throw new Error(grouped.error.message);
   }
-  assertSeparateScheduleChargeAllowed({ ...row, schedule_group: scheduleGroup });
+  const projectId = row.project_id || row.sales?.project_id || null;
+  assertAsaasSeparateScheduleChargeAllowed({
+    scheduleGroup,
+    companyId: row.company_id || row.tenant_id,
+    projectId,
+  });
   const rowCompanyId = row.company_id || row.tenant_id;
   if (rowCompanyId && rowCompanyId !== companyId) {
     throw new Error('Parcela não pertence a esta empresa.');
+  }
+  const projectCompanyId = row.sales?.project_id && row.project_id && row.sales.project_id !== row.project_id;
+  if (projectCompanyId) {
+    throw new Error('Parcela não pertence ao empreendimento da venda.');
   }
 
   const status = String(row.status || '').toLowerCase();
   if (status === 'pago' || status === 'paid') {
     throw new Error('Parcela já está paga.');
   }
+  if (status === 'cancelado' || status === 'canceled' || status === 'cancelled' || status === 'cancelada') {
+    throw new Error('Parcela cancelada não gera cobrança.');
+  }
 
-  return row;
+  return { ...row, schedule_group: scheduleGroup, project_id: projectId };
 }
 
 function resolvePayerDocument(customer: InstallmentRow['customers']): string {
@@ -260,10 +276,11 @@ function assertPayerDocumentPresent(customer: InstallmentRow['customers']): stri
 }
 
 function buildChargeDescription(installment: InstallmentRow): string {
-  const contractNo = installment.sales?.contracts?.[0]?.contract_number || 'S/N';
-  const parcel =
-    installment.installment_number === 0 ? 'Entrada' : `Parcela ${installment.installment_number ?? 1}`;
-  return `${parcel} — Contrato ${contractNo}`;
+  return buildAsaasInstallmentChargeDescription({
+    scheduleGroup: installment.schedule_group,
+    installmentNumber: installment.installment_number,
+    contractNumber: installment.sales?.contracts?.[0]?.contract_number,
+  });
 }
 
 export async function createCompanyInstallmentCharge(
@@ -341,24 +358,58 @@ async function createCompanyChargeWithBillingType(
     resolveChargePayer(installment.customers as Record<string, unknown> | null).name ||
     'Cliente';
   const payerDocument = assertPayerDocumentPresent(installment.customers);
-  const customerId = await asaasCompanyFindOrCreateCustomer(apiKey, environment, {
-    name: customerName,
-    cpfCnpj: payerDocument,
-    email: installment.customers?.email || undefined,
-    externalReference: input.companyId,
+  const description = buildChargeDescription(installment);
+
+  const guarded = await runGuardedAsaasCreate({
+    ...createSupabaseAsaasChargeAttemptPorts(admin, {
+      companyId: input.companyId,
+      installmentId: input.installmentId,
+      saleId: installment.sale_id,
+      projectId: installment.project_id || null,
+      scheduleGroup: installment.schedule_group || null,
+    }),
+    findRemote: async () => {
+      const found = await asaasCompanyFindActivePaymentByExternalReference(
+        apiKey,
+        environment,
+        input.installmentId,
+      );
+      const paymentId = String(found?.id || '').trim();
+      return paymentId ? { id: paymentId } : null;
+    },
+    createRemote: async () => {
+      const customerId = await asaasCompanyFindOrCreateCustomer(apiKey, environment, {
+        name: customerName,
+        cpfCnpj: payerDocument,
+        email: installment.customers?.email || undefined,
+        externalReference: input.companyId,
+      });
+      const created = await asaasCompanyCreatePayment(apiKey, environment, {
+        customerId,
+        billingType: asaasBillingType,
+        value: amount,
+        dueDate,
+        description,
+        externalReference: input.installmentId,
+        split: preparedSplit.remoteSplits.length ? preparedSplit.remoteSplits : undefined,
+      });
+      return { id: String(created.payment.id || ''), result: created };
+    },
   });
 
-  const { payment, pixQrCode, pixCopyPaste, bankSlipIdentification } =
-    await asaasCompanyCreatePayment(apiKey, environment, {
-      customerId,
-      billingType: asaasBillingType,
-      value: amount,
-      dueDate,
-      description: buildChargeDescription(installment),
-      externalReference: input.installmentId,
-      split: preparedSplit.remoteSplits.length ? preparedSplit.remoteSplits : undefined,
-    });
+  const alreadyStored = await getCompanyAsaasChargeByPaymentId(
+    admin,
+    input.companyId,
+    guarded.asaasPaymentId,
+  );
+  if (alreadyStored) return alreadyStored;
 
+  const recovered = guarded.result
+    ? guarded.result
+    : await asaasCompanyEnrichPaymentArtifacts(apiKey, environment, guarded.asaasPaymentId, {
+        billingType: asaasBillingType,
+      });
+  const payment = recovered.payment;
   if (!payment.id) throw new Error('Asaas Company não retornou cobrança.');
 
   const storedBillingType = resolveStoredCompanyBillingType(billingType, payment.billingType);
@@ -375,11 +426,16 @@ async function createCompanyChargeWithBillingType(
     dueDate,
     invoiceUrl: payment.invoiceUrl ?? null,
     bankSlipUrl: payment.bankSlipUrl ?? null,
-    bankSlipIdentification,
-    pixQrCode: pixQrCode || null,
-    pixCopyPaste: pixCopyPaste || null,
+    bankSlipIdentification: recovered.bankSlipIdentification,
+    pixQrCode: recovered.pixQrCode || null,
+    pixCopyPaste: recovered.pixCopyPaste || null,
     financialAccountId,
-    rawPayload: payment as Record<string, unknown>,
+    scheduleGroup: installment.schedule_group || null,
+    rawPayload: {
+      ...(payment as Record<string, unknown>),
+      svScheduleGroup: installment.schedule_group || null,
+      svIdempotencyKey: `asaas-company:${input.companyId}:${input.installmentId}`,
+    },
   });
 
   if (preparedSplit.enabled) {

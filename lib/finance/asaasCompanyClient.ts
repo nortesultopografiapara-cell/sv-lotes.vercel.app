@@ -44,6 +44,8 @@ export type AsaasCompanyPayment = {
   estimatedCreditDate?: string;
   transactionReceiptUrl?: string;
   split?: AsaasCompanyPaymentSplit[];
+  deleted?: boolean;
+  dateCreated?: string;
 };
 
 export type AsaasCompanyPixQrCode = {
@@ -400,6 +402,41 @@ export async function asaasCompanyCreatePayment(
   const bankSlipIdentification = extractCompanyAsaasBankSlipIdentification(paymentFull);
 
   return { payment: paymentFull, pixQrCode, pixCopyPaste, bankSlipIdentification };
+}
+
+const ACTIVE_ASAAS_PAYMENT_STATUSES = new Set([
+  'PENDING',
+  'CONFIRMED',
+  'RECEIVED',
+  'RECEIVED_IN_CASH',
+  'OVERDUE',
+  'AWAITING_RISK_ANALYSIS',
+  'DUNNING_REQUESTED',
+  'DUNNING_RECEIVED',
+]);
+
+/** Consulta a cobrança já criada. Não cria outra. */
+export async function asaasCompanyFindActivePaymentByExternalReference(
+  apiKey: string,
+  environment: BankEnvironment,
+  externalReference: string,
+): Promise<AsaasCompanyPayment | null> {
+  const reference = String(externalReference || '').trim();
+  if (!reference) return null;
+  const params = new URLSearchParams({ externalReference: reference, limit: '10' });
+  const page = await asaasCompanyFetch<{ data?: AsaasCompanyPayment[] }>(
+    apiKey,
+    environment,
+    `/payments?${params.toString()}`,
+  );
+  const listed = (Array.isArray(page.data) ? page.data : []).filter((row) => !row.deleted && row.id);
+  const active = listed.filter((row) =>
+    ACTIVE_ASAAS_PAYMENT_STATUSES.has(String(row.status || '').toUpperCase()),
+  );
+  const occupying = (active.length > 0 ? active : listed).sort((a, b) =>
+    String(a.dateCreated || '').localeCompare(String(b.dateCreated || '')),
+  );
+  return occupying[0] || null;
 }
 
 export async function asaasCompanyGetPayment(

@@ -127,8 +127,11 @@ export function isCanceledFinanceReceipt(row: {
   );
 }
 
-export function isEligibleInstallmentForAsaasCharge(row: SaleChargeInstallmentRow): boolean {
-  if (!separateScheduleChargeAllowed(row)) return false;
+export function isEligibleInstallmentForAsaasCharge(
+  row: SaleChargeInstallmentRow,
+  options?: { separateScheduleAuthorized?: boolean },
+): boolean {
+  if (!separateScheduleChargeAllowed(row) && options?.separateScheduleAuthorized !== true) return false;
   if (isCanceledFinanceReceipt(row)) return false;
   if (isPaidFinanceReceipt(row)) return false;
   const amount = money(row.amount);
@@ -148,8 +151,15 @@ export function installmentHasBlockingCharge(
 export function installmentNeedsAsaasCharge(params: {
   installment: SaleChargeInstallmentRow;
   charge: CompanyAsaasChargeResponse | null | undefined;
+  separateScheduleAuthorized?: boolean;
 }): boolean {
-  if (!isEligibleInstallmentForAsaasCharge(params.installment)) return false;
+  if (
+    !isEligibleInstallmentForAsaasCharge(params.installment, {
+      separateScheduleAuthorized: params.separateScheduleAuthorized,
+    })
+  ) {
+    return false;
+  }
   return !installmentHasBlockingCharge(params.charge);
 }
 
@@ -291,6 +301,7 @@ export function buildSaleChargesSummaryFromRows(params: {
   beneficiaryWarnings?: string[];
   beneficiaryDocumentSource?: string | null;
   installmentCorrectionType?: string | null;
+  separateScheduleAuthorized?: (row: SaleChargeInstallmentRow) => boolean;
 }): SaleChargesSummary {
   const byInstallment = latestChargeByInstallment(params.charges);
   const installments = params.installments.filter((r) => r.sale_id === params.saleId);
@@ -344,7 +355,11 @@ export function buildSaleChargesSummaryFromRows(params: {
       cancelled += 1;
     }
 
-    if (isEligibleInstallmentForAsaasCharge(row)) {
+    if (
+      isEligibleInstallmentForAsaasCharge(row, {
+        separateScheduleAuthorized: params.separateScheduleAuthorized?.(row) === true,
+      })
+    ) {
       eligible += 1;
       if (installmentHasBlockingCharge(charge)) {
         generated += 1;
@@ -412,7 +427,6 @@ export function buildSaleChargesSummaryFromRows(params: {
     missingInstallments,
     errorInstallmentIds: errorIds,
     installmentCorrectionType: params.installmentCorrectionType ?? null,
-    carneReady,
     carneReady,
     carneBlockReason:
       !carneReady && failed > 0

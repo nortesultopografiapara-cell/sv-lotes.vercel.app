@@ -15,7 +15,10 @@ import {
   buildSaleCarnePdfBytes,
   type SaleCarneBoletoItem,
 } from '@/lib/finance/saleCarnePdf';
-import { formatSaleCarneParcelLabel } from '@/lib/finance/saleChargesShared';
+import {
+  buildAsaasCarneParcelLabel,
+  compareAsaasCarneInstallments,
+} from '@/lib/finance/asaasSeparateScheduleCharge';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,19 +78,14 @@ export async function POST(request: Request) {
     const items: SaleCarneBoletoItem[] = enrichedCharges
       .map((charge) => {
         const installment = byId.get(String(charge.installmentId)) || null;
-        const n = installment?.installment_number;
         return {
           charge,
           installment,
-          parcelLabel: formatSaleCarneParcelLabel(n, contractTotal),
+          parcelLabel: buildAsaasCarneParcelLabel(installment, installments, contractTotal),
           totalParcels: contractTotal,
         };
       })
-      .sort((a, b) => {
-        const an = Number(a.installment?.installment_number ?? 9999);
-        const bn = Number(b.installment?.installment_number ?? 9999);
-        return an - bn;
-      });
+      .sort((a, b) => compareAsaasCarneInstallments(a.installment, b.installment));
 
     let beneficiaryName = summary.financialAccountName;
     let beneficiaryDocument: string | null = null;

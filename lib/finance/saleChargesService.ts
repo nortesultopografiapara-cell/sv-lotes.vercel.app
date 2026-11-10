@@ -7,6 +7,7 @@ import {
   isMissingScheduleGroupColumn,
   mergeScheduleGroups,
 } from '@/lib/finance/recantoReceiptSchedule';
+import { isRecantoSeparateSignalAllowed } from '@/lib/recantoSeparateSignalRuntime';
 import {
   createCompanyInstallmentCharge,
   CompanyAsaasChargePaidError,
@@ -283,6 +284,11 @@ export async function getSaleChargesSummary(
     companyId,
     installments,
     charges,
+    separateScheduleAuthorized: (row) =>
+      isRecantoSeparateSignalAllowed(
+        row.company_id || row.tenant_id || companyId,
+        row.project_id,
+      ),
     context,
     financialAccountName,
     hasFinancialAccount,
