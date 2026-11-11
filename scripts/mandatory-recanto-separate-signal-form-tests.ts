@@ -14,12 +14,16 @@ import {
   canOfferRecantoSeparateSignal,
   describeCentsInstallments,
   readPersistedSeparateSignalForm,
+  separateLotDueConflictMessage,
+  separateLotStartIsCalculated,
   RECANTO_SEPARATE_SIGNAL_ENABLED,
   RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE,
   validateRecantoSaleSignalOnSubmit,
   type RecantoSeparateSignalFormInput,
 } from '../lib/recantoSeparateSignalForm';
 import type { RecantoLotStartMode } from '../lib/recantoBrokerageInstallments';
+import { planRecantoSeparateSignalPersistence } from '../lib/recantoSeparateSignalPersistence';
+import { buildSeparateSignalContractSchedule } from '../lib/recantoSeparateSignalContract';
 
 function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
@@ -281,6 +285,200 @@ function main() {
 
   assert(modal.includes('enabled: separateSignalEnabled'), '2. interruptor vem de fora');
   assert(!modal.includes('RECANTO_SEPARATE_SIGNAL_ENABLED = true'), '1. modal não liga a flag');
+
+  const ivanilde = preview({
+    writeEnabled: true,
+    lotPrice: 33960,
+    signalContract: 1750,
+    paidAtAct: 800,
+    signalInstallmentCount: 1,
+    actDate: '2026-10-31',
+    signalFirstDueDate: '2026-11-30',
+    lotInstallmentCount: 120,
+    lotStartMode: 'AFTER_BROKERAGE',
+    lotSpecificStartDate: '2026-12-15',
+  });
+  const ivanildeSchedule = ivanilde.schedule;
+  const ivanildeSignal = (ivanildeSchedule?.brokerageLines ?? []).filter((line) => line.kind === 'INSTALLMENT');
+  assert(ivanildeSignal.length === 1 && ivanildeSignal[0]?.amountCents === 95_000, 'caso simulado: saldo de 950');
+  assert(ivanildeSignal[0]?.dueDate === '2026-11-30', 'caso simulado: parcela do sinal em 30/11/2026');
+  assert(
+    ivanildeSchedule?.brokerageLines.find((line) => line.kind === 'INITIAL_PAYMENT')?.dueDate === '2026-10-31',
+    'caso simulado: pagamento no ato em 31/10/2026',
+  );
+  assert(ivanildeSchedule?.lotFirstDueDate === '2026-12-30', 'caso simulado: lote calculado em 30/12/2026');
+  assert(ivanildeSchedule?.lotLines.length === 120, 'caso simulado: 120 parcelas do lote');
+  assert(ivanildeSchedule?.lotLines.every((line) => line.amountCents === 28_300) === true, 'caso simulado: parcelas de 283');
+  assert(ivanildeSchedule?.lotLines[119]?.dueDate === '2036-11-30', 'caso simulado: última parcela em 30/11/2036');
+  assert(ivanildeSchedule?.financialTotalCents === 3_571_000, 'caso simulado: total 35710');
+  const ivanildeConflict = separateLotDueConflictMessage({
+    lotStartMode: 'AFTER_BROKERAGE',
+    typedLotDueDate: '2026-12-15',
+    calculatedLotDueDate: ivanildeSchedule?.lotFirstDueDate,
+  });
+  assert(Boolean(ivanildeConflict?.includes('15/12/2026') && ivanildeConflict.includes('30/12/2026')), 'caso simulado: divergência explicada');
+  assert(ivanilde.confirmBlocked === false, 'caso simulado: a prévia continua calculada');
+  assert(
+    separateLotDueConflictMessage({
+      lotStartMode: 'AFTER_BROKERAGE',
+      typedLotDueDate: '',
+      calculatedLotDueDate: '2026-12-30',
+    }) === null,
+    'sem data digitada não há divergência',
+  );
+  assert(
+    separateLotDueConflictMessage({
+      lotStartMode: 'AFTER_BROKERAGE',
+      typedLotDueDate: '2026-12-30',
+      calculatedLotDueDate: '2026-12-30',
+    }) === null,
+    'data igual ao cálculo não bloqueia',
+  );
+
+  const several = preview({
+    signalInstallmentCount: 3,
+    signalFirstDueDate: '2026-11-30',
+    actDate: '2026-10-31',
+    lotStartMode: 'AFTER_BROKERAGE',
+    lotSpecificStartDate: '',
+  });
+  const severalSignal = (several.schedule?.brokerageLines ?? []).filter((line) => line.kind === 'INSTALLMENT');
+  assert(severalSignal.map((line) => line.dueDate).join(',') === '2026-11-30,2026-12-30,2027-01-30', 'várias parcelas do sinal');
+  assert(several.schedule?.lotFirstDueDate === '2027-02-28', 'lote após a última parcela do sinal');
+
+  const simultaneous = preview({
+    lotPrice: 33960,
+    signalContract: 1750,
+    paidAtAct: 800,
+    signalInstallmentCount: 1,
+    actDate: '2026-10-31',
+    signalFirstDueDate: '2026-11-30',
+    lotInstallmentCount: 120,
+    lotStartMode: 'SIMULTANEOUS',
+    lotSpecificStartDate: '2026-12-15',
+  });
+  assert(simultaneous.schedule?.lotFirstDueDate === '2026-11-30', 'simultâneo usa o primeiro vencimento do sinal');
+  assert(
+    Boolean(separateLotDueConflictMessage({
+      lotStartMode: 'SIMULTANEOUS',
+      typedLotDueDate: '2026-12-15',
+      calculatedLotDueDate: simultaneous.schedule?.lotFirstDueDate,
+    })?.includes('30/11/2026')),
+    'simultâneo também aponta a data divergente',
+  );
+
+  const chosenStart = preview({
+    writeEnabled: true,
+    lotPrice: 33960,
+    signalContract: 1750,
+    paidAtAct: 800,
+    signalInstallmentCount: 1,
+    actDate: '2026-10-31',
+    signalFirstDueDate: '2026-11-30',
+    lotInstallmentCount: 120,
+    lotStartMode: 'SPECIFIC_DATE',
+    lotSpecificStartDate: '2026-12-15',
+  });
+  assert(chosenStart.schedule?.lotFirstDueDate === '2026-12-15', 'data específica usa a data escolhida');
+  assert(chosenStart.schedule?.lotLines[119]?.dueDate === '2036-11-15', 'data específica percorre as 120 parcelas');
+  assert(!separateLotStartIsCalculated('SPECIFIC_DATE'), 'data específica permanece editável');
+  assert(
+    separateLotDueConflictMessage({
+      lotStartMode: 'SPECIFIC_DATE',
+      typedLotDueDate: '2026-12-15',
+      calculatedLotDueDate: '2026-12-30',
+    }) === null,
+    'data específica não é tratada como divergência do cálculo',
+  );
+
+  const monthEnd = preview({
+    signalInstallmentCount: 1,
+    signalFirstDueDate: '2026-01-31',
+    actDate: '2026-01-15',
+    lotStartMode: 'AFTER_BROKERAGE',
+    lotSpecificStartDate: '',
+  });
+  assert(monthEnd.schedule?.lotFirstDueDate === '2026-02-28', 'fim de mês recua fevereiro');
+  const yearTurn = preview({
+    signalInstallmentCount: 1,
+    signalFirstDueDate: '2026-12-31',
+    actDate: '2026-12-10',
+    lotStartMode: 'AFTER_BROKERAGE',
+    lotSpecificStartDate: '',
+  });
+  assert(yearTurn.schedule?.lotFirstDueDate === '2027-01-31', 'virada de ano preserva o dia');
+
+  const persistedPlan = planRecantoSeparateSignalPersistence({
+    featureEnabled: true,
+    contractModel: 'RECANTO_PRIMAVERA',
+    saleId: 'pending-sale',
+    tenantId: 'company',
+    companyId: 'company',
+    customerId: 'customer',
+    lotPrice: 33960,
+    signalContract: 1750,
+    paidAtAct: 800,
+    signalInstallmentCount: 1,
+    actDate: '2026-10-31',
+    signalFirstDueDate: '2026-11-30',
+    lotInstallmentCount: 120,
+    lotStartMode: 'AFTER_BROKERAGE',
+    lotSpecificStartDate: '2026-12-15',
+    holdLotChargesUntilSignalSettled: false,
+  });
+  assert(
+    persistedPlan.receipts.filter((row) => row.scheduleGroup === 'LOT').map((row) => row.dueDate).join(',')
+      === ivanildeSchedule?.lotLines.map((line) => line.dueDate).join(','),
+    'recebíveis do lote repetem a simulação',
+  );
+  assert(
+    persistedPlan.receipts.filter((row) => row.scheduleGroup === 'SIGNAL').map((row) => row.dueDate).join(',')
+      === ivanildeSchedule?.brokerageLines.map((line) => line.dueDate).join(','),
+    'recebíveis do sinal repetem a simulação',
+  );
+  const contract = buildSeparateSignalContractSchedule({
+    sale: { signal_schedule_mode: 'SEPARATE', signal_contract_value: 1750, signal_paid_at_sale: 800 },
+    receipts: persistedPlan.receipts.map((row) => ({
+      schedule_group: row.scheduleGroup,
+      installment_number: row.installmentNumber,
+      amount: row.amountCents / 100,
+      due_date: row.dueDate,
+      status: row.status,
+    })),
+  });
+  assert(contract?.lotDueDates[0] === '2026-12-30', 'contrato usa o início do recebível');
+  assert(contract?.lotDueDates[119] === '2036-11-30', 'contrato usa o último recebível');
+  assert(contract?.signalDueDates[0] === '2026-11-30', 'contrato usa o vencimento do sinal');
+
+  const reopened = readPersistedSeparateSignalForm({
+    sale: {
+      signal_schedule_mode: 'SEPARATE',
+      signal_installment_count: 1,
+      signal_first_due_date: '2026-11-30',
+      lot_schedule_start_mode: 'AFTER_SIGNAL',
+      lot_schedule_first_due_date: '2026-12-30',
+      hold_lot_charges_until_signal_settled: false,
+    },
+  });
+  assert(reopened?.lot_schedule_start_mode === 'AFTER_BROKERAGE', 'reabertura mantém o modo calculado');
+  assert(reopened?.lot_schedule_first_due_date === '2026-12-30', 'reabertura mantém o início gravado');
+  assert(
+    separateLotDueConflictMessage({
+      lotStartMode: reopened?.lot_schedule_start_mode || '',
+      typedLotDueDate: reopened?.lot_schedule_first_due_date,
+      calculatedLotDueDate: '2026-12-30',
+    }) === null,
+    'reabertura sem data diferente não altera a configuração',
+  );
+  assert(separateLotDueConflictMessage({ lotStartMode: '', typedLotDueDate: '2026-12-15', calculatedLotDueDate: '2026-12-30' }) === null, 'LEGACY não entra na regra do sinal separado');
+
+  const confirmAt = modal.indexOf('await onConfirm({');
+  assert(modal.includes('if (separateLotConflict)'), 'divergência real bloqueia a confirmação');
+  assert(modal.indexOf('if (separateLotConflict)') < confirmAt, 'o bloqueio acontece antes da gravação');
+  assert(modal.includes('Início calculado das parcelas do lote'), 'início calculado deixa de parecer editável');
+  assert(modal.includes('Descartar a data digitada'), 'a data digitada só sai por ação explícita');
+  assert(modal.includes('Vencimento 1ª Parcela *'), 'LEGACY conserva o vencimento da primeira parcela');
+  assert(!editLoader.slice(editUpdateAt).includes('separateLotDueConflictMessage('), 'visualizar a simulação não grava');
 
   console.log('mandatory-recanto-separate-signal-form: ok');
 }

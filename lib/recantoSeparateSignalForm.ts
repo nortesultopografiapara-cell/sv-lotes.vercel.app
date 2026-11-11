@@ -4,6 +4,7 @@
  */
 
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { formatContractDueDateBr } from '@/lib/contractPaymentDates';
 import { normalizeSaleContractModel } from '@/lib/contractModel';
 import { validateRecantoSignalPlan } from '@/lib/recantoSignalRemaining';
 import {
@@ -83,6 +84,32 @@ export function describeCentsInstallments(amounts: number[]): string {
     return `${amounts.length} × ${money(first)}`;
   }
   return `${amounts.length - 1} × ${money(first)} e a última ${money(last)}`;
+}
+
+export function separateLotStartIsCalculated(mode: RecantoLotStartMode | ''): boolean {
+  return mode === 'AFTER_BROKERAGE' || mode === 'SIMULTANEOUS';
+}
+
+/**
+ * O cronograma continua vindo de buildRecantoBrokerageSchedule.
+ * Esta função só aponta quando uma data digitada não é a data desse cronograma.
+ */
+export function separateLotDueConflictMessage(input: {
+  lotStartMode: RecantoLotStartMode | '';
+  typedLotDueDate?: string | null;
+  calculatedLotDueDate?: string | null;
+}): string | null {
+  if (!separateLotStartIsCalculated(input.lotStartMode)) return null;
+  const typed = String(input.typedLotDueDate || '').trim().slice(0, 10);
+  const calculated = String(input.calculatedLotDueDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(typed) || !/^\d{4}-\d{2}-\d{2}$/.test(calculated)) return null;
+  if (typed === calculated) return null;
+  const modeLabel = input.lotStartMode === 'SIMULTANEOUS'
+    ? 'Simultaneamente ao sinal'
+    : 'Após o cronograma do sinal';
+  const typedLabel = formatContractDueDateBr(typed);
+  const calculatedLabel = formatContractDueDateBr(calculated);
+  return `A data ${typedLabel} foi digitada no vencimento da primeira parcela. No modo "${modeLabel}" o início do lote é calculado em ${calculatedLabel}. Para gravar ${typedLabel}, escolha "Em data específica". Para seguir o cálculo, descarte a data digitada.`;
 }
 
 function inactive(offered: boolean): RecantoSeparateSignalPreview {

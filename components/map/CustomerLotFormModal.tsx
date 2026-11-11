@@ -56,6 +56,8 @@ import {
 import {
   buildRecantoSeparateSignalPreview,
   describeCentsInstallments,
+  separateLotDueConflictMessage,
+  separateLotStartIsCalculated,
   validateRecantoSaleSignalOnSubmit,
   RECANTO_SEPARATE_SIGNAL_PERSIST_WARNING,
   RECANTO_SEPARATE_SIGNAL_SIMULATION_LABEL,
@@ -800,11 +802,22 @@ export function CustomerLotFormModal({
       holdLotChargesUntilSignalSettled,
     ],
   );
+  const separateLotCalculated =
+    separateSignalPreview.active && separateLotStartIsCalculated(separateLotStartMode);
+  const separateLotConflict = separateLotDueConflictMessage({
+    lotStartMode: separateLotStartMode,
+    typedLotDueDate: formData.first_installment_due_date,
+    calculatedLotDueDate: separateSignalPreview.schedule?.lotFirstDueDate,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (separateSignalPreview.confirmBlocked) {
       alert(separateSignalPreview.confirmBlockMessage);
+      return;
+    }
+    if (separateLotConflict) {
+      alert(separateLotConflict);
       return;
     }
     let confirmedInstallmentsCount = installmentsCountStr;
@@ -920,8 +933,20 @@ export function CustomerLotFormModal({
           alert('Por favor, preencha a data de vencimento da entrada.');
           return;
         }
-        if (!formData.first_installment_due_date) {
-          alert('Por favor, preencha a data de vencimento da primeira parcela.');
+        if (separateLotCalculated) {
+          if (!separateSignalPreview.schedule?.lotFirstDueDate) {
+            alert(
+              separateSignalPreview.error ||
+                'Não foi possível calcular o início das parcelas do lote.',
+            );
+            return;
+          }
+        } else if (!formData.first_installment_due_date) {
+          alert(
+            separateSignalPreview.active && separateLotStartMode === 'SPECIFIC_DATE'
+              ? 'Por favor, preencha a data específica de início do lote.'
+              : 'Por favor, preencha a data de vencimento da primeira parcela.',
+          );
           return;
         }
 
@@ -2382,14 +2407,51 @@ export function CustomerLotFormModal({
                       </div>
                     ) : null}
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Vencimento 1ª Parcela *</label>
-                      <input
-                        type="date"
-                        required
-                        value={formData.first_installment_due_date}
-                        onChange={(e) => setField({ first_installment_due_date: e.target.value })}
-                        className={GIS_INPUT_DATE}
-                      />
+                      {separateLotCalculated ? (
+                        <>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Início calculado das parcelas do lote
+                          </label>
+                          <input
+                            type="date"
+                            readOnly
+                            value={separateSignalPreview.schedule?.lotFirstDueDate || ''}
+                            className={GIS_INPUT_READONLY}
+                          />
+                          <p className="mt-1 text-[11px] text-slate-600 leading-snug">
+                            Este início segue o modo selecionado e é o vencimento que a simulação,
+                            os recebíveis e o contrato utilizam. Para escolher outra data, use
+                            &quot;Em data específica&quot;.
+                          </p>
+                          {separateLotConflict ? (
+                            <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                              <p>{separateLotConflict}</p>
+                              <button
+                                type="button"
+                                className="mt-1 font-semibold underline"
+                                onClick={() => setField({ first_installment_due_date: '' })}
+                              >
+                                Descartar a data digitada
+                              </button>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            {separateSignalPreview.active && separateLotStartMode === 'SPECIFIC_DATE'
+                              ? 'Data específica de início do lote *'
+                              : 'Vencimento 1ª Parcela *'}
+                          </label>
+                          <input
+                            type="date"
+                            required
+                            value={formData.first_installment_due_date}
+                            onChange={(e) => setField({ first_installment_due_date: e.target.value })}
+                            className={GIS_INPUT_DATE}
+                          />
+                        </>
+                      )}
                     </div>
                     <div className="md:col-span-2">
                       {isRecantoSinal && installmentDefinitionMode === 'FIXED_AMOUNT' ? (
@@ -2732,7 +2794,7 @@ function SeparateSignalSchedulePanel({
         </select>
         {lotStartMode === 'SPECIFIC_DATE' ? (
           <p className="mt-1 text-[11px] text-slate-600">
-            A data específica é o campo Vencimento da 1ª parcela do lote.
+            A data específica é o campo Data específica de início do lote.
           </p>
         ) : schedule ? (
           <p className="mt-1 text-[11px] text-slate-600">
