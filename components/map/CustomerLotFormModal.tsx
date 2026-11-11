@@ -183,6 +183,36 @@ const GIS_INPUT_DATE =
 const GIS_INPUT_READONLY =
   'form-input-light w-full px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700 border-slate-300 cursor-not-allowed';
 
+function readSeparateSignalEditState(data?: Partial<LotFormState> | null): {
+  selected: boolean;
+  installmentCount: string;
+  firstDueDate: string;
+  lotStartMode: RecantoLotStartMode | '';
+  holdCharges: boolean;
+} {
+  if (data?.signal_schedule_mode !== 'SEPARATE') {
+    return {
+      selected: false,
+      installmentCount: '',
+      firstDueDate: '',
+      lotStartMode: 'AFTER_BROKERAGE',
+      holdCharges: false,
+    };
+  }
+  const mode = data.lot_schedule_start_mode;
+  const lotStartMode: RecantoLotStartMode | '' =
+    mode === 'AFTER_BROKERAGE' || mode === 'SIMULTANEOUS' || mode === 'SPECIFIC_DATE'
+      ? mode
+      : '';
+  return {
+    selected: true,
+    installmentCount: String(data.signal_installment_count || ''),
+    firstDueDate: String(data.signal_first_due_date || '').slice(0, 10),
+    lotStartMode,
+    holdCharges: data.hold_lot_charges_until_signal_settled === true,
+  };
+}
+
 function emptyLotFormState(installmentCorrectionType: string): LotFormState {
   return {
     ...emptyCustomerFormValues(),
@@ -306,11 +336,16 @@ export function CustomerLotFormModal({
     ...initialFormData,
   }));
   const [submitting, setSubmitting] = useState(false);
-  const [separateSignalSelected, setSeparateSignalSelected] = useState(false);
-  const [separateSignalInstallmentCount, setSeparateSignalInstallmentCount] = useState('');
-  const [separateSignalFirstDueDate, setSeparateSignalFirstDueDate] = useState('');
-  const [separateLotStartMode, setSeparateLotStartMode] = useState<RecantoLotStartMode>('AFTER_BROKERAGE');
-  const [holdLotChargesUntilSignalSettled, setHoldLotChargesUntilSignalSettled] = useState(false);
+  const persistedSeparate = readSeparateSignalEditState(initialFormData);
+  const [separateSignalSelected, setSeparateSignalSelected] = useState(persistedSeparate.selected);
+  const [separateSignalInstallmentCount, setSeparateSignalInstallmentCount] = useState(persistedSeparate.installmentCount);
+  const [separateSignalFirstDueDate, setSeparateSignalFirstDueDate] = useState(persistedSeparate.firstDueDate);
+  const [separateLotStartMode, setSeparateLotStartMode] = useState<RecantoLotStartMode | ''>(
+    persistedSeparate.lotStartMode,
+  );
+  const [holdLotChargesUntilSignalSettled, setHoldLotChargesUntilSignalSettled] = useState(
+    persistedSeparate.holdCharges,
+  );
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [prefillBanner, setPrefillBanner] = useState<string | null>(null);
   const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
@@ -325,6 +360,14 @@ export function CustomerLotFormModal({
   useEffect(() => {
     if (initialFormData) {
       setFormData((prev) => ({ ...prev, ...initialFormData }));
+      const persisted = readSeparateSignalEditState(initialFormData);
+      if (persisted.selected) {
+        setSeparateSignalSelected(true);
+        setSeparateSignalInstallmentCount(persisted.installmentCount);
+        setSeparateSignalFirstDueDate(persisted.firstDueDate);
+        setSeparateLotStartMode(persisted.lotStartMode);
+        setHoldLotChargesUntilSignalSettled(persisted.holdCharges);
+      }
     }
   }, [initialFormData]);
 
@@ -2608,12 +2651,12 @@ function SeparateSignalSchedulePanel({
   fullyPaid: boolean;
   installmentCount: string;
   firstDueDate: string;
-  lotStartMode: RecantoLotStartMode;
+  lotStartMode: RecantoLotStartMode | '';
   holdCharges: boolean;
   disabled: boolean;
   onInstallmentCountChange: (value: string) => void;
   onFirstDueDateChange: (value: string) => void;
-  onLotStartModeChange: (value: RecantoLotStartMode) => void;
+  onLotStartModeChange: (value: RecantoLotStartMode | '') => void;
   onHoldChargesChange: (value: boolean) => void;
 }) {
   const schedule = preview.schedule;
@@ -2677,9 +2720,12 @@ function SeparateSignalSchedulePanel({
         <select
           value={lotStartMode}
           disabled={disabled}
-          onChange={(e) => onLotStartModeChange(e.target.value as RecantoLotStartMode)}
+          onChange={(e) => onLotStartModeChange(e.target.value as RecantoLotStartMode | '')}
           className={GIS_INPUT}
         >
+          {lotStartMode === '' ? (
+            <option value="">Não registrado na venda</option>
+          ) : null}
           <option value="AFTER_BROKERAGE">Após o cronograma do sinal</option>
           <option value="SIMULTANEOUS">Simultaneamente ao sinal</option>
           <option value="SPECIFIC_DATE">Em data específica</option>

@@ -40,7 +40,7 @@ export type RecantoSeparateSignalFormInput = {
   actDate?: string | null;
   signalFirstDueDate?: string | null;
   lotInstallmentCount: number;
-  lotStartMode: RecantoLotStartMode;
+  lotStartMode: RecantoLotStartMode | '';
   lotSpecificStartDate?: string | null;
   holdLotChargesUntilSignalSettled?: boolean;
   /** Só o servidor pode ligar. Omitido, a confirmação continua bloqueada. */
@@ -142,6 +142,17 @@ export function buildRecantoSeparateSignalPreview(
   const offered = canOfferRecantoSeparateSignal(input);
   const installmentSale = input.installmentSale !== false;
   if (!offered || !input.selected || !installmentSale) return inactive(offered);
+  if (!input.lotStartMode) {
+    const message = 'O início das parcelas do lote não está registrado nesta venda.';
+    return {
+      offered: true,
+      active: true,
+      schedule: null,
+      error: message,
+      confirmBlocked: true,
+      confirmBlockMessage: message,
+    };
+  }
 
   try {
     const signalContractCents = reaisNumberToCents(input.signalContract, 'O valor do sinal');
@@ -182,4 +193,87 @@ export function buildRecantoSeparateSignalPreview(
       confirmBlockMessage: `${message} ${RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE}`,
     };
   }
+}
+
+export type PersistedSeparateSignalForm = {
+  signal_schedule_mode: 'SEPARATE';
+  signal_installment_count: string;
+  signal_first_due_date: string;
+  lot_schedule_start_mode: RecantoLotStartMode | '';
+  hold_lot_charges_until_signal_settled: boolean;
+  lot_schedule_first_due_date: string;
+};
+
+type SeparateSignalReceiptRef = {
+  schedule_group?: string | null;
+  installment_number?: number | string | null;
+  amount?: number | string | null;
+  due_date?: string | null;
+  status?: string | null;
+};
+
+function dateOnly(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  return text.includes('T') ? text.split('T')[0] : text.slice(0, 10);
+}
+
+function storedLotStartMode(value: unknown): RecantoLotStartMode | '' {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (raw === 'AFTER_SIGNAL' || raw === 'AFTER_BROKERAGE') return 'AFTER_BROKERAGE';
+  if (raw === 'SIMULTANEOUS' || raw === 'SPECIFIC_DATE') return raw;
+  return '';
+}
+
+function cancelledReceipt(status: unknown): boolean {
+  const raw = String(status ?? '').trim().toLowerCase();
+  return raw === 'cancelado' || raw === 'canceled' || raw === 'cancelled' || raw === 'cancelada';
+}
+
+function consistentSignalFuture(receipts: SeparateSignalReceiptRef[]): {
+  count: string;
+  firstDueDate: string;
+} | null {
+  const rows = receipts.filter((row) => {
+    if (String(row.schedule_group ?? '').trim().toUpperCase() !== 'SIGNAL') return false;
+    if (cancelledReceipt(row.status)) return false;
+    return Number(row.installment_number) > 0;
+  });
+  if (rows.length === 0) return null;
+  const amounts = rows.map((row) => {
+    const amount = Number(row.amount);
+    return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+  });
+  if (amounts.some((amount) => amount == null)) return null;
+  const firstAmount = amounts[0];
+  if (amounts.some((amount) => amount !== firstAmount)) return null;
+  const dates = rows.map((row) => dateOnly(row.due_date)).filter(Boolean).sort();
+  if (dates.length !== rows.length) return null;
+  return { count: String(rows.length), firstDueDate: dates[0] };
+}
+
+/**
+ * Lê a configuração SEPARATE já gravada. Não recalcula recebíveis.
+ * A retenção só volta marcada quando a coluna está explicitamente verdadeira.
+ */
+export function readPersistedSeparateSignalForm(input: {
+  sale: Record<string, unknown> | null | undefined;
+  receipts?: SeparateSignalReceiptRef[] | null;
+}): PersistedSeparateSignalForm | null {
+  const sale = input.sale;
+  if (String(sale?.signal_schedule_mode ?? '').trim().toUpperCase() !== 'SEPARATE') return null;
+  const fromReceipts = consistentSignalFuture(input.receipts || []);
+  const storedCount = Number(sale?.signal_installment_count);
+  const count = Number.isInteger(storedCount) && storedCount > 0
+    ? String(storedCount)
+    : fromReceipts?.count || '';
+  const storedDue = dateOnly(sale?.signal_first_due_date);
+  return {
+    signal_schedule_mode: 'SEPARATE',
+    signal_installment_count: count,
+    signal_first_due_date: storedDue || fromReceipts?.firstDueDate || '',
+    lot_schedule_start_mode: storedLotStartMode(sale?.lot_schedule_start_mode),
+    hold_lot_charges_until_signal_settled: sale?.hold_lot_charges_until_signal_settled === true,
+    lot_schedule_first_due_date: dateOnly(sale?.lot_schedule_first_due_date),
+  };
 }

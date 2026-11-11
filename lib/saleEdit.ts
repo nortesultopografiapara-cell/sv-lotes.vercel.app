@@ -24,6 +24,7 @@ import {
   isMissingScheduleGroupColumn,
   mergeScheduleGroups,
 } from '@/lib/finance/recantoReceiptSchedule';
+import { readPersistedSeparateSignalForm } from '@/lib/recantoSeparateSignalForm';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
 import { saleSpouseFormFieldsFromSale } from '@/lib/saleSpouseFields';
 import {
@@ -231,7 +232,15 @@ export async function loadSaleEditContext(
     (r) => Number(r.installment_number) === -1 && isPaidReceipt(r),
   );
   const entryReceipt = (receipts || []).find((r) => Number(r.installment_number) === 0);
-  const firstParcel = (receipts || []).find((r) => Number(r.installment_number) === 1);
+  const separateSignal = readPersistedSeparateSignalForm({ sale, receipts: receipts || [] });
+  const hasScheduleGroup = (receipts || []).some((row) => String(row.schedule_group || '').trim());
+  const firstParcel = hasScheduleGroup
+    ? (receipts || []).find(
+        (row) =>
+          String(row.schedule_group || '').trim().toUpperCase() === 'LOT' &&
+          Number(row.installment_number) === 1,
+      )
+    : (receipts || []).find((r) => Number(r.installment_number) === 1);
   const cashReceipt =
     (receipts || []).find((r) => Number(r.installment_number) === 1 && isPaidReceipt(r)) ||
     (receipts || [])[0];
@@ -253,6 +262,7 @@ export async function loadSaleEditContext(
       : null) ||
     '';
   let firstInstDue =
+    separateSignal?.lot_schedule_first_due_date ||
     (sale.first_installment_due_date as string) ||
     firstParcel?.due_date ||
     '';
@@ -336,6 +346,16 @@ export async function loadSaleEditContext(
     use_balloon_installments: useBalloon,
     balloon_config: balloonConfig,
     balloon_locked: balloonLocked,
+    ...(separateSignal
+      ? {
+          signal_schedule_mode: separateSignal.signal_schedule_mode,
+          signal_installment_count: separateSignal.signal_installment_count,
+          signal_first_due_date: separateSignal.signal_first_due_date,
+          lot_schedule_start_mode: separateSignal.lot_schedule_start_mode,
+          hold_lot_charges_until_signal_settled:
+            separateSignal.hold_lot_charges_until_signal_settled,
+        }
+      : {}),
   };
 
   return {

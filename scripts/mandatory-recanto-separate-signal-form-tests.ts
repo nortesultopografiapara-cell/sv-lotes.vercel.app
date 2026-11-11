@@ -13,6 +13,7 @@ import {
   buildRecantoSeparateSignalPreview,
   canOfferRecantoSeparateSignal,
   describeCentsInstallments,
+  readPersistedSeparateSignalForm,
   RECANTO_SEPARATE_SIGNAL_ENABLED,
   RECANTO_SEPARATE_SIGNAL_PREPARATION_MESSAGE,
   validateRecantoSaleSignalOnSubmit,
@@ -211,6 +212,71 @@ function main() {
     modal.includes('validateRecantoSaleSignalOnSubmit')
       && modal.includes('separateInstallmentCount: Number(separateSignalInstallmentCount)'),
     '13. confirmação usa a quantidade do sinal separado',
+  );
+
+  const ana = readPersistedSeparateSignalForm({
+    sale: {
+      signal_schedule_mode: 'SEPARATE',
+      signal_installment_count: 4,
+      signal_first_due_date: '2026-11-20',
+      lot_schedule_start_mode: 'AFTER_SIGNAL',
+      lot_schedule_first_due_date: '2027-03-20',
+      hold_lot_charges_until_signal_settled: null,
+    },
+  });
+  assert(ana?.signal_installment_count === '4', 'edição recupera as 4 parcelas do sinal');
+  assert(ana?.signal_first_due_date === '2026-11-20', 'edição recupera o primeiro vencimento');
+  assert(ana?.lot_schedule_start_mode === 'AFTER_BROKERAGE', 'edição traduz o início do lote');
+  assert(ana?.hold_lot_charges_until_signal_settled === false, 'retenção nula não é marcada');
+  assert(ana?.lot_schedule_first_due_date === '2027-03-20', 'edição recupera o início do lote');
+  const anaPreview = preview({
+    lotPrice: 70340.32,
+    signalContract: 3500,
+    paidAtAct: 1500,
+    signalInstallmentCount: 4,
+    actDate: '2026-11-10',
+    signalFirstDueDate: '2026-11-20',
+    lotInstallmentCount: 120,
+    lotStartMode: 'AFTER_BROKERAGE',
+  });
+  const anaSignal = (anaPreview.schedule?.brokerageLines ?? []).filter((line) => line.kind === 'INSTALLMENT');
+  assert(anaSignal.length === 4 && anaSignal.every((line) => line.amountCents === 50_000), 'saldo de 2.000 em quatro de 500');
+  assert(anaPreview.schedule?.lotLines.length === 120, 'lote permanece em 120 parcelas');
+
+  const fromReceipts = readPersistedSeparateSignalForm({
+    sale: { signal_schedule_mode: 'SEPARATE' },
+    receipts: [
+      { schedule_group: 'SIGNAL', installment_number: 1, amount: 500, due_date: '2026-11-20', status: 'pendente' },
+      { schedule_group: 'SIGNAL', installment_number: 2, amount: 500, due_date: '2026-12-20', status: 'pendente' },
+      { schedule_group: 'LOT', installment_number: 1, amount: 586.17, due_date: '2027-03-20', status: 'pendente' },
+    ],
+  });
+  assert(fromReceipts?.signal_installment_count === '2', 'parcelas iguais do sinal completam a quantidade');
+  assert(fromReceipts?.signal_first_due_date === '2026-11-20', 'vencimento vem do recebível');
+  assert(fromReceipts?.lot_schedule_start_mode === '', 'início do lote não é inventado');
+
+  const inconsistent = readPersistedSeparateSignalForm({
+    sale: { signal_schedule_mode: 'SEPARATE', hold_lot_charges_until_signal_settled: true },
+    receipts: [
+      { schedule_group: 'SIGNAL', installment_number: 1, amount: 500, due_date: '2026-11-20', status: 'pendente' },
+      { schedule_group: 'SIGNAL', installment_number: 2, amount: 400, due_date: '2026-12-20', status: 'pendente' },
+    ],
+  });
+  assert(inconsistent?.signal_installment_count === '', 'valores divergentes não viram uma parcela única');
+  assert(inconsistent?.hold_lot_charges_until_signal_settled === true, 'retenção gravada continua marcada');
+  assert(readPersistedSeparateSignalForm({ sale: { signal_schedule_mode: null } }) === null, 'LEGACY não vira SEPARATE');
+  const missingStart = preview({ lotStartMode: '' });
+  assert(missingStart.schedule === null && Boolean(missingStart.error), 'sem início do lote não há cronograma inventado');
+
+  const editLoader = readFileSync(resolve(process.cwd(), 'lib/saleEdit.ts'), 'utf8');
+  const editUpdateAt = editLoader.indexOf('export async function updateSaleFromEdit');
+  assert(
+    editLoader.slice(0, editUpdateAt).includes('readPersistedSeparateSignalForm('),
+    'a edição consulta o sinal separado gravado',
+  );
+  assert(
+    !editLoader.slice(editUpdateAt).includes('readPersistedSeparateSignalForm('),
+    'abrir a edição não grava o cronograma',
   );
 
   assert(modal.includes('enabled: separateSignalEnabled'), '2. interruptor vem de fora');
