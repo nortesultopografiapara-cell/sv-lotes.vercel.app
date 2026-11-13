@@ -88,14 +88,59 @@ async function runContractsSelectQuery(
   };
 }
 
-async function runContractsSelectWithFallback(
+const CONTRACTS_LIST_SELECT_STORAGE_KEY = 'sv-lotes.contracts-list-select';
+let rememberedContractsListSelect: string | null = null;
+
+export function resetContractsListSelectMemory() {
+  rememberedContractsListSelect = null;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(CONTRACTS_LIST_SELECT_STORAGE_KEY);
+    }
+  } catch {
+    /* ambiente sem storage */
+  }
+}
+
+function readRememberedContractsListSelect(): string | null {
+  if (rememberedContractsListSelect) return rememberedContractsListSelect;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      rememberedContractsListSelect = sessionStorage.getItem(
+        CONTRACTS_LIST_SELECT_STORAGE_KEY,
+      );
+    }
+  } catch {
+    rememberedContractsListSelect = null;
+  }
+  return rememberedContractsListSelect;
+}
+
+function acceptContractsListSelect(select: string) {
+  rememberedContractsListSelect = select;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(CONTRACTS_LIST_SELECT_STORAGE_KEY, select);
+    }
+  } catch {
+    /* ambiente sem storage */
+  }
+}
+
+export async function runContractsSelectWithFallback(
   supabase: SupabaseClient,
   tenantId: string,
 ): Promise<{ rows: Record<string, unknown>[]; selectUsed: string; error: string | null }> {
-  let select = buildSelectFromColumns([
-    ...CONTRACT_LIST_SELECT_CORE.split(', '),
-    ...CONTRACT_LIST_OPTIONAL_COLUMNS,
-  ]);
+  const remembered = readRememberedContractsListSelect();
+  let select =
+    remembered &&
+    remembered.includes('contract_number') &&
+    remembered.includes('id')
+      ? remembered
+      : buildSelectFromColumns([
+          ...CONTRACT_LIST_SELECT_CORE.split(', '),
+          ...CONTRACT_LIST_OPTIONAL_COLUMNS,
+        ]);
 
   for (let attempt = 0; attempt < 12; attempt++) {
     const { data, error } = await runContractsSelectQuery(
@@ -106,6 +151,7 @@ async function runContractsSelectWithFallback(
     );
 
     if (!error) {
+      acceptContractsListSelect(select);
       return { rows: data ?? [], selectUsed: select, error: null };
     }
 
@@ -131,6 +177,7 @@ async function runContractsSelectWithFallback(
       });
 
       if (!byTenant.error) {
+        acceptContractsListSelect(select);
         return { rows: (byTenant.data as Record<string, unknown>[]) ?? [], selectUsed: select, error: null };
       }
 

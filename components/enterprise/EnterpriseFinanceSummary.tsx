@@ -15,6 +15,8 @@ type EnterpriseFinanceSummaryProps = {
   mode?: 'global' | 'project';
   /** Parcelas ainda incompletas: os dois cards de recebimento ficam sem valor. */
   receiptTotalsReady?: boolean;
+  /** Lotes ainda incompletos: os cards de valor do empreendimento ficam sem valor. */
+  lotsReady?: boolean;
 };
 
 export function EnterpriseFinanceSummary({
@@ -24,6 +26,7 @@ export function EnterpriseFinanceSummary({
   projectName,
   mode = 'project',
   receiptTotalsReady = true,
+  lotsReady = true,
 }: EnterpriseFinanceSummaryProps) {
   const scopeLabel =
     mode === 'global' ? 'Todos os empreendimentos' : projectName;
@@ -34,23 +37,26 @@ export function EnterpriseFinanceSummary({
       <FinanceStatCard
         title={mode === 'global' ? 'Valor Global' : 'Valor total'}
         value={formatEnterpriseCurrency(summary.totalValue)}
-        subtitle={scopeLabel}
+        subtitle={lotsReady ? scopeLabel : 'Carregando lotes'}
         icon={<Landmark />}
         iconWrapClass="bg-violet-500/12 text-violet-400"
+        loading={!lotsReady}
       />
       <FinanceStatCard
         title="Valor Disponível"
         value={formatEnterpriseCurrency(summary.availableValue)}
-        subtitle={`${summary.availableCount} lotes disponíveis`}
+        subtitle={lotsReady ? `${summary.availableCount} lotes disponíveis` : 'Carregando lotes'}
         icon={<Package />}
         iconWrapClass="bg-emerald-500/12 text-emerald-400"
+        loading={!lotsReady}
       />
       <FinanceStatCard
         title="Valor Vendido"
         value={formatEnterpriseCurrency(summary.soldValue)}
-        subtitle={`${soldLotCount} lotes vendidos/quitados`}
+        subtitle={lotsReady ? `${soldLotCount} lotes vendidos/quitados` : 'Carregando lotes'}
         icon={<TrendingUp />}
         iconWrapClass="bg-rose-500/12 text-rose-400"
+        loading={!lotsReady}
       />
       <FinanceStatCard
         title="Valor recebido"

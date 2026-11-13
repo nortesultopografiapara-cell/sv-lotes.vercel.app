@@ -14,7 +14,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   canViewEnterpriseValues,
@@ -36,7 +36,12 @@ import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, applyTenantIdEq, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 import { calculateFinancialTotals } from '@/lib/financeCashFlow';
-import { fetchAllFinanceReceiptsPaged } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import {
+  fetchFinanceReceiptsProgressive,
+  financeDatasetReadyForTotals,
+  isFinanceLoadAbort,
+} from '@/lib/finance/fetchFinanceReceiptsPaged';
+import { publishFinanceNotificationSource } from '@/lib/finance/financeNotificationAlerts';
 import {
   fetchAllBrokerCommissionsPaged,
   fetchAllCashMovementsPaged,
@@ -162,7 +167,11 @@ function OperationalDashboard({ user }: { user: any }) {
   const [evolutionSeries, setEvolutionSeries] = useState<DashboardEvolutionPoint[]>(
     () => buildDashboardFinancialEvolution([], [], [], new Date()),
   );
-  const [loading, setLoading] = useState(true);
+  const [lotsReady, setLotsReady] = useState(false);
+  const [financeReady, setFinanceReady] = useState(false);
+  const [activitiesReady, setActivitiesReady] = useState(false);
+  const [financeError, setFinanceError] = useState<string | null>(null);
+  const dashboardLoadGen = useRef(0);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -254,28 +263,42 @@ function OperationalDashboard({ user }: { user: any }) {
   };
 
   useEffect(() => {
+    const loadGen = ++dashboardLoadGen.current;
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- descarta os indicadores do empreendimento anterior
+    setLotsReady(false);
+    setFinanceReady(false);
+    setActivitiesReady(false);
+    setFinanceError(null);
+
+    const still = () => dashboardLoadGen.current === loadGen;
+
     async function loadDashboardStats() {
       if (!user) return;
-      
+
       try {
         const rlsCtx = await resolveRlsContext(user);
         const resolvedTenantId =
           rlsCtx.tenantId || user.tenant_id || (user as { company_id?: string })?.company_id || null;
 
         if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
-          setLoading(false);
+          if (!still()) return;
+          setLotsReady(true);
+          setFinanceReady(true);
+          setActivitiesReady(true);
           return;
         }
 
         let projectsQuery = supabase.from('projects').select('id, name, contract_model');
         projectsQuery = applyTenantFilter(projectsQuery, rlsCtx, 'projects');
 
-        const [{ data: projectsData }, lotFetch] = await Promise.all([
+        const [{ data: projectsData }, lotFetch, ownerCtx] = await Promise.all([
           projectsQuery,
           fetchAllEnterpriseLotRows(supabase, rlsCtx),
+          loadOwnerAccessContext(supabase, user, resolvedTenantId),
         ]);
+        if (!still()) return;
 
-        const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
         const ownerDashboardProjectIds = ownerCtx.isOwner
           ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'dashboard')
           : ownerCtx.allowedProjectIds;
@@ -284,14 +307,8 @@ function OperationalDashboard({ user }: { user: any }) {
           projectsData || [],
           ownerDashboardProjectIds,
         );
+        setProjects(visibleProjects.length > 0 ? visibleProjects : []);
 
-        if (visibleProjects.length > 0) {
-          setProjects(visibleProjects);
-        } else {
-          setProjects([]);
-        }
-
-        const allLots = lotFetch.rows;
         if (lotFetch.wouldTruncateWithoutPagination) {
           console.info('[DASHBOARD] enterprise lots paginated', {
             rowsFetched: lotFetch.rowsFetched,
@@ -301,11 +318,11 @@ function OperationalDashboard({ user }: { user: any }) {
         }
 
         const ownerScopedLots = filterRowsByOwnerProjects(
-          allLots,
+          lotFetch.rows,
           ownerDashboardProjectIds,
           (lot) => lot.project_id as string | null | undefined,
         );
-        const tenantScopedLots = ownerCtx.isOwner ? ownerScopedLots : allLots;
+        const tenantScopedLots = ownerCtx.isOwner ? ownerScopedLots : lotFetch.rows;
         const globalEnterprise = calculateEnterpriseValueSummary(tenantScopedLots);
         const scopedLots = selectedProjectId
           ? filterEnterpriseLotsByProject(tenantScopedLots, selectedProjectId)
@@ -314,165 +331,8 @@ function OperationalDashboard({ user }: { user: any }) {
         const selectedProjectName =
           visibleProjects.find((p) => p.id === selectedProjectId)?.name || '';
 
-        let recebimentosMes = 0;
-        let aReceber = 0;
-        let inadimplenciaVal = 0;
-        let totalEntradas = 0;
-        let totalSaidas = 0;
-        let saldoAtual = 0;
-        let margemPercent = 0;
-
-        try {
-            const startOfMonth = new Date(
-              currentTime.getFullYear(),
-              currentTime.getMonth(),
-              1,
-            );
-            const receiptsPaged = await fetchAllFinanceReceiptsPaged<DashboardFinanceReceiptRow>({
-              supabase,
-              rlsCtx,
-              select: DASHBOARD_FINANCE_RECEIPTS_SELECT,
-              selectFallback: DASHBOARD_FINANCE_RECEIPTS_SELECT_FALLBACK,
-            });
-            const receiptsData = receiptsPaged.rows;
-
-            const cashPaged = await fetchAllCashMovementsPaged({
-              supabase,
-              rlsCtx,
-            });
-            const cashData = cashPaged.rows;
-
-            const commsPaged = await fetchAllBrokerCommissionsPaged({
-              supabase,
-              rlsCtx,
-            });
-            const commsData = commsPaged.rows;
-
-            const scopedReceipts = filterRowsByOwnerProjects<DashboardFinanceReceiptRow>(
-              receiptsData || [],
-              ownerDashboardProjectIds,
-              resolveReceiptProjectId,
-            ).filter((r) =>
-              selectedProjectId
-                ? receiptMatchesProject(r, selectedProjectId, selectedProjectName)
-                : true,
-            );
-            const scopedCash = filterRowsByOwnerProjects(
-              (cashData || []) as any[],
-              ownerDashboardProjectIds,
-              resolveCashMovementProjectId,
-            ).filter((c: any) => {
-              if (!selectedProjectId) return true;
-              const name =
-                c.projects?.name ||
-                c.sales?.projects?.name ||
-                c.contracts?.projects?.name ||
-                '';
-              return name === selectedProjectName;
-            });
-            const scopedComms = filterRowsByOwnerProjects(
-              (commsData || []) as any[],
-              ownerDashboardProjectIds,
-              resolveCommissionProjectId,
-            ).filter((c: any) => {
-              if (!selectedProjectId) return true;
-              const name =
-                c.sales?.projects?.name || c.contracts?.projects?.name || '';
-              return name === selectedProjectName;
-            });
-
-            const totals = calculateFinancialTotals(
-              scopedReceipts,
-              scopedCash,
-              scopedComms,
-            );
-            totalEntradas = totals.totalEntradas;
-            totalSaidas = totals.totalSaidas;
-            saldoAtual = totals.saldoFinal;
-            margemPercent =
-              totalEntradas > 0 ? (saldoAtual / totalEntradas) * 100 : 0;
-
-            scopedReceipts.forEach((r) => {
-              const st = String(r.status || '').toLowerCase();
-              const amt = Number(r.paid_amount) || Number(r.amount) || 0;
-              const paidAt = r.paid_at ? new Date(String(r.paid_at)) : null;
-              if (
-                (st === 'pago' || st === 'paid') &&
-                paidAt &&
-                paidAt >= startOfMonth
-              ) {
-                recebimentosMes += amt;
-              }
-            });
-
-            const parcelSummary = summarizeDashboardParcelStatus(scopedReceipts);
-            setParcelStatus(parcelSummary);
-            aReceber = parcelSummary.pendenteAmount;
-            inadimplenciaVal = parcelSummary.atrasadoAmount;
-            setEvolutionSeries(
-              buildDashboardFinancialEvolution(
-                scopedReceipts,
-                scopedCash,
-                scopedComms,
-                currentTime,
-              ),
-            );
-        } catch (e) {
-            console.error('[DASHBOARD] erro financeiro', e);
-            setParcelStatus(EMPTY_DASHBOARD_PARCEL_STATUS);
-            setEvolutionSeries(
-              buildDashboardFinancialEvolution([], [], [], currentTime),
-            );
-        }
-
-        // Timeline operacional: lot_audit_logs (somente leitura, limite pequeno).
-        setActivitiesError(null);
-        try {
-          let auditQuery = supabase
-            .from('lot_audit_logs')
-            .select(
-              'id, action, title, description, created_at, project_id, source, company_id, user_id, sale_id, block_id, lot_id, contract_id, old_data, new_data',
-            );
-          auditQuery = applyTenantIdEq(
-            auditQuery,
-            rlsCtx,
-            'lot_audit_logs',
-            'company_id',
-          );
-          if (selectedProjectId) {
-            auditQuery = auditQuery.eq('project_id', selectedProjectId);
-          }
-          const { data: auditData, error: auditError } = await auditQuery
-            .in('action', DASHBOARD_ACTIVITY_ACTIONS)
-            .order('created_at', { ascending: false })
-            .limit(DASHBOARD_ACTIVITY_LIMIT);
-          if (auditError) {
-            setActivities([]);
-            setActivitiesError(
-              auditError.message || 'Erro ao consultar lot_audit_logs.',
-            );
-          } else {
-            const ownerScopedAudit = filterRowsByOwnerProjects(
-              (auditData || []) as LotAuditLogRow[],
-              ownerDashboardProjectIds,
-              (row) => row.project_id,
-            );
-            setActivities(
-              mapLotAuditRowsToDashboardActivities(
-                ownerScopedAudit,
-                DASHBOARD_ACTIVITY_LIMIT,
-              ),
-            );
-          }
-        } catch (auditErr) {
-          const msg =
-            auditErr instanceof Error
-              ? auditErr.message
-              : 'Erro ao consultar o histórico operacional.';
-          setActivities([]);
-          setActivitiesError(msg);
-        } 
-        setStats({
+        setStats((prev) => ({
+          ...prev,
           globalEnterpriseTotal: globalEnterprise.totalValue,
           enterpriseTotal: enterprise.totalValue,
           availableValue: enterprise.availableValue,
@@ -482,24 +342,189 @@ function OperationalDashboard({ user }: { user: any }) {
           reserved: enterprise.reservedCount,
           sold: enterprise.soldCount,
           paid: enterprise.paidCount,
-          recebimentos_mes: recebimentosMes,
-          a_receber: aReceber,
-          inadimplencia: inadimplenciaVal,
-          total_entradas: totalEntradas,
-          total_saidas: totalSaidas,
-          saldo_atual: saldoAtual,
-          margem_percent: margemPercent,
-        });
+        }));
+        setLotsReady(true);
+
+        const auditPromise = (async () => {
+          setActivitiesError(null);
+          try {
+            let auditQuery = supabase
+              .from('lot_audit_logs')
+              .select(
+                'id, action, title, description, created_at, project_id, source, company_id, user_id, sale_id, block_id, lot_id, contract_id, old_data, new_data',
+              );
+            auditQuery = applyTenantIdEq(
+              auditQuery,
+              rlsCtx,
+              'lot_audit_logs',
+              'company_id',
+            );
+            if (selectedProjectId) {
+              auditQuery = auditQuery.eq('project_id', selectedProjectId);
+            }
+            const { data: auditData, error: auditError } = await auditQuery
+              .in('action', DASHBOARD_ACTIVITY_ACTIONS)
+              .order('created_at', { ascending: false })
+              .limit(DASHBOARD_ACTIVITY_LIMIT);
+            if (!still()) return;
+            if (auditError) {
+              setActivities([]);
+              setActivitiesError(
+                auditError.message || 'Erro ao consultar lot_audit_logs.',
+              );
+            } else {
+              const ownerScopedAudit = filterRowsByOwnerProjects(
+                (auditData || []) as LotAuditLogRow[],
+                ownerDashboardProjectIds,
+                (row) => row.project_id,
+              );
+              setActivities(
+                mapLotAuditRowsToDashboardActivities(
+                  ownerScopedAudit,
+                  DASHBOARD_ACTIVITY_LIMIT,
+                ),
+              );
+            }
+          } catch (auditErr) {
+            if (!still()) return;
+            const msg =
+              auditErr instanceof Error
+                ? auditErr.message
+                : 'Erro ao consultar o histórico operacional.';
+            setActivities([]);
+            setActivitiesError(msg);
+          } finally {
+            if (still()) setActivitiesReady(true);
+          }
+        })();
+
+        try {
+          const startOfMonth = new Date(
+            currentTime.getFullYear(),
+            currentTime.getMonth(),
+            1,
+          );
+          const [receiptState, cashPaged, commsPaged] = await Promise.all([
+            fetchFinanceReceiptsProgressive<DashboardFinanceReceiptRow>({
+              supabase,
+              rlsCtx,
+              select: DASHBOARD_FINANCE_RECEIPTS_SELECT,
+              selectFallback: DASHBOARD_FINANCE_RECEIPTS_SELECT_FALLBACK,
+              signal: controller.signal,
+            }),
+            fetchAllCashMovementsPaged({ supabase, rlsCtx }),
+            fetchAllBrokerCommissionsPaged({ supabase, rlsCtx }),
+          ]);
+          if (!still()) return;
+          if (!financeDatasetReadyForTotals(receiptState)) {
+            setFinanceError(
+              receiptState.error ||
+                'Não foi possível concluir as parcelas. Os totais não foram atualizados.',
+            );
+            return;
+          }
+          publishFinanceNotificationSource(receiptState.rows);
+
+          const scopedReceipts = filterRowsByOwnerProjects<DashboardFinanceReceiptRow>(
+            receiptState.rows,
+            ownerDashboardProjectIds,
+            resolveReceiptProjectId,
+          ).filter((r) =>
+            selectedProjectId
+              ? receiptMatchesProject(r, selectedProjectId, selectedProjectName)
+              : true,
+          );
+          const scopedCash = filterRowsByOwnerProjects(
+            (cashPaged.rows || []) as any[],
+            ownerDashboardProjectIds,
+            resolveCashMovementProjectId,
+          ).filter((c: any) => {
+            if (!selectedProjectId) return true;
+            const name =
+              c.projects?.name ||
+              c.sales?.projects?.name ||
+              c.contracts?.projects?.name ||
+              '';
+            return name === selectedProjectName;
+          });
+          const scopedComms = filterRowsByOwnerProjects(
+            (commsPaged.rows || []) as any[],
+            ownerDashboardProjectIds,
+            resolveCommissionProjectId,
+          ).filter((c: any) => {
+            if (!selectedProjectId) return true;
+            const name =
+              c.sales?.projects?.name || c.contracts?.projects?.name || '';
+            return name === selectedProjectName;
+          });
+
+          const totals = calculateFinancialTotals(
+            scopedReceipts,
+            scopedCash,
+            scopedComms,
+          );
+          let recebimentosMes = 0;
+          scopedReceipts.forEach((r) => {
+            const st = String(r.status || '').toLowerCase();
+            const amt = Number(r.paid_amount) || Number(r.amount) || 0;
+            const paidAt = r.paid_at ? new Date(String(r.paid_at)) : null;
+            if (
+              (st === 'pago' || st === 'paid') &&
+              paidAt &&
+              paidAt >= startOfMonth
+            ) {
+              recebimentosMes += amt;
+            }
+          });
+          const parcelSummary = summarizeDashboardParcelStatus(scopedReceipts);
+          if (!still()) return;
+          setParcelStatus(parcelSummary);
+          setEvolutionSeries(
+            buildDashboardFinancialEvolution(
+              scopedReceipts,
+              scopedCash,
+              scopedComms,
+              currentTime,
+            ),
+          );
+          setStats((prev) => ({
+            ...prev,
+            recebimentos_mes: recebimentosMes,
+            a_receber: parcelSummary.pendenteAmount,
+            inadimplencia: parcelSummary.atrasadoAmount,
+            total_entradas: totals.totalEntradas,
+            total_saidas: totals.totalSaidas,
+            saldo_atual: totals.saldoFinal,
+            margem_percent:
+              totals.totalEntradas > 0
+                ? (totals.saldoFinal / totals.totalEntradas) * 100
+                : 0,
+          }));
+          setFinanceError(null);
+          setFinanceReady(true);
+        } catch (e) {
+          if (!still() || isFinanceLoadAbort(e)) return;
+          console.error('[DASHBOARD] erro financeiro', e);
+          setFinanceError(
+            'Não foi possível concluir os indicadores financeiros. Os totais não foram atualizados.',
+          );
+        }
+
+        await auditPromise;
       } catch (err) {
-        console.error("Dashboard stats error:", err);
-      } finally {
-        setLoading(false);
+        if (!still() || isFinanceLoadAbort(err)) return;
+        console.error('Dashboard stats error:', err);
       }
     }
 
-    loadDashboardStats();
+    void loadDashboardStats();
+    return () => {
+      dashboardLoadGen.current += 1;
+      controller.abort();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedProjectId]);
+
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -753,7 +778,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.globalEnterpriseTotal}
                 icon={Building2}
                 color="#6366f1"
-                loading={loading}
+                loading={!lotsReady}
                 isCurrency
                 subtitle="Todos os empreendimentos permitidos"
               />
@@ -763,7 +788,7 @@ function OperationalDashboard({ user }: { user: any }) {
                   value={stats.enterpriseTotal}
                   icon={Building2}
                   color="#3b82f6"
-                  loading={loading}
+                  loading={!lotsReady}
                   isCurrency
                   subtitle={
                     projects.find((p) => p.id === selectedProjectId)?.name ||
@@ -776,7 +801,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.availableValue}
                 icon={DollarSign}
                 color="#10b981"
-                loading={loading}
+                loading={!lotsReady}
                 isCurrency
                 subtitle={`${stats.available} lotes disponíveis`}
               />
@@ -785,7 +810,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.reservedValue}
                 icon={Calendar}
                 color="#f59e0b"
-                loading={loading}
+                loading={!lotsReady}
                 isCurrency
                 subtitle={`${stats.reserved} lotes reservados`}
               />
@@ -794,7 +819,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.soldValue}
                 icon={Tag}
                 color="#ef4444"
-                loading={loading}
+                loading={!lotsReady}
                 isCurrency
                 subtitle={`${stats.sold + stats.paid} lotes vendidos/quitados`}
               />
@@ -806,7 +831,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.available}
                 icon={DollarSign}
                 color="#10b981"
-                loading={loading}
+                loading={!lotsReady}
                 subtitle={formatEnterpriseCurrency(stats.availableValue)}
               />
               <DashboardMetricKpi
@@ -814,7 +839,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.reserved}
                 icon={Calendar}
                 color="#f59e0b"
-                loading={loading}
+                loading={!lotsReady}
                 subtitle={formatEnterpriseCurrency(stats.reservedValue)}
               />
               <DashboardMetricKpi
@@ -822,7 +847,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.sold + stats.paid}
                 icon={Tag}
                 color="#ef4444"
-                loading={loading}
+                loading={!lotsReady}
                 subtitle={formatEnterpriseCurrency(stats.soldValue)}
               />
               <DashboardMetricKpi
@@ -830,7 +855,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.recebimentos_mes}
                 icon={TrendingUp}
                 color="#10b981"
-                loading={loading}
+                loading={!financeReady}
                 isCurrency
                 subtitle="Mês corrente"
               />
@@ -839,7 +864,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.a_receber}
                 icon={FileText}
                 color="#3b82f6"
-                loading={loading}
+                loading={!financeReady}
                 isCurrency
                 subtitle="Parcelas pendentes"
               />
@@ -848,7 +873,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 value={stats.inadimplencia}
                 icon={AlertCircle}
                 color="#ef4444"
-                loading={loading}
+                loading={!financeReady}
                 isCurrency
                 subtitle={
                   parcelStatus.atrasado === 1
@@ -876,13 +901,16 @@ function OperationalDashboard({ user }: { user: any }) {
           <div className="dash-finance-card">
             <h2 className="dash-analytics-card-title">Resumo financeiro</h2>
             <FinancialSummaryCard
-              loading={loading}
+              loading={!financeReady}
               entradas={stats.total_entradas}
               saidas={stats.total_saidas}
               saldo={stats.saldo_atual}
               margemPercent={stats.margem_percent}
               formatCurrency={formatCurrency}
             />
+            {financeError ? (
+              <p className="mt-2 text-xs text-rose-300">{financeError}</p>
+            ) : null}
           </div>
         </div>
 
@@ -890,7 +918,7 @@ function OperationalDashboard({ user }: { user: any }) {
           <div className="dash-analytics-card dash-analytics-lots">
             <h2 className="dash-analytics-card-title">Distribuição dos lotes</h2>
             <div className="dash-analytics-body">
-              {loading ? (
+              {!lotsReady ? (
                 <div className="flex items-center justify-center h-[100px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
@@ -906,7 +934,7 @@ function OperationalDashboard({ user }: { user: any }) {
           <div className="dash-analytics-card dash-analytics-parcels">
             <h2 className="dash-analytics-card-title">Situação das parcelas</h2>
             <div className="dash-analytics-body">
-              {loading ? (
+              {!financeReady ? (
                 <div className="flex items-center justify-center h-[100px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
@@ -922,7 +950,7 @@ function OperationalDashboard({ user }: { user: any }) {
           <div className="dash-evolution-card dash-analytics-evolution">
             <h2 className="dash-analytics-card-title">Evolução financeira (últimos 6 meses)</h2>
             <div className="dash-evolution-body">
-              {loading ? (
+              {!financeReady ? (
                 <div className="flex items-center justify-center h-full min-h-[240px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
@@ -935,7 +963,7 @@ function OperationalDashboard({ user }: { user: any }) {
           <div className="dash-analytics-card dash-analytics-activity">
             <h2 className="dash-analytics-card-title">Atividades recentes</h2>
             <div className="dash-activity-scroll sv-scrollbar sv-scrollbar-dark">
-              {loading ? (
+              {!activitiesReady ? (
                 <div className="flex items-center justify-center h-24">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>

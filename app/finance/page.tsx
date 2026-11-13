@@ -61,11 +61,13 @@ import {
   FINANCE_RECEIPTS_UI_PAGE_SIZES,
   fetchFinanceReceiptsProgressive,
   financeDatasetReadyForTotals,
+  isFinanceLoadAbort,
   normalizeFinanceReceiptsUiPageSize,
   paginateFinanceReceiptRows,
   sanitizeFinanceLoadLog,
   type FinanceReceiptsUiPageSize,
 } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import { publishFinanceNotificationSource } from '@/lib/finance/financeNotificationAlerts';
 import {
   filterFinanceReceiptRows,
   financeReceiptFiltersAreActive,
@@ -78,6 +80,7 @@ import {
   type EnterpriseValueSummary,
 } from '@/lib/enterpriseValueSummary';
 import { fetchAllEnterpriseLotRows } from '@/lib/enterpriseValueFetch';
+import { FINANCE_PAID_COMMISSION_STATUSES } from '@/lib/finance/fetchFinanceCompanionPaged';
 import { EnterpriseFinanceSummary } from '@/components/enterprise/EnterpriseFinanceSummary';
 import '@/components/enterprise/enterprise-value.css';
 import {
@@ -230,6 +233,7 @@ export default function FinancePage() {
   const [enterpriseBlocks, setEnterpriseBlocks] = useState<
     { project_id?: string | null; status?: string | null; price?: number | string | null }[]
   >([]);
+  const [enterpriseLotsReady, setEnterpriseLotsReady] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -261,6 +265,7 @@ export default function FinancePage() {
   const [receiptRefreshing, setReceiptRefreshing] = useState(false);
   const receiptPagesRef = useRef<Array<any[] | undefined>>([]);
   const financeLoadGen = useRef(0);
+  const financeAbortRef = useRef<AbortController | null>(null);
   const receiptCompleteRef = useRef(false);
   const validatedSnapshotRef = useRef<null | {
     payments: any[];
@@ -362,6 +367,9 @@ export default function FinancePage() {
 
   const loadFinance = async (options?: { resume?: boolean }) => {
       if (!user) return;
+      financeAbortRef.current?.abort();
+      const controller = new AbortController();
+      financeAbortRef.current = controller;
       const loadGen = ++financeLoadGen.current;
       const resume = options?.resume === true;
       const keepPrevious = !resume && validatedSnapshotRef.current != null;
@@ -392,80 +400,54 @@ export default function FinancePage() {
           let cashData: any[] = [];
           try {
             let queryCash = supabase.from('cash_movements')
-                .select(`
-                  *,
-                  projects(name),
-                  customers:customer_id(id, name, full_name),
-                  contracts:contract_id(
-                    id, contract_number, customer_id, block_id, project_id,
-                    customers(id, name, full_name),
-                    blocks(id, block_name, number, lot_number),
-                    projects(id, name)
-                  ),
-                  sales:sale_id(
-                    id, project_id, block_id, customer_id,
-                    customers(id, name, full_name),
-                    blocks(id, block_name, number, lot_number),
-                    projects(id, name),
-                    contracts(contract_number)
-                  )
-                `)
+                .select('*')
                 .order('movement_date', { ascending: false });
             queryCash = applyTenantFilter(queryCash, rlsCtx, 'cash_movements');
+            if (typeof (queryCash as { abortSignal?: (s: AbortSignal) => typeof queryCash }).abortSignal === 'function') {
+              queryCash = (queryCash as { abortSignal: (s: AbortSignal) => typeof queryCash }).abortSignal(controller.signal);
+            }
             const { data: cData, error: cErr } = await queryCash;
             if (cErr) {
-                console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
-                let fallbackQuery = supabase.from('cash_movements').select('*').order('movement_date', { ascending: false });
-                fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'cash_movements');
-                const { data: fallbackData } = await fallbackQuery;
-                if (fallbackData) {
-                    cashData = scopeFinanceRowsForUser(
-                      user,
-                      fallbackData,
-                      ownerCtx.rows,
-                      resolveCashMovementProjectId,
-                    );
-                }
-            } else if (cData) {
-                cashData = scopeFinanceRowsForUser(
-                  user,
-                  cData,
-                  ownerCtx.rows,
-                  resolveCashMovementProjectId,
-                );
+              if (isFinanceLoadAbort(cErr)) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
+              throw new Error(cErr.message || 'Falha ao ler o caixa');
             }
+            cashData = scopeFinanceRowsForUser(
+              user,
+              cData || [],
+              ownerCtx.rows,
+              resolveCashMovementProjectId,
+            );
           } catch (eee) {
+            if (isFinanceLoadAbort(eee)) throw eee;
             console.error('Cash movements error', sanitizeFinanceLoadLog(eee));
+            throw eee;
           }
 
           let commsData: any[] = [];
           try {
-            let queryComms = supabase.from('broker_commissions').select('*, brokers(*), sales(projects(*), contracts(*), customers(*), blocks(*)), contracts(projects(*))');
+            let queryComms = supabase
+                .from('broker_commissions')
+                .select('*')
+                .in('status', [...FINANCE_PAID_COMMISSION_STATUSES]);
             queryComms = applyTenantFilter(queryComms, rlsCtx, 'broker_commissions');
+            if (typeof (queryComms as { abortSignal?: (s: AbortSignal) => typeof queryComms }).abortSignal === 'function') {
+              queryComms = (queryComms as { abortSignal: (s: AbortSignal) => typeof queryComms }).abortSignal(controller.signal);
+            }
             const { data: comms, error: commsErr } = await queryComms;
             if (commsErr) {
-                console.error("ERRO JOIN BROKER_COMMISSIONS:", commsErr);
-                let fallbackCommsQuery = supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga', 'paid', 'aprovado', 'aprovada']);
-                fallbackCommsQuery = applyTenantFilter(fallbackCommsQuery, rlsCtx, 'broker_commissions');
-                const { data: fallbackComms } = await fallbackCommsQuery;
-                if (fallbackComms) {
-                    commsData = scopeFinanceRowsForUser(
-                      user,
-                      fallbackComms,
-                      ownerCtx.rows,
-                      resolveCommissionProjectId,
-                    );
-                }
-            } else if (comms) {
-                commsData = scopeFinanceRowsForUser(
-                  user,
-                  comms,
-                  ownerCtx.rows,
-                  resolveCommissionProjectId,
-                );
+              if (isFinanceLoadAbort(commsErr)) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
+              throw new Error(commsErr.message || 'Falha ao ler as comissões');
             }
+            commsData = scopeFinanceRowsForUser(
+              user,
+              comms || [],
+              ownerCtx.rows,
+              resolveCommissionProjectId,
+            );
           } catch (e) {
+            if (isFinanceLoadAbort(e)) throw e;
             console.error('[financeiro] comissoes', sanitizeFinanceLoadLog(e));
+            throw e;
           }
           return { cashData, commsData, ownerCtx };
         });
@@ -490,6 +472,7 @@ export default function FinancePage() {
           rlsCtx,
           select: FINANCE_RECEIPTS_LIST_SELECT,
           selectFallback: FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+          signal: controller.signal,
           seedPages: resume ? receiptPagesRef.current : undefined,
           onProgress: (state) => {
             if (financeLoadGen.current !== loadGen) return;
@@ -506,6 +489,9 @@ export default function FinancePage() {
         });
 
         if (financeLoadGen.current !== loadGen) return;
+        if (financeDatasetReadyForTotals(fetched)) {
+          publishFinanceNotificationSource(fetched.rows);
+        }
         receiptPagesRef.current = fetched.pages;
         setReceiptPageProgress({
           completed: fetched.pagesCompleted,
@@ -725,6 +711,7 @@ export default function FinancePage() {
         setReceiptDatasetComplete(true);
         setReceiptLoadError(null);
       } catch(err) {
+        if (isFinanceLoadAbort(err) || financeLoadGen.current !== loadGen) return;
         console.error('[financeiro] carga', sanitizeFinanceLoadLog(err));
         if (financeLoadGen.current !== loadGen) return;
         const snap = validatedSnapshotRef.current;
@@ -818,6 +805,10 @@ export default function FinancePage() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       loadFinance();
     }
+    return () => {
+      financeAbortRef.current?.abort();
+      financeLoadGen.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading]);
 
@@ -830,34 +821,36 @@ export default function FinancePage() {
     return () => clearTimeout(timer);
   }, [financeToast]);
 
+  const enterpriseProjectId =
+    projectFilter === 'Todos os projetos'
+      ? null
+      : financeProjects.find((p) => p.name === projectFilter)?.id;
+
   useEffect(() => {
     let cancelled = false;
+    if (projectFilter !== 'Todos os projetos' && !enterpriseProjectId) {
+      setEnterpriseLotsReady(false);
+      return;
+    }
+    setEnterpriseLotsReady(false);
 
     async function loadEnterpriseBlocks() {
       if (!user || !canViewEnterpriseValues(user.role)) {
-        setEnterpriseBlocks([]);
-        return;
-      }
-
-      const project =
-        projectFilter !== 'Todos os projetos'
-          ? financeProjects.find((p) => p.name === projectFilter)
-          : null;
-
-      if (projectFilter !== 'Todos os projetos' && !project?.id) {
-        setEnterpriseBlocks([]);
+        if (!cancelled) setEnterpriseLotsReady(true);
         return;
       }
 
       try {
         const rlsCtx = await resolveRlsContext(user);
         const lotFetch = await fetchAllEnterpriseLotRows(supabase, rlsCtx, {
-          projectId: project?.id ?? null,
+          projectId: enterpriseProjectId,
         });
-        if (!cancelled) setEnterpriseBlocks(lotFetch.rows);
+        if (!cancelled) {
+          setEnterpriseBlocks(lotFetch.rows);
+          setEnterpriseLotsReady(true);
+        }
       } catch (error) {
         console.error('FINANCE_ENTERPRISE_BLOCKS_ERROR', error);
-        if (!cancelled) setEnterpriseBlocks([]);
       }
     }
 
@@ -865,7 +858,7 @@ export default function FinancePage() {
     return () => {
       cancelled = true;
     };
-  }, [user, projectFilter, financeProjects]);
+  }, [user, projectFilter, enterpriseProjectId]);
 
   const showEnterpriseValues = canViewEnterpriseValues(user?.role);
   const ownerReadOnly = isOwnerRole(user?.role);
@@ -2530,6 +2523,7 @@ export default function FinancePage() {
             projectName={projectFilter}
             mode={projectFilter === 'Todos os projetos' ? 'global' : 'project'}
             receiptTotalsReady={receiptDatasetComplete}
+            lotsReady={enterpriseLotsReady}
           />
         </section>
       ) : null}

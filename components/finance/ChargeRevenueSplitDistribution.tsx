@@ -24,6 +24,12 @@ import {
   formatFrozenBankIdentityUiLines,
   formatPaidAtDisplay,
 } from '@/lib/finance/reports/frozenBankIdentity';
+import {
+  invalidateSaleRevenueSplitView,
+  loadSaleSplitView,
+} from '@/lib/finance/revenueSplit/saleSplitViewClient';
+
+export { invalidateSaleRevenueSplitView };
 
 type SaleSplitView = {
   saleId: string;
@@ -32,37 +38,6 @@ type SaleSplitView = {
   participants: SaleRevenueSplitSnapshotParticipant[];
   legs: ChargeRevenueSplitLeg[];
 };
-
-const viewCache = new Map<string, Promise<SaleSplitView | null>>();
-
-function loadSaleSplitView(saleId: string): Promise<SaleSplitView | null> {
-  const cached = viewCache.get(saleId);
-  if (cached) return cached;
-  const pending = fetch(`/api/finance/revenue-split/sales/${encodeURIComponent(saleId)}`, {
-    credentials: 'include',
-  })
-    .then(async (res) => {
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        viewCache.delete(saleId);
-        return null;
-      }
-      const view = data as SaleSplitView;
-      if (!view?.snapshot) viewCache.delete(saleId);
-      return view;
-    })
-    .catch(() => {
-      viewCache.delete(saleId);
-      return null;
-    });
-  viewCache.set(saleId, pending);
-  return pending;
-}
-
-export function invalidateSaleRevenueSplitView(saleId?: string | null) {
-  if (saleId) viewCache.delete(saleId);
-  else viewCache.clear();
-}
 
 function paymentLabel(status?: string | null): string {
   const raw = String(status || '').toLowerCase();
@@ -97,7 +72,7 @@ export function ChargeRevenueSplitDistribution({
     setLoading(true);
     void loadSaleSplitView(id).then((next) => {
       if (cancelled) return;
-      setView(next);
+      setView(next as SaleSplitView | null);
       setLoading(false);
     });
     return () => {

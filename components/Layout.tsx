@@ -36,6 +36,11 @@ import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import {
+  fetchFinanceNotificationReceipts,
+  summarizeFinanceNotificationAlerts,
+  waitForPublishedFinanceNotificationSource,
+} from '@/lib/finance/financeNotificationAlerts';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { UserProfileModals } from './UserProfileModals';
 import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
@@ -92,55 +97,14 @@ function NotificationBell({ user }: { user: any }) {
       if (!user) return;
       try {
         const rlsCtx = await resolveRlsContext(user);
-        let query = supabase.from('finance_receipts').select('amount, due_date, status, sale_id');
-        query = applyTenantFilter(query, rlsCtx, 'finance_receipts');
-        const { data, error } = await query;
-        if (error || !data) return;
-
-        let qtyLate = 0;
-        let qtyDueToday = 0;
-        let qtyNext7Days = 0;
-        const paidContracts = new Set<string>();
-        const allContracts = new Set<string>();
-
-        const today = new Date();
-        today.setUTCHours(0,0,0,0);
-        const todayStr = today.toISOString().split('T')[0];
-        const todayTime = today.getTime();
-
-        data.forEach(p => {
-             const dueDate = new Date(p.due_date);
-             const dueStr = p.due_date.split('T')[0];
-             
-             let computedStatus = p.status?.toLowerCase() || 'pendente';
-             if ((computedStatus === 'pendente' || computedStatus === 'pending') && dueStr < todayStr) {
-                 computedStatus = 'atrasado';
-             }
-
-             if (p.sale_id) {
-                allContracts.add(p.sale_id);
-                if (computedStatus === 'pago' || computedStatus === 'paid') {
-                   paidContracts.add(p.sale_id);
-                }
-             }
-
-             if (computedStatus === 'atrasado') {
-                 qtyLate++;
-             } else if (computedStatus === 'pendente' || computedStatus === 'pending') {
-                 if (dueStr === todayStr) {
-                     qtyDueToday++;
-                 } else if (dueDate.getTime() > todayTime && dueDate.getTime() <= todayTime + 7*24*60*60*1000) {
-                     qtyNext7Days++;
-                 }
-             }
-        });
-
-        let qtyNoPaymentContracts = 0;
-        allContracts.forEach(c => {
-           if (!paidContracts.has(c)) qtyNoPaymentContracts++;
-        });
-
-        setStats({ qtyLate, qtyDueToday, qtyNext7Days, qtyNoPaymentContracts });
+        const path = window.location.pathname;
+        const pageAlreadyLoadsReceipts =
+          path === '/dashboard' || path.startsWith('/finance');
+        const shared = pageAlreadyLoadsReceipts
+          ? await waitForPublishedFinanceNotificationSource(40000)
+          : null;
+        const rows = shared ?? (await fetchFinanceNotificationReceipts(supabase, rlsCtx));
+        setStats(summarizeFinanceNotificationAlerts(rows));
 
       } catch(err) {
         // ignore

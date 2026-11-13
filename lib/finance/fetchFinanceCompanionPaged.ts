@@ -15,6 +15,15 @@ export const DASHBOARD_CASH_MOVEMENTS_SELECT_FALLBACK = `
   finance_receipt_id, project_id, contract_id, metadata, description
 `;
 
+/** Status já usados pela consulta compatível que respondia 200. A fórmula ignora os demais. */
+export const FINANCE_PAID_COMMISSION_STATUSES = [
+  'pago',
+  'paga',
+  'paid',
+  'aprovado',
+  'aprovada',
+] as const;
+
 export const DASHBOARD_BROKER_COMMISSIONS_SELECT = '*';
 export const DASHBOARD_BROKER_COMMISSIONS_SELECT_FALLBACK = `
   id, status, amount, paid_at, created_at, sale_id, broker_id, contract_id

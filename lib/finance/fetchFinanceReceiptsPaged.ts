@@ -71,11 +71,26 @@ export function paginateFinanceReceiptRows<T>(
 
 type QueryBuilder = {
   order: (column: string, options?: { ascending?: boolean }) => QueryBuilder;
+  abortSignal?: (signal: AbortSignal) => QueryBuilder;
   range: (from: number, to: number) => PromiseLike<{
     data: unknown[] | null;
-    error: { message?: string } | null;
+    error: { message?: string; name?: string } | null;
   }>;
 };
+
+export function isFinanceLoadAbort(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const name = 'name' in value ? String((value as { name?: string }).name || '') : '';
+  const message = 'message' in value ? String((value as { message?: string }).message || '') : '';
+  return name === 'AbortError' || message === 'AbortError' || /operation was aborted/i.test(message);
+}
+
+function attachAbort<T>(query: T, signal?: AbortSignal): T {
+  if (!signal) return query;
+  const builder = query as T & { abortSignal?: (next: AbortSignal) => T };
+  if (typeof builder.abortSignal !== 'function') return query;
+  return builder.abortSignal(signal);
+}
 
 function applyListOrdering<T extends QueryBuilder>(query: T): T {
   return query
@@ -304,6 +319,7 @@ export async function loadFinanceReceiptPagesProgressive<T>(params: {
     try {
       slots[index] = await params.loadPage(index);
     } catch (err) {
+      if (isFinanceLoadAbort(err)) throw err;
       if (failedIndex === null) {
         failedIndex = index;
         console.error('[financeiro] pagina de parcelas', {
@@ -351,6 +367,10 @@ export async function loadFinanceReceiptPagesProgressive<T>(params: {
   return emit(null);
 }
 
+function financeAbortError(): Error {
+  return Object.assign(new Error('AbortError'), { name: 'AbortError' });
+}
+
 async function fetchFinanceReceiptRange<T>(params: {
   supabase: SupabaseClient;
   rlsCtx: RlsContext;
@@ -358,11 +378,15 @@ async function fetchFinanceReceiptRange<T>(params: {
   selectFallback: string;
   from: number;
   to: number;
+  signal?: AbortSignal;
 }): Promise<{ rows: T[]; usedFallback: boolean }> {
+  if (params.signal?.aborted) throw financeAbortError();
   let pageQuery = params.supabase.from('finance_receipts').select(params.select);
   pageQuery = applyTenantFilter(pageQuery, params.rlsCtx, 'finance_receipts');
   pageQuery = applyListOrdering(pageQuery);
+  pageQuery = attachAbort(pageQuery, params.signal);
   let { data, error } = await pageQuery.range(params.from, params.to);
+  if (isFinanceLoadAbort(error)) throw financeAbortError();
   let usedFallback = false;
   if (error) {
     let fallbackQuery = params.supabase
@@ -374,7 +398,9 @@ async function fetchFinanceReceiptRange<T>(params: {
       'finance_receipts',
     );
     fallbackQuery = applyListOrdering(fallbackQuery);
+    fallbackQuery = attachAbort(fallbackQuery, params.signal);
     const fallbackRes = await fallbackQuery.range(params.from, params.to);
+    if (isFinanceLoadAbort(fallbackRes.error)) throw financeAbortError();
     data = fallbackRes.data;
     error = fallbackRes.error;
     usedFallback = true;
@@ -398,7 +424,9 @@ export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown
   concurrency?: number;
   seedPages?: FinanceReceiptPageSlots<T>;
   onProgress?: (state: FinanceReceiptLoadState<T>) => void;
+  signal?: AbortSignal;
 }): Promise<FinanceReceiptLoadState<T>> {
+  if (params.signal?.aborted) throw financeAbortError();
   const select = params.select ?? FINANCE_RECEIPTS_LIST_SELECT;
   const selectFallback =
     params.selectFallback ?? FINANCE_RECEIPTS_LIST_SELECT_FALLBACK;
@@ -410,7 +438,9 @@ export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown
     .from('finance_receipts')
     .select('id', { count: 'exact', head: true });
   countQuery = applyTenantFilter(countQuery, params.rlsCtx, 'finance_receipts');
+  countQuery = attachAbort(countQuery, params.signal);
   const { count, error: countError } = await countQuery;
+  if (isFinanceLoadAbort(countError)) throw financeAbortError();
   if (countError) {
     console.error('[financeiro] contagem de parcelas', {
       message: sanitizeFinanceLoadLog(countError.message),
@@ -442,6 +472,7 @@ export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown
         selectFallback,
         from,
         to: from + fetchPageSize - 1,
+        signal: params.signal,
       });
       return loaded.rows;
     },
