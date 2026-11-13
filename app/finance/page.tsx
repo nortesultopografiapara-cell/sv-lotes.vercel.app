@@ -3,7 +3,7 @@
 'use client';
 
 import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, ReceiptText, FileSignature, CloudDownload } from 'lucide-react';
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import './finance-premium.css';
 import {
   FinanceStatCard,
@@ -59,11 +59,17 @@ import {
 import {
   DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
   FINANCE_RECEIPTS_UI_PAGE_SIZES,
-  fetchAllFinanceReceiptsPaged,
+  fetchFinanceReceiptsProgressive,
+  financeDatasetReadyForTotals,
   normalizeFinanceReceiptsUiPageSize,
   paginateFinanceReceiptRows,
+  sanitizeFinanceLoadLog,
   type FinanceReceiptsUiPageSize,
 } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import {
+  filterFinanceReceiptRows,
+  financeReceiptFiltersAreActive,
+} from '@/lib/finance/financeReceiptClientFilter';
 import {
   resolveCashMovementInstallmentId,
 } from '@/lib/finance/cashMovementsSchema';
@@ -249,6 +255,20 @@ export default function FinancePage() {
      saidasCaixa: 0,
      saldoCaixa: 0
   });
+  const [receiptDatasetComplete, setReceiptDatasetComplete] = useState(false);
+  const [receiptLoadError, setReceiptLoadError] = useState<string | null>(null);
+  const [receiptPageProgress, setReceiptPageProgress] = useState({ completed: 0, expected: 0 });
+  const [receiptRefreshing, setReceiptRefreshing] = useState(false);
+  const receiptPagesRef = useRef<Array<any[] | undefined>>([]);
+  const financeLoadGen = useRef(0);
+  const receiptCompleteRef = useRef(false);
+  const validatedSnapshotRef = useRef<null | {
+    payments: any[];
+    stats: any;
+    cashFlowItems: CashFlowItem[];
+    cashMovements: any[];
+    commissions: any[];
+  }>(null);
 
   const [cashMovements, setCashMovements] = useState<any[]>([]);
   const [brokerCommissions, setBrokerCommissions] = useState<any[]>([]);
@@ -340,8 +360,18 @@ export default function FinancePage() {
     })();
   }, [showSaidaModal, user]);
 
-  const loadFinance = async () => {
+  const loadFinance = async (options?: { resume?: boolean }) => {
       if (!user) return;
+      const loadGen = ++financeLoadGen.current;
+      const resume = options?.resume === true;
+      const keepPrevious = !resume && validatedSnapshotRef.current != null;
+      setReceiptRefreshing(keepPrevious);
+      setReceiptLoadError(null);
+      if (!keepPrevious) {
+        setLoading(payments.length === 0);
+        setReceiptDatasetComplete(false);
+        receiptCompleteRef.current = false;
+      }
       try {
         const rlsCtx = await resolveRlsContext(user);
         const resolvedTenantId =
@@ -349,38 +379,150 @@ export default function FinancePage() {
 
         if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
            setLoading(false);
+           setReceiptRefreshing(false);
            return;
         }
-        
-        const fetched = await fetchAllFinanceReceiptsPaged({
+
+        const ownerPromise = loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        let projectsQuery = supabase.from('projects').select('id, name');
+        projectsQuery = applyTenantFilter(projectsQuery, rlsCtx, 'projects');
+        const projectsPromise = projectsQuery;
+
+        const companionsPromise = ownerPromise.then(async (ownerCtx) => {
+          let cashData: any[] = [];
+          try {
+            let queryCash = supabase.from('cash_movements')
+                .select(`
+                  *,
+                  projects(name),
+                  customers:customer_id(id, name, full_name),
+                  contracts:contract_id(
+                    id, contract_number, customer_id, block_id, project_id,
+                    customers(id, name, full_name),
+                    blocks(id, block_name, number, lot_number),
+                    projects(id, name)
+                  ),
+                  sales:sale_id(
+                    id, project_id, block_id, customer_id,
+                    customers(id, name, full_name),
+                    blocks(id, block_name, number, lot_number),
+                    projects(id, name),
+                    contracts(contract_number)
+                  )
+                `)
+                .order('movement_date', { ascending: false });
+            queryCash = applyTenantFilter(queryCash, rlsCtx, 'cash_movements');
+            const { data: cData, error: cErr } = await queryCash;
+            if (cErr) {
+                console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
+                let fallbackQuery = supabase.from('cash_movements').select('*').order('movement_date', { ascending: false });
+                fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'cash_movements');
+                const { data: fallbackData } = await fallbackQuery;
+                if (fallbackData) {
+                    cashData = scopeFinanceRowsForUser(
+                      user,
+                      fallbackData,
+                      ownerCtx.rows,
+                      resolveCashMovementProjectId,
+                    );
+                }
+            } else if (cData) {
+                cashData = scopeFinanceRowsForUser(
+                  user,
+                  cData,
+                  ownerCtx.rows,
+                  resolveCashMovementProjectId,
+                );
+            }
+          } catch (eee) {
+            console.error('Cash movements error', sanitizeFinanceLoadLog(eee));
+          }
+
+          let commsData: any[] = [];
+          try {
+            let queryComms = supabase.from('broker_commissions').select('*, brokers(*), sales(projects(*), contracts(*), customers(*), blocks(*)), contracts(projects(*))');
+            queryComms = applyTenantFilter(queryComms, rlsCtx, 'broker_commissions');
+            const { data: comms, error: commsErr } = await queryComms;
+            if (commsErr) {
+                console.error("ERRO JOIN BROKER_COMMISSIONS:", commsErr);
+                let fallbackCommsQuery = supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga', 'paid', 'aprovado', 'aprovada']);
+                fallbackCommsQuery = applyTenantFilter(fallbackCommsQuery, rlsCtx, 'broker_commissions');
+                const { data: fallbackComms } = await fallbackCommsQuery;
+                if (fallbackComms) {
+                    commsData = scopeFinanceRowsForUser(
+                      user,
+                      fallbackComms,
+                      ownerCtx.rows,
+                      resolveCommissionProjectId,
+                    );
+                }
+            } else if (comms) {
+                commsData = scopeFinanceRowsForUser(
+                  user,
+                  comms,
+                  ownerCtx.rows,
+                  resolveCommissionProjectId,
+                );
+            }
+          } catch (e) {
+            console.error('[financeiro] comissoes', sanitizeFinanceLoadLog(e));
+          }
+          return { cashData, commsData, ownerCtx };
+        });
+
+        const applyScopedPrefix = (rows: any[], ownerCtx: { rows: any[] }) => {
+          if (financeLoadGen.current !== loadGen) return;
+          if (keepPrevious) return;
+          const scoped = scopeFinanceRowsForUser(
+            user,
+            rows,
+            ownerCtx.rows,
+            resolveReceiptProjectId,
+          );
+          setPayments(scoped);
+          setLoading(false);
+          setReceiptDatasetComplete(false);
+          receiptCompleteRef.current = false;
+        };
+
+        const fetched = await fetchFinanceReceiptsProgressive({
           supabase,
           rlsCtx,
           select: FINANCE_RECEIPTS_LIST_SELECT,
           selectFallback: FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+          seedPages: resume ? receiptPagesRef.current : undefined,
+          onProgress: (state) => {
+            if (financeLoadGen.current !== loadGen) return;
+            receiptPagesRef.current = state.pages;
+            setReceiptPageProgress({
+              completed: state.pagesCompleted,
+              expected: state.pagesExpected,
+            });
+            if (state.complete || keepPrevious) return;
+            void ownerPromise.then((ownerCtx) => {
+              applyScopedPrefix(state.rows, ownerCtx);
+            });
+          },
+        });
+
+        if (financeLoadGen.current !== loadGen) return;
+        receiptPagesRef.current = fetched.pages;
+        setReceiptPageProgress({
+          completed: fetched.pagesCompleted,
+          expected: fetched.pagesExpected,
         });
         console.log('FINANCE TENANT:', resolvedTenantId);
         console.log('FINANCE FETCH RESULT', {
           exactCount: fetched.exactCount,
           loaded: fetched.rows.length,
-          pagesFetched: fetched.pagesFetched,
-          wouldTruncateWithoutPagination: fetched.wouldTruncateWithoutPagination,
+          pagesCompleted: fetched.pagesCompleted,
+          pagesExpected: fetched.pagesExpected,
+          complete: fetched.complete,
         });
 
-        let data: any[] = fetched.rows;
-        const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const ownerCtx = await ownerPromise;
         const isOwnerFinanceScope = shouldApplyOwnerFinanceScope(user);
-
-        data = scopeFinanceRowsForUser(
-          user,
-          data || [],
-          ownerCtx.rows,
-          resolveReceiptProjectId,
-        );
-        
-        let pQuery = supabase.from('projects').select('id, name');
-        pQuery = applyTenantFilter(pQuery, rlsCtx, 'projects');
-        const { data: projData } = await pQuery;
-
+        const { data: projData } = await projectsPromise;
         let ownerProjectOptions: Array<{ id: string; name: string }> = [];
         if (isOwnerFinanceScope && user.id && resolvedTenantId) {
           ownerProjectOptions = await fetchOwnerProjectOptionsForModule(
@@ -390,15 +532,15 @@ export default function FinancePage() {
             'finance',
           );
         }
-
-        const visibleProjects = resolveFinanceProjectsForUser(
-          user,
-          projData || [],
-          ownerCtx.rows,
-          ownerProjectOptions,
+        if (financeLoadGen.current !== loadGen) return;
+        setFinanceProjects(
+          resolveFinanceProjectsForUser(
+            user,
+            projData || [],
+            ownerCtx.rows,
+            ownerProjectOptions,
+          ),
         );
-
-        setFinanceProjects(visibleProjects);
         setProjectsList(
           resolveFinanceProjectsFilterNames(
             user,
@@ -407,13 +549,54 @@ export default function FinancePage() {
             ownerProjectOptions,
           ),
         );
-        
+
+        const companions = await companionsPromise;
+        if (financeLoadGen.current !== loadGen) return;
+        const cashData = companions.cashData;
+        const commsData = companions.commsData;
+
+        const restoreValidated = () => {
+          const snap = validatedSnapshotRef.current;
+          if (!snap) return false;
+          setPayments(snap.payments);
+          setStats(snap.stats);
+          setCashFlowItems(snap.cashFlowItems);
+          setCashMovements(snap.cashMovements);
+          setBrokerCommissions(snap.commissions);
+          receiptCompleteRef.current = true;
+          setReceiptDatasetComplete(true);
+          return true;
+        };
+
+        if (!financeDatasetReadyForTotals(fetched)) {
+          if (keepPrevious && restoreValidated()) {
+            setReceiptLoadError(
+              fetched.error ||
+                'Não foi possível atualizar as parcelas. Os valores anteriores foram mantidos.',
+            );
+          } else {
+            applyScopedPrefix(fetched.rows, ownerCtx);
+            setReceiptLoadError(
+              fetched.error ||
+                'Não foi possível carregar as parcelas. Os totais financeiros não foram atualizados.',
+            );
+          }
+          return;
+        }
+
+        let data: any[] = scopeFinanceRowsForUser(
+          user,
+          fetched.rows || [],
+          ownerCtx.rows,
+          resolveReceiptProjectId,
+        );
+
         let localRecebido = 0;
         let localAReceber = 0;
         let localVencidas = 0;
         let localVencendoHoje = 0;
         let localTotal = 0;
-        
+
         let qtyLate = 0;
         let qtyDueToday = 0;
         let qtyNext7Days = 0;
@@ -434,16 +617,16 @@ export default function FinancePage() {
              const pStatus = p.status?.toLowerCase() || 'pendente';
              const dueStr = p.due_date?.split('T')[0];
              const dueDate = new Date(dueStr + 'T12:00:00Z');
-             
+
              if (p.sale_id) contractSet.add(p.sale_id);
-             
+
              localTotal += amt;
-             
+
              let computedStatus = pStatus;
              if ((pStatus === 'pendente' || pStatus === 'pending') && dueStr && dueStr < todayStr) {
                  computedStatus = 'atrasado';
              }
-             
+
              if (computedStatus === 'pago' || computedStatus === 'paid') {
                  if (p.sale_id) paidContracts.add(p.sale_id);
                  const paidDate = p.paid_at ? new Date(p.paid_at) : dueDate;
@@ -451,9 +634,9 @@ export default function FinancePage() {
                      localRecebido += amt;
                  }
              }
-             
+
              const isEntry = p.installment_number === 0 || p.installment_number === '0';
-             
+
              if (computedStatus === 'pendente' || computedStatus === 'pending') {
                  localAReceber += amt;
                  if (!isEntry) qtyPending++;
@@ -464,13 +647,13 @@ export default function FinancePage() {
                      if (!isEntry) qtyNext7Days++;
                  }
              }
-             
+
              if (computedStatus === 'atrasado' || computedStatus === 'overdue') {
                  localVencidas += amt;
                  if (!isEntry) qtyLate++;
              }
           });
-          
+
           setPayments(data);
 
           if (bankingUiEnabled && resolvedTenantId) {
@@ -483,97 +666,16 @@ export default function FinancePage() {
             setAsaasChargesByInstallment({});
           }
         }
-        
+
         let qtyNoPaymentContracts = 0;
         contractSet.forEach(c => {
            if (!paidContracts.has(c)) qtyNoPaymentContracts++;
         });
-        
-        const inadimplencia = localTotal > 0 ? (localVencidas / localTotal) * 100 : 0;
-        
-        // Fetch Cash Movements & Comissões to compute global stats
-        let cashData: any[] = [];
-        try {
-           let queryCash = supabase.from('cash_movements')
-               .select(`
-                 *,
-                 projects(name),
-                 customers:customer_id(id, name, full_name),
-                 contracts:contract_id(
-                   id, contract_number, customer_id, block_id, project_id,
-                   customers(id, name, full_name),
-                   blocks(id, block_name, number, lot_number),
-                   projects(id, name)
-                 ),
-                 sales:sale_id(
-                   id, project_id, block_id, customer_id,
-                   customers(id, name, full_name),
-                   blocks(id, block_name, number, lot_number),
-                   projects(id, name),
-                   contracts(contract_number)
-                 )
-               `)
-               .order('movement_date', { ascending: false });
-               
-           queryCash = applyTenantFilter(queryCash, rlsCtx, 'cash_movements');
-           
-           const { data: cData, error: cErr } = await queryCash;
-           
-           if (cErr) {
-               console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
-               
-               let fallbackQuery = supabase.from('cash_movements').select('*').order('movement_date', { ascending: false });
-               fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'cash_movements');
-               const { data: fallbackData } = await fallbackQuery;
-               if (fallbackData) {
-                   cashData = scopeFinanceRowsForUser(
-                     user,
-                     fallbackData,
-                     ownerCtx.rows,
-                     resolveCashMovementProjectId,
-                   );
-                   setCashMovements(cashData);
-               }
-           } else if (cData) {
-               cashData = scopeFinanceRowsForUser(
-                 user,
-                 cData,
-                 ownerCtx.rows,
-                 resolveCashMovementProjectId,
-               );
-               setCashMovements(cashData);
-           }
-        } catch(eee) { console.error('Cash movements error', eee); }
 
-        let commsData: any[] = [];
-        try {
-           let queryComms = supabase.from('broker_commissions').select('*, brokers(*), sales(projects(*), contracts(*), customers(*), blocks(*)), contracts(projects(*))');
-           queryComms = applyTenantFilter(queryComms, rlsCtx, 'broker_commissions');
-           const { data: comms, error: commsErr } = await queryComms;
-           if (commsErr) {
-               console.error("ERRO JOIN BROKER_COMMISSIONS:", commsErr);
-               let fallbackCommsQuery = supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga', 'paid', 'aprovado', 'aprovada']);
-               fallbackCommsQuery = applyTenantFilter(fallbackCommsQuery, rlsCtx, 'broker_commissions');
-               const { data: fallbackComms } = await fallbackCommsQuery;
-               if (fallbackComms) {
-                   commsData = scopeFinanceRowsForUser(
-                     user,
-                     fallbackComms,
-                     ownerCtx.rows,
-                     resolveCommissionProjectId,
-                   );
-                   setBrokerCommissions(commsData);
-               }
-           } else if (comms) {
-               commsData = scopeFinanceRowsForUser(
-                 user,
-                 comms,
-                 ownerCtx.rows,
-                 resolveCommissionProjectId,
-               );
-               setBrokerCommissions(commsData);
-           }
-        } catch(e){}
+        const inadimplencia = localTotal > 0 ? (localVencidas / localTotal) * 100 : 0;
+
+        setCashMovements(cashData);
+        setBrokerCommissions(commsData);
 
         const totals = calculateFinancialTotals(data || [], cashData, commsData);
         console.log("FINANCE_TOTAL_OUTCOMES_FINAL", totals.totalSaidas);
@@ -594,10 +696,10 @@ export default function FinancePage() {
         console.log('[FINANCEIRO] fluxo enriquecido', flowItems.length, flowItems);
         setCashFlowItems(flowItems);
 
-        setStats({ 
-            recebidoMes: localRecebido, 
-            aReceber: localAReceber, 
-            vencidas: localVencidas, 
+        const nextStats = {
+            recebidoMes: localRecebido,
+            aReceber: localAReceber,
+            vencidas: localVencidas,
             vencendoHoje: localVencendoHoje,
             totalContratosValor: localTotal,
             inadimplencia: inadimplencia,
@@ -610,15 +712,55 @@ export default function FinancePage() {
             entradasCaixa: totals.totalEntradas,
             saidasCaixa: totals.totalSaidas,
             saldoCaixa: totals.saldoFinal
-        } as any);
-
+        };
+        setStats(nextStats as any);
+        validatedSnapshotRef.current = {
+          payments: data || [],
+          stats: nextStats,
+          cashFlowItems: flowItems,
+          cashMovements: cashData,
+          commissions: commsData,
+        };
+        receiptCompleteRef.current = true;
+        setReceiptDatasetComplete(true);
+        setReceiptLoadError(null);
       } catch(err) {
-        console.error(err);
+        console.error('[financeiro] carga', sanitizeFinanceLoadLog(err));
+        if (financeLoadGen.current !== loadGen) return;
+        const snap = validatedSnapshotRef.current;
+        if (keepPrevious && snap) {
+          setPayments(snap.payments);
+          setStats(snap.stats);
+          setCashFlowItems(snap.cashFlowItems);
+          setCashMovements(snap.cashMovements);
+          setBrokerCommissions(snap.commissions);
+          receiptCompleteRef.current = true;
+          setReceiptDatasetComplete(true);
+          setReceiptLoadError(
+            'Não foi possível atualizar as parcelas. Os valores anteriores foram mantidos.',
+          );
+        } else {
+          setReceiptDatasetComplete(false);
+          receiptCompleteRef.current = false;
+          setReceiptLoadError(
+            'Não foi possível carregar as parcelas. Os totais financeiros não foram atualizados.',
+          );
+        }
       } finally {
-        setLoading(false);
+        if (financeLoadGen.current === loadGen) {
+          setLoading(false);
+          setReceiptRefreshing(false);
+        }
       }
     };
 
+  const retryFinanceLoad = () => {
+    if (validatedSnapshotRef.current && receiptCompleteRef.current) {
+      void loadFinance();
+      return;
+    }
+    void loadFinance({ resume: true });
+  };
   useEffect(() => {
     if (!authLoading && isBrokerRole(user?.role)) {
       router.replace('/map');
@@ -785,46 +927,21 @@ export default function FinancePage() {
       ?? payment?.sales?.signal_installment_count,
   });
 
-  // Client-side filtering
-  const filteredPayments = payments.filter(p => {
-     const computedContract = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
-     const computedProjName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
-
-     const matchSearch = search ? (
-         computedContract.toLowerCase().includes(search.toLowerCase()) || 
-         p.sales?.id?.toLowerCase().includes(search.toLowerCase()) || 
-         p.customers?.name?.toLowerCase().includes(search.toLowerCase()) ||
-         p.blocks?.name?.toLowerCase().includes(search.toLowerCase()) ||
-         p.blocks?.block_name?.toLowerCase().includes(search.toLowerCase()) ||
-         String(p.blocks?.number).includes(search)
-     ) : true;
-     
-     const matchStatus = statusFilter !== 'Todas as Situações' ? 
-         (statusFilter.toLowerCase() === 'pago' && (p.status === 'pago' || p.status === 'PAID')) ||
-         (statusFilter.toLowerCase() === 'pendente' && (p.status === 'pendente' || p.status === 'PENDING') && p.due_date >= new Date().toISOString().split('T')[0]) ||
-         (statusFilter.toLowerCase() === 'atrasado' && (p.status === 'atrasado' || p.status === 'OVERDUE' || ( (p.status === 'pendente' || p.status === 'PENDING') && p.due_date < new Date().toISOString().split('T')[0] ))) ||
-         (statusFilter.toLowerCase() === 'cancelado' && (p.status === 'cancelado' || p.status === 'CANCELED' || p.status === 'cancelled' || p.status === 'CANCELLED'))
-         : (() => {
-             const st = String(p.status || '').toLowerCase();
-             // Listagem operacional: "Todas" exclui canceladas (auditoria via filtro Cancelado).
-             return st !== 'cancelado' && st !== 'canceled' && st !== 'cancelled';
-           })();
-         
-     const matchProject = projectFilter !== 'Todos os projetos' ? (computedProjName === projectFilter) : true;
-
-     const receiptAccountId = String(
-       p.financial_account_id || p.sales?.financial_account_id || '',
-     ).trim();
-     const matchFinancialAccount =
-       financialAccountFilter === 'Todas as contas'
-         ? true
-         : receiptAccountId === financialAccountFilter;
-     
-     const matchStartDate = startDate ? (p.due_date >= startDate) : true;
-     const matchEndDate = endDate ? (p.due_date <= endDate) : true;
-     
-     return matchSearch && matchStatus && matchProject && matchFinancialAccount && matchStartDate && matchEndDate;
-  });
+  const financeListFilters = {
+    search,
+    statusFilter,
+    projectFilter,
+    financialAccountFilter,
+    startDate,
+    endDate,
+  };
+  const filtersWaitingForFullSet =
+    !receiptDatasetComplete && financeReceiptFiltersAreActive(financeListFilters);
+  const filteredPayments = receiptDatasetComplete
+    ? filterFinanceReceiptRows(payments, financeListFilters)
+    : filtersWaitingForFullSet
+      ? []
+      : payments;
 
   const paymentsPagination = useMemo(
     () => paginateFinanceReceiptRows(filteredPayments, currentPage, itemsPerPage),
@@ -843,6 +960,7 @@ export default function FinancePage() {
 
   const enterpriseFinanceTotals = useMemo(() => {
     if (!enterpriseSummary) return null;
+    if (!receiptDatasetComplete) return { totalRecebido: 0, saldoAReceber: 0 };
     let totalRecebido = 0;
     let saldoAReceber = 0;
     filteredPayments.forEach((p) => {
@@ -856,7 +974,7 @@ export default function FinancePage() {
       }
     });
     return { totalRecebido, saldoAReceber };
-  }, [enterpriseSummary, filteredPayments]);
+  }, [enterpriseSummary, filteredPayments, receiptDatasetComplete]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -1222,6 +1340,9 @@ export default function FinancePage() {
   };
 
   const buildCurrentCanonicalReport = async () => {
+    if (!receiptCompleteRef.current) {
+      throw new Error('FINANCE_DATASET_INCOMPLETE');
+    }
     const uniqueSaleIds = [
       ...new Set(
         (payments || [])
@@ -2109,6 +2230,10 @@ export default function FinancePage() {
   };
 
   const handleExportExcel = async () => {
+    if (!receiptCompleteRef.current) {
+      alert('A exportação usa o conjunto completo das parcelas. Aguarde o fim do carregamento ou tente novamente.');
+      return;
+    }
     try {
       const { report } = await buildCurrentCanonicalReport();
       await downloadFinanceCompletoExcel(report);
@@ -2119,6 +2244,10 @@ export default function FinancePage() {
   };
 
   const handleExportResumidoPDF = async () => {
+    if (!receiptCompleteRef.current) {
+      alert('A exportação usa o conjunto completo das parcelas. Aguarde o fim do carregamento ou tente novamente.');
+      return;
+    }
     try {
       const { report, logoBase64 } = await buildCurrentCanonicalReport();
       await downloadFinanceResumidoPdf(report, { logoBase64 });
@@ -2129,6 +2258,10 @@ export default function FinancePage() {
   };
 
   const handleExportResumidoExcel = async () => {
+    if (!receiptCompleteRef.current) {
+      alert('A exportação usa o conjunto completo das parcelas. Aguarde o fim do carregamento ou tente novamente.');
+      return;
+    }
     try {
       const { report } = await buildCurrentCanonicalReport();
       await downloadFinanceResumidoExcel(report);
@@ -2139,6 +2272,10 @@ export default function FinancePage() {
   };
 
   const handleExportPDF = async () => {
+    if (!receiptCompleteRef.current) {
+      alert('A exportação usa o conjunto completo das parcelas. Aguarde o fim do carregamento ou tente novamente.');
+      return;
+    }
     try {
       const { report, logoBase64 } = await buildCurrentCanonicalReport();
       await downloadFinanceCompletoPdf(report, { logoBase64 });
@@ -2149,6 +2286,10 @@ export default function FinancePage() {
   };
 
   const handleGenerateProjectReport = async (format: 'pdf'|'excel') => {
+      if (!receiptCompleteRef.current) {
+        alert('O relatório usa o conjunto completo das parcelas. Aguarde o fim do carregamento ou tente novamente.');
+        return;
+      }
       setIsGeneratingPr(true);
       try {
           console.log("FLOW_PROJECT_SELECTED", prFilterProject);
@@ -2388,6 +2529,7 @@ export default function FinancePage() {
             saldoAReceber={enterpriseFinanceTotals.saldoAReceber}
             projectName={projectFilter}
             mode={projectFilter === 'Todos os projetos' ? 'global' : 'project'}
+            receiptTotalsReady={receiptDatasetComplete}
           />
         </section>
       ) : null}
@@ -2398,6 +2540,7 @@ export default function FinancePage() {
           title="Entradas Totais"
           value={formatCurrency(stats.entradasCaixa)}
           subtitle="Vendas e entradas manuais"
+          loading={!receiptDatasetComplete}
           icon={<TrendingUp />}
           iconWrapClass="bg-emerald-500/12 text-emerald-400"
         />
@@ -2405,6 +2548,7 @@ export default function FinancePage() {
           title="Saídas Totais"
           value={formatCurrency(stats.saidasCaixa)}
           subtitle="Comissões e despesas"
+          loading={!receiptDatasetComplete}
           icon={<TrendingDown />}
           iconWrapClass="bg-rose-500/12 text-rose-400"
         />
@@ -2412,6 +2556,7 @@ export default function FinancePage() {
           title="Saldo Atual"
           value={formatCurrency(stats.saldoCaixa)}
           subtitle="Entradas − Saídas"
+          loading={!receiptDatasetComplete}
           icon={<Wallet />}
           iconWrapClass={
             stats.saldoCaixa >= 0
@@ -2426,7 +2571,7 @@ export default function FinancePage() {
           subtitleColor="text-emerald-400/90"
           icon={<TrendingUp />}
           iconWrapClass="bg-emerald-500/12 text-emerald-400"
-          loading={loading}
+          loading={!receiptDatasetComplete}
         />
         <FinanceStatCard
           title="A Receber"
@@ -2435,7 +2580,7 @@ export default function FinancePage() {
           subtitleColor="text-blue-400/90"
           icon={<FileText />}
           iconWrapClass="bg-blue-500/12 text-blue-400"
-          loading={loading}
+          loading={!receiptDatasetComplete}
         />
         <FinanceStatCard
           title="Inadimplência"
@@ -2450,7 +2595,7 @@ export default function FinancePage() {
           }
           icon={<AlertCircle />}
           iconWrapClass="bg-rose-500/12 text-rose-400"
-          loading={loading}
+          loading={!receiptDatasetComplete}
         />
       </div>
 
@@ -2634,6 +2779,31 @@ export default function FinancePage() {
       <>
       {/* TABELA PARCELAS — prioridade visual */}
       <div className="finance-table-panel mb-3 flex flex-col min-w-0 max-w-full">
+        {!receiptDatasetComplete || receiptLoadError || receiptRefreshing ? (
+          <div
+            data-testid="finance-load-status"
+            className="border-b border-[var(--border-color)] bg-[var(--bg-card-alt)] px-4 py-3 text-sm text-[var(--text-secondary)]"
+          >
+            <p>
+              {receiptLoadError
+                ? receiptLoadError
+                : receiptRefreshing
+                  ? 'Atualizando as parcelas. Os totais atuais permanecem até a atualização terminar.'
+                  : payments.length > 0
+                    ? `Lista parcial: ${receiptPageProgress.completed} de ${receiptPageProgress.expected || '?'} páginas. Os totais, a busca e a exportação aguardam o conjunto completo.`
+                    : 'Carregando a primeira página das parcelas. Os totais ainda não estão disponíveis.'}
+            </p>
+            {receiptLoadError ? (
+              <button
+                type="button"
+                onClick={retryFinanceLoad}
+                className="mt-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-semibold text-[var(--text-primary)]"
+              >
+                Tentar novamente
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="finance-table-scroll">
           <table className="finance-table finance-table-parcels text-left">
             <colgroup>
@@ -2668,7 +2838,12 @@ export default function FinancePage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {filtersWaitingForFullSet ? (
+                <FinanceTableEmpty
+                  colSpan={3}
+                  message="Os filtros, a busca e a exportação serão aplicados quando o carregamento terminar."
+                />
+              ) : loading && currentPayments.length === 0 ? (
                 <FinanceTableLoading colSpan={3} />
               ) : currentPayments.length > 0 ? (
                 currentPayments.map((p) => (
@@ -2711,7 +2886,13 @@ export default function FinancePage() {
               ) : (
                 <FinanceTableEmpty
                   colSpan={3}
-                  message="Nenhum registro encontrado para os filtros selecionados."
+                  message={
+                    receiptLoadError
+                      ? 'As parcelas não foram carregadas. Use Tentar novamente. Este aviso não é um saldo zerado.'
+                      : receiptDatasetComplete
+                        ? 'Nenhum registro encontrado para os filtros selecionados.'
+                        : 'Carregando as parcelas.'
+                  }
                 />
               )}
             </tbody>
@@ -2721,7 +2902,11 @@ export default function FinancePage() {
         {/* Pagination Footer */}
         {!loading && filteredPayments.length > 0 && (
           <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-[var(--border-color)] text-sm text-[var(--text-secondary)] gap-4 bg-[var(--bg-card)]">
-             <div>Mostrando {paymentsPagination.from} a {paymentsPagination.to} de {paymentsPagination.totalCount} registros</div>
+             <div>
+               {receiptDatasetComplete
+                 ? `Mostrando ${paymentsPagination.from} a ${paymentsPagination.to} de ${paymentsPagination.totalCount} registros`
+                 : `Prévia: ${paymentsPagination.from} a ${paymentsPagination.to} dos primeiros ${paymentsPagination.totalCount} registros carregados. O total geral ainda não está fechado.`}
+             </div>
              <div className="flex items-center gap-1">
                 <button 
                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
@@ -2804,7 +2989,11 @@ export default function FinancePage() {
               </button>
             ) : null}
          </div>
-         {filteredCashFlowItems.length === 0 ? (
+         {!receiptDatasetComplete ? (
+            <div className="p-10 text-center text-[var(--text-muted)] text-sm">
+               O fluxo de caixa será exibido quando as parcelas terminarem de carregar.
+            </div>
+         ) : filteredCashFlowItems.length === 0 ? (
             <div className="p-10 text-center text-[var(--text-muted)] text-sm">
                Nenhuma movimentação de caixa registrada ainda.
             </div>

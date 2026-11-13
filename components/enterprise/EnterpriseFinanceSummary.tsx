@@ -13,6 +13,8 @@ type EnterpriseFinanceSummaryProps = {
   saldoAReceber: number;
   projectName: string;
   mode?: 'global' | 'project';
+  /** Parcelas ainda incompletas: os dois cards de recebimento ficam sem valor. */
+  receiptTotalsReady?: boolean;
 };
 
 export function EnterpriseFinanceSummary({
@@ -21,6 +23,7 @@ export function EnterpriseFinanceSummary({
   saldoAReceber,
   projectName,
   mode = 'project',
+  receiptTotalsReady = true,
 }: EnterpriseFinanceSummaryProps) {
   const scopeLabel =
     mode === 'global' ? 'Todos os empreendimentos' : projectName;
@@ -55,6 +58,7 @@ export function EnterpriseFinanceSummary({
         subtitle="Pagamentos registrados"
         icon={<Wallet />}
         iconWrapClass="bg-emerald-500/12 text-emerald-400"
+        loading={!receiptTotalsReady}
       />
       <FinanceStatCard
         title="Saldo a receber"
@@ -62,6 +66,7 @@ export function EnterpriseFinanceSummary({
         subtitle="Parcelas em aberto"
         icon={<FileText />}
         iconWrapClass="bg-blue-500/12 text-blue-400"
+        loading={!receiptTotalsReady}
       />
     </div>
   );

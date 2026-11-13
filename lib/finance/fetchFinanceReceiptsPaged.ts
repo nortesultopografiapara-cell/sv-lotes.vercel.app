@@ -174,6 +174,280 @@ export async function fetchAllFinanceReceiptsPaged<T = Record<string, unknown>>(
   };
 }
 
+/** Páginas seguintes da primeira, no máximo duas ao mesmo tempo. */
+export const FINANCE_RECEIPTS_PROGRESS_CONCURRENCY = 2;
+
+export type FinanceReceiptPageSlots<T> = Array<T[] | undefined>;
+
+export type FinanceReceiptLoadState<T> = {
+  rows: T[];
+  pages: FinanceReceiptPageSlots<T>;
+  exactCount: number;
+  pagesCompleted: number;
+  pagesExpected: number;
+  complete: boolean;
+  error: string | null;
+  failedPageIndex: number | null;
+};
+
+export function financeReceiptPagesExpected(exactCount: number, pageSize: number): number {
+  if (!Number.isFinite(exactCount) || exactCount <= 0) return 0;
+  const size = Math.max(1, pageSize);
+  return Math.ceil(exactCount / size);
+}
+
+export function financeReceiptPageErrorMessage(
+  pageIndex: number,
+  pagesExpected: number,
+): string {
+  const shown = Math.max(1, pageIndex + 1);
+  const total = pagesExpected > 0 ? String(pagesExpected) : '?';
+  return `Não foi possível carregar a página ${shown} de ${total} das parcelas. Os totais financeiros não foram atualizados.`;
+}
+
+export function sanitizeFinanceLoadLog(value: unknown): string {
+  const raw = value instanceof Error ? value.message : String(value ?? '');
+  return raw
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[redacted]')
+    .slice(0, 180);
+}
+
+export function financeDatasetReadyForTotals(state: {
+  complete: boolean;
+  error?: string | null;
+}): boolean {
+  return state.complete === true && !state.error;
+}
+
+/**
+ * Junta só o prefixo contínuo. Uma página válida depois de um buraco
+ * permanece em `pages` para a nova tentativa, mas não entra nas linhas exibidas.
+ */
+export function buildFinanceReceiptLoadState<T>(params: {
+  slots: FinanceReceiptPageSlots<T>;
+  pageSize: number;
+  exactCount: number;
+  error?: string | null;
+  failedPageIndex?: number | null;
+}): FinanceReceiptLoadState<T> {
+  const pageSize = Math.max(1, params.pageSize);
+  const pagesExpected = financeReceiptPagesExpected(params.exactCount, pageSize);
+  const pages = params.slots.slice(0, pagesExpected);
+  const rows: T[] = [];
+  let pagesCompleted = 0;
+  let endedEarly = false;
+  for (let i = 0; i < pagesExpected; i += 1) {
+    const chunk = pages[i];
+    if (!chunk) break;
+    rows.push(...chunk);
+    pagesCompleted += 1;
+    if (chunk.length < pageSize) {
+      endedEarly = true;
+      break;
+    }
+  }
+  const error = params.error ?? null;
+  const complete =
+    !error &&
+    (pagesExpected === 0 || endedEarly || pagesCompleted === pagesExpected);
+  return {
+    rows,
+    pages,
+    exactCount: params.exactCount,
+    pagesCompleted,
+    pagesExpected,
+    complete,
+    error,
+    failedPageIndex: error ? (params.failedPageIndex ?? null) : null,
+  };
+}
+
+export async function loadFinanceReceiptPagesProgressive<T>(params: {
+  exactCount: number;
+  pageSize: number;
+  concurrency?: number;
+  loadPage: (pageIndex: number) => Promise<T[]>;
+  seedPages?: FinanceReceiptPageSlots<T>;
+  onProgress?: (state: FinanceReceiptLoadState<T>) => void;
+}): Promise<FinanceReceiptLoadState<T>> {
+  const pageSize = Math.max(1, params.pageSize);
+  const pagesExpected = financeReceiptPagesExpected(params.exactCount, pageSize);
+  const slots: FinanceReceiptPageSlots<T> = new Array(pagesExpected);
+  if (params.seedPages) {
+    for (let i = 0; i < pagesExpected; i += 1) {
+      const seeded = params.seedPages[i];
+      if (seeded) slots[i] = seeded;
+    }
+  }
+  const concurrency = Math.max(
+    1,
+    Math.min(4, params.concurrency ?? FINANCE_RECEIPTS_PROGRESS_CONCURRENCY),
+  );
+  let failedIndex: number | null = null;
+
+  const emit = (error: string | null = null) => {
+    const state = buildFinanceReceiptLoadState({
+      slots,
+      pageSize,
+      exactCount: params.exactCount,
+      error,
+      failedPageIndex: failedIndex,
+    });
+    params.onProgress?.(state);
+    return state;
+  };
+
+  if (pagesExpected === 0) return emit(null);
+
+  const ensure = async (index: number) => {
+    if (slots[index] || failedIndex !== null) return;
+    try {
+      slots[index] = await params.loadPage(index);
+    } catch (err) {
+      if (failedIndex === null) {
+        failedIndex = index;
+        console.error('[financeiro] pagina de parcelas', {
+          page: index + 1,
+          message: sanitizeFinanceLoadLog(err),
+        });
+      }
+    }
+  };
+
+  if (!slots[0]) {
+    await ensure(0);
+    if (failedIndex !== null) {
+      return emit(financeReceiptPageErrorMessage(failedIndex, pagesExpected));
+    }
+  }
+  const firstPage = slots[0];
+  if (!firstPage || firstPage.length < pageSize) {
+    return emit(null);
+  }
+  emit(null);
+
+  const pending: number[] = [];
+  for (let i = 1; i < pagesExpected; i += 1) {
+    if (!slots[i]) pending.push(i);
+  }
+  let cursor = 0;
+  const worker = async () => {
+    while (failedIndex === null) {
+      const index = pending[cursor];
+      cursor += 1;
+      if (index === undefined) return;
+      await ensure(index);
+      if (failedIndex !== null) return;
+      emit(null);
+    }
+  };
+  const workers = Math.min(concurrency, pending.length);
+  if (workers > 0) {
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+  }
+  if (failedIndex !== null) {
+    return emit(financeReceiptPageErrorMessage(failedIndex, pagesExpected));
+  }
+  return emit(null);
+}
+
+async function fetchFinanceReceiptRange<T>(params: {
+  supabase: SupabaseClient;
+  rlsCtx: RlsContext;
+  select: string;
+  selectFallback: string;
+  from: number;
+  to: number;
+}): Promise<{ rows: T[]; usedFallback: boolean }> {
+  let pageQuery = params.supabase.from('finance_receipts').select(params.select);
+  pageQuery = applyTenantFilter(pageQuery, params.rlsCtx, 'finance_receipts');
+  pageQuery = applyListOrdering(pageQuery);
+  let { data, error } = await pageQuery.range(params.from, params.to);
+  let usedFallback = false;
+  if (error) {
+    let fallbackQuery = params.supabase
+      .from('finance_receipts')
+      .select(params.selectFallback);
+    fallbackQuery = applyTenantFilter(
+      fallbackQuery,
+      params.rlsCtx,
+      'finance_receipts',
+    );
+    fallbackQuery = applyListOrdering(fallbackQuery);
+    const fallbackRes = await fallbackQuery.range(params.from, params.to);
+    data = fallbackRes.data;
+    error = fallbackRes.error;
+    usedFallback = true;
+  }
+  if (error) {
+    throw new Error(error.message || 'Falha ao paginar finance_receipts');
+  }
+  return { rows: (data || []) as T[], usedFallback };
+}
+
+/**
+ * Primeira página primeiro. As demais seguem com concorrência limitada.
+ * Cobranças continua em `fetchAllFinanceReceiptsPaged`.
+ */
+export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown>>(params: {
+  supabase: SupabaseClient;
+  rlsCtx: RlsContext;
+  select?: string;
+  selectFallback?: string;
+  fetchPageSize?: number;
+  concurrency?: number;
+  seedPages?: FinanceReceiptPageSlots<T>;
+  onProgress?: (state: FinanceReceiptLoadState<T>) => void;
+}): Promise<FinanceReceiptLoadState<T>> {
+  const select = params.select ?? FINANCE_RECEIPTS_LIST_SELECT;
+  const selectFallback =
+    params.selectFallback ?? FINANCE_RECEIPTS_LIST_SELECT_FALLBACK;
+  const fetchPageSize = Math.max(
+    1,
+    Math.min(1000, params.fetchPageSize ?? FINANCE_RECEIPTS_FETCH_PAGE_SIZE),
+  );
+  let countQuery = params.supabase
+    .from('finance_receipts')
+    .select('id', { count: 'exact', head: true });
+  countQuery = applyTenantFilter(countQuery, params.rlsCtx, 'finance_receipts');
+  const { count, error: countError } = await countQuery;
+  if (countError) {
+    console.error('[financeiro] contagem de parcelas', {
+      message: sanitizeFinanceLoadLog(countError.message),
+    });
+    const failed = buildFinanceReceiptLoadState<T>({
+      slots: [],
+      pageSize: fetchPageSize,
+      exactCount: 0,
+      error:
+        'Não foi possível contar as parcelas. Os totais financeiros não foram atualizados.',
+      failedPageIndex: 0,
+    });
+    params.onProgress?.(failed);
+    return failed;
+  }
+  const exactCount = Number(count ?? 0);
+  return loadFinanceReceiptPagesProgressive<T>({
+    exactCount,
+    pageSize: fetchPageSize,
+    concurrency: params.concurrency,
+    seedPages: params.seedPages,
+    onProgress: params.onProgress,
+    loadPage: async (pageIndex) => {
+      const from = pageIndex * fetchPageSize;
+      const loaded = await fetchFinanceReceiptRange<T>({
+        supabase: params.supabase,
+        rlsCtx: params.rlsCtx,
+        select,
+        selectFallback,
+        from,
+        to: from + fetchPageSize - 1,
+      });
+      return loaded.rows;
+    },
+  });
+}
+
 /**
  * Helper puro para testes: simula o corte do PostgREST vs fetch paginado.
  */
