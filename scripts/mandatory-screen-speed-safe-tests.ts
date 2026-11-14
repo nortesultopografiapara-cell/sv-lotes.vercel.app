@@ -16,6 +16,19 @@ import {
 } from '../lib/finance/fetchFinanceReceiptsPaged';
 import { filterFinanceReceiptRows } from '../lib/finance/financeReceiptClientFilter';
 import {
+  applyFinanceReceiptRelations,
+  FINANCE_RECEIPTS_ESSENTIAL_SELECT,
+  FINANCE_RECEIPTS_SALE_CONTRACT_EMBED,
+  type FinanceReceiptRelationMaps,
+} from '../lib/finance/financeReceiptRelations';
+import { FINANCE_RECEIPTS_LIST_SELECT } from '../lib/finance/financeReceiptsEmbed';
+import {
+  buildCustomerReadSelect,
+  buildReceiptReadSelect,
+  catalogFromOpenApi,
+  financeOmittedColumns,
+} from '../lib/finance/financeColumnCatalog';
+import {
   publishFinanceNotificationSource,
   resetPublishedFinanceNotificationSource,
   summarizeFinanceNotificationAlerts,
@@ -348,6 +361,116 @@ async function testNotificationReusesPublishedRows() {
   console.log('OK sino reutiliza a leitura da tela');
 }
 
+function testCatalogDropsOnlyMissingColumns() {
+  const develop = catalogFromOpenApi({
+    definitions: {
+      finance_receipts: { properties: { id: {}, status: {}, amount: {}, schedule_group: {} } },
+      customers: { properties: { id: {}, name: {}, phone: {}, document: {}, cpf_cnpj: {} } },
+      blocks: { properties: { id: {}, name: {}, number: {}, project_id: {} } },
+    },
+  });
+  assert(develop !== null, 'catálogo mínimo');
+  const receipt = buildReceiptReadSelect(develop!.finance_receipts);
+  assert(!receipt.select.includes('description'), 'description ausente não entra na parcela');
+  assert(receipt.select.includes(FINANCE_RECEIPTS_SALE_CONTRACT_EMBED), 'embed permanece');
+  assert(receipt.select === receipt.fallback, 'sem segunda consulta da parcela');
+  const customer = buildCustomerReadSelect(develop!.customers);
+  assert(!customer.select.includes('full_name'), 'full_name ausente não entra no cliente');
+  assert(customer.select.includes('cpf_cnpj'), 'cpf_cnpj existente permanece');
+  assert(customer.select === customer.fallback, 'sem segunda consulta do cliente');
+  const withDescription = buildReceiptReadSelect([...develop!.finance_receipts, 'description']);
+  assert(withDescription.select.includes('description'), 'description existente permanece');
+  const omitted = financeOmittedColumns(develop);
+  assert(omitted.includes('finance_receipts.description'), 'omissão da parcela identificada');
+  assert(omitted.includes('customers.full_name'), 'omissão do cliente identificada');
+  assert(!omitted.includes('customers.cpf_cnpj'), 'cpf_cnpj não é tratado como ausente');
+}
+
+function testEssentialRowsKeepIdentityAndCents() {
+  assert(FINANCE_RECEIPTS_LIST_SELECT.includes(FINANCE_RECEIPTS_SALE_CONTRACT_EMBED), 'embed igual ao publicado');
+  assert(FINANCE_RECEIPTS_ESSENTIAL_SELECT.includes(FINANCE_RECEIPTS_SALE_CONTRACT_EMBED), 'contrato permanece na parcela');
+  assert(!FINANCE_RECEIPTS_ESSENTIAL_SELECT.includes('customers!'), 'cliente fora da parcela');
+  assert(!FINANCE_RECEIPTS_ESSENTIAL_SELECT.includes('projects:project_id'), 'projeto da parcela fora do embed');
+  assert(!FINANCE_RECEIPTS_ESSENTIAL_SELECT.includes('blocks:'), 'quadra fora da parcela');
+  assert(!FINANCE_RECEIPTS_ESSENTIAL_SELECT.includes('is_current'), 'sem filtro de contrato vigente');
+
+  const maps: FinanceReceiptRelationMaps = {
+    customers: new Map([
+      ['cust-1', { id: 'cust-1', name: 'Ana Silva', full_name: 'Ana Silva Costa', phone: '11999999999', document: '123', cpf_cnpj: null }],
+    ]),
+    projects: new Map([
+      ['proj-1', { id: 'proj-1', name: 'CHACARAS DOIS IRMÃOS' }],
+    ]),
+    blocks: new Map([
+      ['block-1', { id: 'block-1', block_name: '01', name: 'Quadra 01', number: '7', lot_number: '7', project_id: 'proj-1' }],
+    ]),
+  };
+  const embeddedSale = {
+    id: 'sale-1',
+    installments_count: 59,
+    projects: { name: 'CHACARAS E LOTES RR' },
+    contracts: [{ contract_number: '000000200/2026' }, { contract_number: '000000107/2026' }],
+  };
+
+  const total = 9242;
+  const rows = Array.from({ length: total }, (_, i) => ({
+    id: `rec-${i}`,
+    status: i % 17 === 0 ? 'pago' : 'pendente',
+    amount: 100 + (i % 50),
+    paid_amount: i % 17 === 0 ? 100 + (i % 50) : null,
+    paid_at: i % 17 === 0 ? '2026-11-07T12:00:00Z' : null,
+    due_date: `2026-${String((i % 12) + 1).padStart(2, '0')}-15`,
+    installment_number: i % 60,
+    schedule_group: i % 3 === 0 ? 'SIGNAL' : i % 3 === 1 ? 'LOT' : null,
+    sale_id: 'sale-1',
+    customer_id: 'cust-1',
+    project_id: i % 5 === 0 ? null : 'proj-1',
+    block_id: 'block-1',
+    financial_account_id: i % 4 === 0 ? null : 'acc-row',
+    sales: embeddedSale,
+  }));
+  const beforeCents = rows.reduce((sum, row) => sum + cents(row.amount), 0);
+  const started = Date.now();
+  const enriched = applyFinanceReceiptRelations(rows, maps);
+  const elapsed = Date.now() - started;
+  assert(elapsed < 500, `junção de 9242 linhas em ${elapsed}ms`);
+  assert(enriched.length === total, 'quantidade preservada');
+  assert(enriched.every((row, i) => row.id === `rec-${i}`), 'ordem e identidade');
+  assert(enriched.reduce((sum, row) => sum + cents(Number(row.amount)), 0) === beforeCents, 'centavos preservados');
+  assert(enriched[0].schedule_group === 'SIGNAL', 'SIGNAL preservado');
+  assert(enriched[1].schedule_group === 'LOT', 'LOT preservado');
+  assert(enriched[2].schedule_group == null, 'LEGACY preservado');
+  assert(enriched[0].customers?.name === 'Ana Silva', 'cliente da etapa B');
+  assert(enriched[0].customers?.phone === '11999999999', 'telefone do WhatsApp');
+  assert(enriched[0].sales?.contracts?.[0]?.contract_number === '000000200/2026', 'primeiro contrato do embed preservado');
+  assert(enriched[0].sales?.contracts?.[1]?.contract_number === '000000107/2026', 'demais contratos do embed preservados');
+  assert(enriched[0].sales?.installments_count === 59, 'contagem do carnê');
+  assert(enriched[1].projects?.name === 'CHACARAS DOIS IRMÃOS', 'projeto da parcela');
+  assert(enriched[0].projects == null, 'parcela sem projeto não ganha nome');
+  assert(enriched[0].sales?.projects?.name === 'CHACARAS E LOTES RR', 'projeto da venda permanece no embed');
+  assert(!('projects' in (enriched[0].blocks || {})), 'quadra não recebe projeto que o select antigo não trazia');
+  assert(enriched[0].sales === embeddedSale, 'a junção não troca o objeto da venda');
+  const found = filterFinanceReceiptRows(enriched, {
+    search: 'Ana Silva',
+    statusFilter: 'Todas as Situações',
+    projectFilter: 'Todos os projetos',
+    financialAccountFilter: 'Todas as contas',
+    startDate: '',
+    endDate: '',
+  });
+  assert(found.length === total, 'pesquisa só depois da etapa B');
+  const byAccount = filterFinanceReceiptRows(enriched, {
+    search: '',
+    statusFilter: 'Todas as Situações',
+    projectFilter: 'Todos os projetos',
+    financialAccountFilter: 'acc-1',
+    startDate: '',
+    endDate: '',
+  });
+  assert(byAccount.length === 0, 'conta da venda não é inventada fora do embed');
+  console.log(`OK etapa A/B em 9242 linhas (${elapsed}ms)`);
+}
+
 function testSourcesStayInScope() {
   const dashboard = fs.readFileSync('app/dashboard/page.tsx', 'utf8');
   const finance = fs.readFileSync('app/finance/page.tsx', 'utf8');
@@ -369,6 +492,11 @@ function testSourcesStayInScope() {
   assert(layout.includes('waitForPublishedFinanceNotificationSource'), 'sino não duplica a leitura da tela');
   assert(dashboard.includes('publishFinanceNotificationSource'), 'dashboard entrega os alertas');
   assert(finance.includes('publishFinanceNotificationSource'), 'financeiro entrega os alertas');
+  const paged = fs.readFileSync('lib/finance/fetchFinanceReceiptsPaged.ts', 'utf8');
+  assert(paged.includes('FINANCE_RECEIPTS_ESSENTIAL_SELECT'), 'financeiro separa a etapa A');
+  assert(paged.includes('loadFinanceReceiptRelations'), 'cadastros em lote, não por parcela');
+  assert(paged.includes('FINANCE_RECEIPTS_PROGRESS_CONCURRENCY = 2'), 'paralelismo segue em duas páginas');
+  assert(charges.includes('fetchAllFinanceReceiptsPaged'), 'cobranças fora desta etapa');
   assert(!layout.includes(".select('amount, due_date, status, sale_id')"), 'sino sem leitura única');
   console.log('OK fontes');
 }
@@ -385,6 +513,8 @@ async function main() {
   await testContractSelectIsRemembered();
   await testSplit404StopsTheBurst();
   await testSplit200StillLoadsEachSale();
+  testEssentialRowsKeepIdentityAndCents();
+  testCatalogDropsOnlyMissingColumns();
   testSourcesStayInScope();
   console.log('SCREEN_SPEED_SAFE_TESTS_OK');
 }

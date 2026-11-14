@@ -9,6 +9,19 @@ import {
   FINANCE_RECEIPTS_LIST_SELECT,
   FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
 } from '@/lib/finance/financeReceiptsEmbed';
+import {
+  applyFinanceReceiptRelations,
+  FINANCE_RECEIPTS_ESSENTIAL_SELECT,
+  FINANCE_RECEIPTS_ESSENTIAL_SELECT_FALLBACK,
+  loadFinanceReceiptRelations,
+  type FinanceReceiptRelationMaps,
+} from '@/lib/finance/financeReceiptRelations';
+import {
+  buildBlockReadSelect,
+  buildCustomerReadSelect,
+  buildReceiptReadSelect,
+  loadFinanceColumnCatalog,
+} from '@/lib/finance/financeColumnCatalog';
 
 export const FINANCE_RECEIPTS_UI_PAGE_SIZES = [20, 50, 100] as const;
 export type FinanceReceiptsUiPageSize = (typeof FINANCE_RECEIPTS_UI_PAGE_SIZES)[number];
@@ -371,6 +384,40 @@ function financeAbortError(): Error {
   return Object.assign(new Error('AbortError'), { name: 'AbortError' });
 }
 
+let cachedReceiptSelect: { source: string; resolved: string } | null = null;
+
+function missingReceiptColumn(message: string): string | null {
+  const text = String(message || '');
+  const named = text.match(/Could not find the '([a-z_][a-z0-9_]*)' column/i);
+  if (named) return named[1];
+  const column = text.match(/column (?:[a-z0-9_]+\.)?([a-z_][a-z0-9_]*) does not exist/i);
+  return column ? column[1] : null;
+}
+
+function selectWithoutBareColumn(select: string, column: string): string {
+  return select
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && (part.includes('(') || part !== column))
+    .join(', ');
+}
+
+async function queryReceiptRange<T>(params: {
+  supabase: SupabaseClient;
+  rlsCtx: RlsContext;
+  select: string;
+  from: number;
+  to: number;
+  signal?: AbortSignal;
+}): Promise<{ data: T[] | null; error: { message?: string } | null }> {
+  let pageQuery = params.supabase.from('finance_receipts').select(params.select);
+  pageQuery = applyTenantFilter(pageQuery, params.rlsCtx, 'finance_receipts');
+  pageQuery = applyListOrdering(pageQuery);
+  pageQuery = attachAbort(pageQuery, params.signal);
+  const result = await pageQuery.range(params.from, params.to);
+  return { data: (result.data || null) as T[] | null, error: result.error };
+}
+
 async function fetchFinanceReceiptRange<T>(params: {
   supabase: SupabaseClient;
   rlsCtx: RlsContext;
@@ -381,34 +428,50 @@ async function fetchFinanceReceiptRange<T>(params: {
   signal?: AbortSignal;
 }): Promise<{ rows: T[]; usedFallback: boolean }> {
   if (params.signal?.aborted) throw financeAbortError();
-  let pageQuery = params.supabase.from('finance_receipts').select(params.select);
-  pageQuery = applyTenantFilter(pageQuery, params.rlsCtx, 'finance_receipts');
-  pageQuery = applyListOrdering(pageQuery);
-  pageQuery = attachAbort(pageQuery, params.signal);
-  let { data, error } = await pageQuery.range(params.from, params.to);
-  if (isFinanceLoadAbort(error)) throw financeAbortError();
-  let usedFallback = false;
+  let select =
+    cachedReceiptSelect?.source === params.select
+      ? cachedReceiptSelect.resolved
+      : params.select;
+  let data: T[] | null = null;
+  let error: { message?: string } | null = null;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const result = await queryReceiptRange<T>({
+      supabase: params.supabase,
+      rlsCtx: params.rlsCtx,
+      select,
+      from: params.from,
+      to: params.to,
+      signal: params.signal,
+    });
+    if (isFinanceLoadAbort(result.error)) throw financeAbortError();
+    data = result.data;
+    error = result.error;
+    if (!error) break;
+    const column = missingReceiptColumn(error.message || '');
+    if (!column) break;
+    const next = selectWithoutBareColumn(select, column);
+    if (!next || next === select) break;
+    select = next;
+  }
   if (error) {
-    let fallbackQuery = params.supabase
-      .from('finance_receipts')
-      .select(params.selectFallback);
-    fallbackQuery = applyTenantFilter(
-      fallbackQuery,
-      params.rlsCtx,
-      'finance_receipts',
-    );
-    fallbackQuery = applyListOrdering(fallbackQuery);
-    fallbackQuery = attachAbort(fallbackQuery, params.signal);
-    const fallbackRes = await fallbackQuery.range(params.from, params.to);
-    if (isFinanceLoadAbort(fallbackRes.error)) throw financeAbortError();
-    data = fallbackRes.data;
-    error = fallbackRes.error;
-    usedFallback = true;
+    const fallback = await queryReceiptRange<T>({
+      supabase: params.supabase,
+      rlsCtx: params.rlsCtx,
+      select: params.selectFallback,
+      from: params.from,
+      to: params.to,
+      signal: params.signal,
+    });
+    if (isFinanceLoadAbort(fallback.error)) throw financeAbortError();
+    data = fallback.data;
+    error = fallback.error;
+    if (!error) select = params.selectFallback;
   }
   if (error) {
     throw new Error(error.message || 'Falha ao paginar finance_receipts');
   }
-  return { rows: (data || []) as T[], usedFallback };
+  cachedReceiptSelect = { source: params.select, resolved: select };
+  return { rows: data || [], usedFallback: select !== params.select };
 }
 
 /**
@@ -427,9 +490,14 @@ export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown
   signal?: AbortSignal;
 }): Promise<FinanceReceiptLoadState<T>> {
   if (params.signal?.aborted) throw financeAbortError();
-  const select = params.select ?? FINANCE_RECEIPTS_LIST_SELECT;
-  const selectFallback =
-    params.selectFallback ?? FINANCE_RECEIPTS_LIST_SELECT_FALLBACK;
+  const requestedSelect = params.select ?? FINANCE_RECEIPTS_LIST_SELECT;
+  const splitRelations = requestedSelect === FINANCE_RECEIPTS_LIST_SELECT;
+  const catalogPromise = splitRelations
+    ? loadFinanceColumnCatalog(params.supabase, params.rlsCtx, params.signal).catch((error) => {
+        if (isFinanceLoadAbort(error)) throw error;
+        return null;
+      })
+    : null;
   const fetchPageSize = Math.max(
     1,
     Math.min(1000, params.fetchPageSize ?? FINANCE_RECEIPTS_FETCH_PAGE_SIZE),
@@ -457,12 +525,85 @@ export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown
     return failed;
   }
   const exactCount = Number(count ?? 0);
-  return loadFinanceReceiptPagesProgressive<T>({
+  const catalog = catalogPromise ? await catalogPromise : null;
+  if (params.signal?.aborted) throw financeAbortError();
+  const receiptRead = !splitRelations
+    ? null
+    : catalog?.finance_receipts
+      ? buildReceiptReadSelect(catalog.finance_receipts)
+      : {
+          select: FINANCE_RECEIPTS_ESSENTIAL_SELECT,
+          fallback: FINANCE_RECEIPTS_ESSENTIAL_SELECT_FALLBACK,
+          omitted: [] as string[],
+        };
+  const customerRead = splitRelations
+    ? buildCustomerReadSelect(catalog?.customers ?? null)
+    : null;
+  const blockRead = splitRelations ? buildBlockReadSelect(catalog?.blocks ?? null) : null;
+  const select = receiptRead?.select ?? requestedSelect;
+  const selectFallback =
+    receiptRead?.fallback ??
+    (params.selectFallback ?? FINANCE_RECEIPTS_LIST_SELECT_FALLBACK);
+  let relationMaps: FinanceReceiptRelationMaps | null = null;
+  let latestState: FinanceReceiptLoadState<T> | null = null;
+  let relationsSettled = false;
+  let relationFailure: unknown = null;
+  const relationsPromise = splitRelations
+    ? loadFinanceReceiptRelations({
+        supabase: params.supabase,
+        rlsCtx: params.rlsCtx,
+        signal: params.signal,
+        customerSelect: customerRead?.select,
+        customerSelectFallback: customerRead?.fallback,
+        blockSelect: blockRead?.select,
+        blockSelectFallback: blockRead?.fallback,
+      })
+        .then((maps) => {
+          relationMaps = maps;
+          if (
+            !relationsSettled &&
+            latestState &&
+            !latestState.complete &&
+            !latestState.error &&
+            !params.signal?.aborted &&
+            params.onProgress
+          ) {
+            params.onProgress({
+              ...latestState,
+              rows: applyFinanceReceiptRelations(
+                latestState.rows as Record<string, unknown>[],
+                maps,
+              ) as T[],
+            });
+          }
+          return maps;
+        })
+        .catch((err) => {
+          relationFailure = err;
+          return null;
+        })
+    : null;
+  const emit = (state: FinanceReceiptLoadState<T>) => {
+    latestState = state;
+    if (!params.onProgress) return;
+    if (!relationMaps) {
+      params.onProgress(state);
+      return;
+    }
+    params.onProgress({
+      ...state,
+      rows: applyFinanceReceiptRelations(
+        state.rows as Record<string, unknown>[],
+        relationMaps,
+      ) as T[],
+    });
+  };
+  const loaded = await loadFinanceReceiptPagesProgressive<T>({
     exactCount,
     pageSize: fetchPageSize,
     concurrency: params.concurrency,
     seedPages: params.seedPages,
-    onProgress: params.onProgress,
+    onProgress: params.onProgress ? emit : undefined,
     loadPage: async (pageIndex) => {
       const from = pageIndex * fetchPageSize;
       const loaded = await fetchFinanceReceiptRange<T>({
@@ -477,6 +618,33 @@ export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown
       return loaded.rows;
     },
   });
+  if (!splitRelations || !relationsPromise || !financeDatasetReadyForTotals(loaded)) {
+    relationsSettled = true;
+    return loaded;
+  }
+  const maps = await relationsPromise;
+  relationsSettled = true;
+  if (isFinanceLoadAbort(relationFailure)) throw financeAbortError();
+  if (!maps) {
+    console.error('[financeiro] cadastros da parcela', {
+      message: sanitizeFinanceLoadLog(relationFailure),
+    });
+    return buildFinanceReceiptLoadState<T>({
+      slots: loaded.pages,
+      pageSize: fetchPageSize,
+      exactCount,
+      error:
+        'Não foi possível carregar clientes, projetos e quadras. Os totais financeiros não foram atualizados.',
+      failedPageIndex: loaded.pagesExpected,
+    });
+  }
+  return {
+    ...loaded,
+    rows: applyFinanceReceiptRelations(
+      loaded.rows as Record<string, unknown>[],
+      maps,
+    ) as T[],
+  };
 }
 
 /**
