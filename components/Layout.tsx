@@ -99,7 +99,20 @@ function NotificationBell({ user }: { user: any }) {
         const rlsCtx = await resolveRlsContext(user);
         const path = window.location.pathname;
         const pageAlreadyLoadsReceipts =
-          path === '/dashboard' || path.startsWith('/finance');
+          path === '/dashboard' ||
+          path.startsWith('/finance') ||
+          path.startsWith('/charges');
+        if (path.startsWith('/contracts')) {
+          await new Promise<void>((resolve) => {
+            const finish = () => {
+              window.clearTimeout(timer);
+              window.removeEventListener('sv-contracts-list-ready', finish);
+              resolve();
+            };
+            const timer = window.setTimeout(finish, 8000);
+            window.addEventListener('sv-contracts-list-ready', finish);
+          });
+        }
         const shared = pageAlreadyLoadsReceipts
           ? await waitForPublishedFinanceNotificationSource(40000)
           : null;

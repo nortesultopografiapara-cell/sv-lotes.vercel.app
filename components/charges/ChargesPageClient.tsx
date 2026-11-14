@@ -61,6 +61,7 @@ import {
 } from '@/lib/charges/chargeIntegrationHelpers';
 import {
   canGenerateAsaasCharge,
+  canOfferChargeGenerateInUi,
   chunkInstallmentIdsForChargeFetch,
   computeAsaasOperationalKpis,
   isInstallmentPaidForCharges,
@@ -94,11 +95,14 @@ import {
 import {
   DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
   FINANCE_RECEIPTS_UI_PAGE_SIZES,
-  fetchAllFinanceReceiptsPaged,
+  fetchFinanceReceiptsProgressive,
+  financeDatasetReadyForTotals,
+  isFinanceLoadAbort,
   normalizeFinanceReceiptsUiPageSize,
   paginateFinanceReceiptRows,
   type FinanceReceiptsUiPageSize,
 } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import { publishFinanceNotificationSource } from '@/lib/finance/financeNotificationAlerts';
 import {
   CHARGE_LIST_EXPORT_SCOPE,
   downloadChargeListExcel,
@@ -128,7 +132,10 @@ export type ChargesPageClientProps = {
 export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) {
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [totalsReady, setTotalsReady] = useState(false);
+  const [chargeStatusReady, setChargeStatusReady] = useState(false);
   const [payments, setPayments] = useState<FinanceReceiptRow[]>([]);
+  const chargeLoadAbortRef = useRef<AbortController | null>(null);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]>('Todas');
@@ -183,7 +190,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     [integrationConfig, integrationApiReady],
   );
   const integrationReady = asaasAccessAvailable && integrationActive;
-  const installmentsDataReady = !loading && !loadError;
+  const installmentsDataReady = totalsReady && !loadError;
 
   const financialAccountLabels = useMemo(() => {
     const map: Record<string, string> = {};
@@ -463,12 +470,23 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const loadInstallments = useCallback(async (options?: {
     syncAsaasStatuses?: boolean;
     financialAccountFilter?: string;
+    resetChargeStatus?: boolean;
+    signal?: AbortSignal;
   }) => {
     if (!user) {
       setLoading(false);
       return;
     }
+    const owned = new AbortController();
+    chargeLoadAbortRef.current?.abort();
+    chargeLoadAbortRef.current = owned;
+    if (options?.signal) {
+      if (options.signal.aborted) owned.abort();
+      else options.signal.addEventListener('abort', () => owned.abort(), { once: true });
+    }
     setLoading(true);
+    setTotalsReady(false);
+    if (options?.resetChargeStatus) setChargeStatusReady(false);
     setLoadError(null);
     const loadStartedAt = Date.now();
     try {
@@ -483,46 +501,56 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
       if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
         setPayments([]);
+        setTotalsReady(true);
         return;
       }
 
-      let fetched;
-      try {
-        fetched = await fetchAllFinanceReceiptsPaged<FinanceReceiptRow>({
-          supabase,
-          rlsCtx,
-          select: FINANCE_RECEIPTS_LIST_SELECT,
-          selectFallback: FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
-        });
-      } catch (err) {
+      const ownerPromise = loadOwnerAccessContext(supabase, user, resolvedTenantId);
+      let projectQuery = supabase.from('projects').select('id, name');
+      projectQuery = applyTenantFilter(projectQuery, rlsCtx, 'projects');
+      const projectsPromise = projectQuery;
+
+      const applyPrefix = async (rows: FinanceReceiptRow[]) => {
+        if (owned.signal.aborted) return;
+        const ownerCtx = await ownerPromise;
+        if (owned.signal.aborted) return;
+        setPayments(
+          scopeFinanceRowsForUser(user, rows, ownerCtx.rows, resolveReceiptProjectId),
+        );
+        setLoading(false);
+        setTotalsReady(false);
+      };
+
+      const fetched = await fetchFinanceReceiptsProgressive<FinanceReceiptRow>({
+        supabase,
+        rlsCtx,
+        select: FINANCE_RECEIPTS_LIST_SELECT,
+        selectFallback: FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+        signal: owned.signal,
+        onProgress: (state) => {
+          if (owned.signal.aborted || state.complete || state.rows.length === 0) return;
+          void applyPrefix(state.rows);
+        },
+      });
+      if (owned.signal.aborted) return;
+      if (!financeDatasetReadyForTotals(fetched)) {
         const message =
-          err instanceof Error
-            ? err.message
-            : 'Não foi possível carregar as parcelas. Verifique a conexão e tente novamente.';
+          fetched.error ||
+          'Não foi possível carregar as parcelas. Os totais não foram atualizados.';
         console.error('[charges/financial-agent] finance_receipts query failed', {
           tenantId: resolvedTenantId,
           message,
           ms: Date.now() - loadStartedAt,
         });
         setLoadError(message);
-        setPayments([]);
+        setTotalsReady(false);
         showToast(message, true);
         return;
       }
 
-      const data = fetched.rows;
-      const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
-      const scoped = scopeFinanceRowsForUser(
-        user,
-        data || [],
-        ownerCtx.rows,
-        resolveReceiptProjectId,
-      );
-
-      let pQuery = supabase.from('projects').select('id, name');
-      pQuery = applyTenantFilter(pQuery, rlsCtx, 'projects');
-      const { data: projData } = await pQuery;
-
+      const ownerCtx = await ownerPromise;
+      if (owned.signal.aborted) return;
+      const { data: projData } = await projectsPromise;
       let ownerProjectOptions: Array<{ id: string; name: string }> = [];
       if (shouldApplyOwnerFinanceScope(user) && user.id && resolvedTenantId) {
         ownerProjectOptions = await fetchOwnerProjectOptionsForModule(
@@ -532,85 +560,83 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           'finance',
         );
       }
-
+      if (owned.signal.aborted) return;
       setProjectsList(
         resolveFinanceProjectsFilterNames(user, projData || [], ownerCtx.rows, ownerProjectOptions),
       );
       void resolveFinanceProjectsForUser(user, projData || [], ownerCtx.rows, ownerProjectOptions);
 
+      const scoped = scopeFinanceRowsForUser(
+        user,
+        fetched.rows,
+        ownerCtx.rows,
+        resolveReceiptProjectId,
+      );
       setSelectedIds(new Set());
-      const installmentIds = scoped.map((row) => String(row.id));
-
-      // Parcelas locais primeiro — não bloquear a UI em integração/cobranças Asaas.
       setPayments(scoped);
+      setTotalsReady(true);
+      publishFinanceNotificationSource(fetched.rows);
       console.log('[charges/financial-agent] parcels loaded', {
         tenantId: resolvedTenantId,
         count: scoped.length,
         ms: Date.now() - loadStartedAt,
       });
 
+      const installmentIds = scoped.map((row) => String(row.id));
       const shouldSyncAsaas =
         Boolean(options?.syncAsaasStatuses) &&
         !ownerReadOnly &&
         installmentIds.length > 0;
 
-      if (shouldSyncAsaas) {
-        const { integrationOk, chargeMap } = await loadAsaasChargesContext(installmentIds, {
-          refreshReceiptsAfterLoad: true,
-          rlsCtx,
-          ownerCtx,
-        });
-        void loadInterChargeMap(installmentIds);
+      if (!shouldSyncAsaas) return;
 
-        if (integrationOk) {
-          try {
-            const syncIds = resolveAsaasSyncInstallmentIds({
-              rows: scoped,
-              chargesByInstallment: chargeMap,
-              financialAccountFilter: options?.financialAccountFilter || 'Todas as contas',
-              resolveProvider: (row) => resolveRowProvider(row as FinanceReceiptRow),
-            });
-            if (syncIds.length > 0) {
-              const result = await requestChargeBulkStatusSync(syncIds);
-              setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
+      const { integrationOk, chargeMap } = await loadAsaasChargesContext(installmentIds, {
+        refreshReceiptsAfterLoad: true,
+        rlsCtx,
+        ownerCtx,
+      });
+      await loadInterChargeMap(installmentIds);
+      if (owned.signal.aborted) return;
+      setChargeStatusReady(true);
 
-              if (result.receiptUpdatedCount > 0 || result.paid > 0) {
-                const syncedRows = await refreshInstallmentRows(installmentIds, rlsCtx, ownerCtx);
-                if (syncedRows.length > 0) {
-                  setPayments(syncedRows);
-                }
-              }
+      if (integrationOk) {
+        try {
+          const syncIds = resolveAsaasSyncInstallmentIds({
+            rows: scoped,
+            chargesByInstallment: chargeMap,
+            financialAccountFilter: options?.financialAccountFilter || 'Todas as contas',
+            resolveProvider: (row) => resolveRowProvider(row as FinanceReceiptRow),
+          });
+          if (syncIds.length > 0) {
+            const result = await requestChargeBulkStatusSync(syncIds);
+            setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
 
-              if (result.updated > 0 || result.failed > 0) {
-                showToast(
-                  formatChargeBulkStatusSummary(result),
-                  result.updated === 0 && result.failed > 0,
-                );
+            if (result.receiptUpdatedCount > 0 || result.paid > 0) {
+              const syncedRows = await refreshInstallmentRows(installmentIds, rlsCtx, ownerCtx);
+              if (syncedRows.length > 0) {
+                setPayments(syncedRows);
               }
             }
-          } catch (syncErr) {
-            console.error('[charges/financial-agent] bulk sync failed', syncErr);
-            showToast(
-              syncErr instanceof Error
-                ? syncErr.message
-                : 'Erro ao sincronizar status Asaas com a lista.',
-              true,
-            );
+
+            if (result.updated > 0 || result.failed > 0) {
+              showToast(
+                formatChargeBulkStatusSummary(result),
+                result.updated === 0 && result.failed > 0,
+              );
+            }
           }
+        } catch (syncErr) {
+          console.error('[charges/financial-agent] bulk sync failed', syncErr);
+          showToast(
+            syncErr instanceof Error
+              ? syncErr.message
+              : 'Erro ao sincronizar status Asaas com a lista.',
+            true,
+          );
         }
-      } else {
-        void loadAsaasChargesContext(installmentIds, {
-          refreshReceiptsAfterLoad: true,
-          rlsCtx,
-          ownerCtx,
-        }).catch((err) => {
-          console.error('[charges/financial-agent] asaas context background failed', err);
-        });
-        void loadInterChargeMap(installmentIds).catch((err) => {
-          console.error('[charges/financial-agent] inter charges background failed', err);
-        });
       }
     } catch (err) {
+      if (isFinanceLoadAbort(err) || owned.signal.aborted) return;
       console.error('[charges/financial-agent] load failed', err);
       const message =
         err instanceof Error
@@ -618,10 +644,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           : 'Erro inesperado ao carregar parcelas.';
       setLoadError(message);
       setPayments([]);
+      setTotalsReady(false);
       showToast(message, true);
     } finally {
-      console.log('[charges/financial-agent] load finished', { ms: Date.now() - loadStartedAt });
-      setLoading(false);
+      if (!owned.signal.aborted) {
+        console.log('[charges/financial-agent] load finished', { ms: Date.now() - loadStartedAt });
+        setLoading(false);
+      }
     }
   }, [
     user,
@@ -694,9 +723,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   }, [authLoading]);
 
   useEffect(() => {
-    if (authLoading) return;
-    void loadInstallments();
-  }, [authLoading, loadInstallments]);
+    if (authLoading || !user?.id) return;
+    const controller = new AbortController();
+    void loadInstallments({ resetChargeStatus: true, signal: controller.signal });
+    return () => controller.abort();
+    // A identidade da função não pode disparar uma segunda leitura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user?.id]);
 
   const filteredRows = useMemo(
     () =>
@@ -936,6 +969,16 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
 
     const provider = resolveRowProvider(row);
+    if (
+      !canOfferChargeGenerateInUi({
+        provider,
+        bankStatusConsulted: chargeStatusReady,
+        otherwiseEligible: true,
+      })
+    ) {
+      showToast('Consulte o status em Atualizar lista antes de gerar a cobrança.', true);
+      return;
+    }
     if (provider === 'ASAAS_COMPANY' && !integrationReady) {
       showToast('Integração Asaas não está ativa.', true);
       return;
@@ -1420,6 +1463,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Selecione ao menos uma parcela.', true);
       return;
     }
+    if (!chargeStatusReady) {
+      showToast('Consulte o status em Atualizar lista antes de gerar cobranças.', true);
+      return;
+    }
     if (selectedGeneratableCount === 0) {
       showToast('Nenhuma parcela selecionada pode gerar cobrança.', true);
       return;
@@ -1616,6 +1663,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         <p className="text-sm text-[var(--text-secondary)]">
           Central operacional de parcelas e cobranças da empresa.
         </p>
+        {payments.length > 0 && !totalsReady ? (
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Atualizando as parcelas. Os totais ainda não estão fechados.</p>
+        ) : null}
       </div>
 
       {loadError ? (
@@ -1624,7 +1674,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         </div>
       ) : null}
 
-      {asaasAccessAvailable && !integrationActive && hasAsaasRows && !loading && !integrationLoading ? (
+      {chargeStatusReady && asaasAccessAvailable && !integrationActive && hasAsaasRows && !loading && !integrationLoading ? (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           Integração Asaas não está ativa. Abra Configurações → Integração Financeira e conclua a
           ativação, depois clique em &quot;Atualizar lista&quot;.
@@ -1650,7 +1700,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitle={`${kpis.qtyEmAberto} parcela(s) pendente(s)`}
           icon={<Wallet className="h-5 w-5" />}
           iconWrapClass="bg-amber-500/10 text-amber-400"
-          loading={loading}
+          loading={!totalsReady}
         />
         <FinanceStatCard
           title="Vencidas"
@@ -1659,7 +1709,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitleColor="text-rose-400"
           icon={<AlertCircle className="h-5 w-5" />}
           iconWrapClass="bg-rose-500/10 text-rose-400"
-          loading={loading}
+          loading={!totalsReady}
         />
         <FinanceStatCard
           title="Vencem hoje"
@@ -1667,7 +1717,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitle={`${kpis.qtyVencemHoje} parcela(s) hoje`}
           icon={<Calendar className="h-5 w-5" />}
           iconWrapClass="bg-orange-500/10 text-orange-400"
-          loading={loading}
+          loading={!totalsReady}
         />
         <FinanceStatCard
           title="Pagas no mês"
@@ -1675,7 +1725,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitle={`${kpis.qtyPagasMes} recebimento(s)`}
           icon={<Banknote className="h-5 w-5" />}
           iconWrapClass="bg-emerald-500/10 text-emerald-400"
-          loading={loading}
+          loading={!totalsReady}
         />
         <FinanceStatCard
           title="Total a receber"
@@ -1683,7 +1733,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitle="Pendentes + vencidas"
           icon={<Wallet className="h-5 w-5" />}
           iconWrapClass="bg-blue-500/10 text-blue-400"
-          loading={loading}
+          loading={!totalsReady}
         />
         <FinanceStatCard
           title="Aguardando geração"
@@ -1691,7 +1741,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitle={`${asaasKpis.qtyAguardandoGeracao} parcela(s) sem cobrança ativa`}
           icon={<Zap className="h-5 w-5" />}
           iconWrapClass="bg-violet-500/10 text-violet-400"
-          loading={loading}
+          loading={!totalsReady || !chargeStatusReady}
         />
       </div>
 
@@ -1702,7 +1752,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           subtitle={`${asaasKpis.qtyCobrancasEmitidas} cobrança(s) ativa(s)`}
           icon={<QrCode className="h-5 w-5" />}
           iconWrapClass="bg-cyan-500/10 text-cyan-400"
-          loading={loading}
+          loading={!totalsReady || !chargeStatusReady}
         />
         <div className="charges-ops-actions">
           <button
@@ -1870,6 +1920,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             disabled={
               bulkBusy ||
               !installmentsDataReady ||
+              !chargeStatusReady ||
               selectedGeneratableCount === 0 ||
               ownerReadOnly
             }
@@ -1946,7 +1997,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {pageRows.length === 0 && !totalsReady ? (
               <tr>
                 <td colSpan={11} className="py-12 text-center text-[var(--text-secondary)]">
                   <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />
@@ -2017,7 +2068,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                     </td>
                     <td>
                       <span className="text-xs text-[var(--text-secondary)]">
-                        {view.chargeStatusLabel}
+                        {chargeStatusReady ? view.chargeStatusLabel : 'Não consultado'}
                       </span>
                     </td>
                     <td>
@@ -2031,6 +2082,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         ownerReadOnly={ownerReadOnly}
                         busy={rowBusy}
                         installmentsDataReady={installmentsDataReady}
+                        bankStatusConsulted={chargeStatusReady}
                         customerPhone={customerPhone}
                         customerEmail={customerEmail}
                         whatsappShareUrl={whatsappShareUrl}

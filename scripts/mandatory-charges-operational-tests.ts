@@ -7,7 +7,9 @@ import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChar
 import { resolveChargeInstallmentActionsProps } from '../components/charges/ChargeInstallmentActions';
 import {
   canGenerateAsaasCharge,
+  canOfferChargeGenerateInUi,
   canPerformMutableAsaasActions,
+  chargeProviderRequiresBankStatusConsult,
   computeAsaasOperationalKpis,
   mapCreateChargeApiError,
   resolveAsaasStatusDisplayLabel,
@@ -876,16 +878,24 @@ function testChargesPageLoadingDoesNotBlockOnAsaas() {
     'utf8',
   );
 
-  assert(pageClient.includes('setPayments(scoped)'), 'charges define setPayments(scoped)');
+  assert(pageClient.includes('setPayments('), 'charges define as parcelas');
   assert(
-    pageClient.includes('Parcelas locais primeiro'),
-    'parcelas locais renderizadas antes do contexto Asaas',
+    pageClient.includes('fetchFinanceReceiptsProgressive'),
+    'parcelas locais usam a carga progressiva',
   );
   assert(
-    pageClient.includes('void loadAsaasChargesContext(installmentIds'),
-    'contexto Asaas carregado em background no load inicial',
+    !pageClient.includes('void loadAsaasChargesContext(installmentIds'),
+    'abertura não consulta Asaas',
   );
-  assert(pageClient.includes('if (authLoading) return;'), 'useEffect aguarda authLoading');
+  assert(
+    !pageClient.includes('void loadInterChargeMap(installmentIds)'),
+    'abertura não consulta Inter',
+  );
+  assert(
+    pageClient.includes('await loadAsaasChargesContext(installmentIds'),
+    'o botão de atualizar continua sincronizando Asaas',
+  );
+  assert(pageClient.includes('if (authLoading || !user?.id) return;'), 'useEffect aguarda authLoading');
   assert(pageClient.includes('finally {'), 'loadInstallments usa finally');
   assert(pageClient.includes('setLoading(false);'), 'loading sempre encerra');
   assert(
@@ -893,10 +903,89 @@ function testChargesPageLoadingDoesNotBlockOnAsaas() {
     'logs operacionais com prefixo charges/financial-agent',
   );
   assert(
-    pageClient.includes('asaas context background failed'),
-    'falha Asaas em background não trava lista',
+    pageClient.includes('syncAsaasStatuses: !ownerReadOnly'),
+    'sincronização permanece no botão existente',
   );
   console.log('OK testChargesPageLoadingDoesNotBlockOnAsaas');
+}
+
+function testGenerateWaitsForBankStatusConsult() {
+  assert(
+    !canOfferChargeGenerateInUi({
+      provider: 'ASAAS_COMPANY',
+      bankStatusConsulted: false,
+      otherwiseEligible: true,
+    }),
+    'Asaas não gera com status não consultado',
+  );
+  assert(
+    !canOfferChargeGenerateInUi({
+      provider: 'INTER',
+      bankStatusConsulted: false,
+      otherwiseEligible: true,
+    }),
+    'Inter não gera com status não consultado',
+  );
+  assert(
+    canOfferChargeGenerateInUi({
+      provider: 'ASAAS_COMPANY',
+      bankStatusConsulted: true,
+      otherwiseEligible: true,
+    }),
+    'Asaas elegível gera depois da consulta',
+  );
+  assert(
+    canOfferChargeGenerateInUi({
+      provider: 'INTER',
+      bankStatusConsulted: true,
+      otherwiseEligible: true,
+    }),
+    'Inter elegível gera depois da consulta',
+  );
+  assert(
+    !canOfferChargeGenerateInUi({
+      provider: 'ASAAS_COMPANY',
+      bankStatusConsulted: true,
+      otherwiseEligible: false,
+    }),
+    'consulta não libera parcela inelegível',
+  );
+  assert(
+    !chargeProviderRequiresBankStatusConsult('MANUAL'),
+    'modalidade sem consulta bancária fica fora do bloqueio',
+  );
+  assert(
+    canOfferChargeGenerateInUi({
+      provider: 'MANUAL',
+      bankStatusConsulted: false,
+      otherwiseEligible: true,
+    }),
+    'modalidade sem consulta continua elegível',
+  );
+
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const page = fs.readFileSync(
+    path.join(process.cwd(), 'components/charges/ChargesPageClient.tsx'),
+    'utf8',
+  );
+  const actions = fs.readFileSync(
+    path.join(process.cwd(), 'components/charges/ChargeInstallmentActions.tsx'),
+    'utf8',
+  );
+  assert(page.includes('bankStatusConsulted={chargeStatusReady}'), 'a linha recebe o estado da consulta');
+  assert(
+    page.includes('Consulte o status em Atualizar lista antes de gerar a cobrança.'),
+    'o clique individual não emite antes da consulta',
+  );
+  assert(
+    page.includes('Consulte o status em Atualizar lista antes de gerar cobranças.'),
+    'o lote não emite antes da consulta',
+  );
+  assert(page.includes('syncAsaasStatuses: !ownerReadOnly'), 'Atualizar lista segue sincronizando sob demanda');
+  assert(actions.includes('canOfferChargeGenerateInUi'), 'o botão Gerar usa a mesma trava');
+  assert(actions.includes('bankStatusConsulted = true'), 'testes antigos continuam com a consulta já feita');
+  console.log('OK testGenerateWaitsForBankStatusConsult');
 }
 
 function main() {
@@ -916,6 +1005,7 @@ function main() {
   testSavePreservesActiveStatus();
   testChargesUsesSameIntegrationReadyRuleAsSettings();
   testChargesPageLoadingDoesNotBlockOnAsaas();
+  testGenerateWaitsForBankStatusConsult();
   testCompanyAsaasPaidChargeReconcilesFinanceReceipt();
   console.log('mandatory-charges-operational-tests: all passed');
 }

@@ -479,7 +479,8 @@ async function fetchFinanceReceiptRange<T>(params: {
 
 /**
  * Primeira página primeiro. As demais seguem com concorrência limitada.
- * Cobranças continua em `fetchAllFinanceReceiptsPaged`.
+ * Financeiro e Cobranças usam esta leitura. A lista antiga em série
+ * permanece disponível para quem ainda chama `fetchAllFinanceReceiptsPaged`.
  */
 export async function fetchFinanceReceiptsProgressive<T = Record<string, unknown>>(params: {
   supabase: SupabaseClient;

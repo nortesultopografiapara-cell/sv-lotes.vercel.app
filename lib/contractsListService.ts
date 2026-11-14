@@ -127,20 +127,99 @@ function acceptContractsListSelect(select: string) {
   }
 }
 
+const CONTRACT_LIST_EXCLUDED = new Set(['generated_html']);
+
+/** Monta o select da lista só com colunas que a amostra confirmou. */
+export function contractListSelectFromColumnNames(names: readonly string[]): string {
+  const present = new Set(names);
+  return [
+    ...CONTRACT_LIST_SELECT_CORE.split(', ').map((column) => column.trim()),
+    ...CONTRACT_LIST_OPTIONAL_COLUMNS,
+  ]
+    .filter((column) => present.has(column) && !CONTRACT_LIST_EXCLUDED.has(column))
+    .join(', ');
+}
+
+/**
+ * Uma linha revela as colunas reais. O valor não é guardado.
+ * Assim a lista não repete a consulta inteira só para descobrir uma coluna ausente.
+ */
+export async function sampleTableColumnNames(
+  supabase: SupabaseClient,
+  table: string,
+): Promise<string[] | null> {
+  const res = await supabase.from(table).select('*').limit(1);
+  if (res.error || !Array.isArray(res.data) || !res.data[0]) return null;
+  return Object.keys(res.data[0] as Record<string, unknown>);
+}
+
+export function selectFromDesiredColumns(
+  names: readonly string[] | null,
+  desired: readonly string[],
+): string {
+  if (!names) return desired.filter((column) => column === 'id').join(', ') || 'id';
+  const present = new Set(names);
+  const columns = desired.filter((column) => present.has(column));
+  if (!columns.includes('id') && present.has('id')) columns.unshift('id');
+  return columns.length > 0 ? columns.join(', ') : 'id';
+}
+
 export async function runContractsSelectWithFallback(
   supabase: SupabaseClient,
   tenantId: string,
 ): Promise<{ rows: Record<string, unknown>[]; selectUsed: string; error: string | null }> {
   const remembered = readRememberedContractsListSelect();
-  let select =
+  if (
     remembered &&
     remembered.includes('contract_number') &&
-    remembered.includes('id')
-      ? remembered
-      : buildSelectFromColumns([
-          ...CONTRACT_LIST_SELECT_CORE.split(', '),
-          ...CONTRACT_LIST_OPTIONAL_COLUMNS,
-        ]);
+    remembered.includes('id') &&
+    !remembered.includes('generated_html')
+  ) {
+    const rememberedQuery = await runContractsSelectQuery(
+      supabase,
+      remembered,
+      tenantId,
+      'remembered_select',
+    );
+    if (!rememberedQuery.error) {
+      return { rows: rememberedQuery.data ?? [], selectUsed: remembered, error: null };
+    }
+  }
+
+  const sampled = await sampleTableColumnNames(supabase, 'contracts');
+  if (sampled) {
+    const select = contractListSelectFromColumnNames(sampled);
+    const { data, error } = await runContractsSelectQuery(
+      supabase,
+      select,
+      tenantId,
+      'sampled_columns',
+    );
+    if (!error) {
+      acceptContractsListSelect(select);
+      return { rows: data ?? [], selectUsed: select, error: null };
+    }
+    if (error.message?.includes('company_id')) {
+      const byTenant = await supabase
+        .from('contracts')
+        .select(select)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false });
+      if (!byTenant.error) {
+        acceptContractsListSelect(select);
+        return {
+          rows: (byTenant.data as Record<string, unknown>[]) ?? [],
+          selectUsed: select,
+          error: null,
+        };
+      }
+    }
+  }
+
+  let select = buildSelectFromColumns([
+    ...CONTRACT_LIST_SELECT_CORE.split(', '),
+    ...CONTRACT_LIST_OPTIONAL_COLUMNS,
+  ]);
 
   for (let attempt = 0; attempt < 12; attempt++) {
     const { data, error } = await runContractsSelectQuery(

@@ -102,6 +102,8 @@ import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
 import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
 import {
   loadContractsListForTenant,
+  sampleTableColumnNames,
+  selectFromDesiredColumns,
 } from "@/lib/contractsListService";
 import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
 import { isLfEstrelaCustomHtml, prepareLfEstrelaGisFinalHtml } from "@/lib/lfEstrelaPrintCss";
@@ -240,11 +242,10 @@ async function resolveContractsTenantWithDb(user: any): Promise<string | null> {
   if (authUserId) {
     const { data, error } = await supabase
       .from("users")
-      .select("tenant_id, company_id")
+      .select("tenant_id")
       .eq("id", authUserId)
       .maybeSingle();
     if (!error && data?.tenant_id) return data.tenant_id;
-    if (!error && data?.company_id) return data.company_id;
   }
 
   return resolveContractsTenantId(user);
@@ -521,7 +522,38 @@ function enrichContractWithRelations(
   };
 }
 
-/** Busca relações em lote quando o select(*) não traz joins. */
+const CONTRACT_CUSTOMER_LIST_COLUMNS = [
+  "id",
+  "name",
+  "full_name",
+  "document",
+  "cpf",
+  "cpf_cnpj",
+  "phone",
+] as const;
+const CONTRACT_BLOCK_LIST_COLUMNS = [
+  "id",
+  "block_name",
+  "name",
+  "number",
+  "lot_number",
+  "project_id",
+  "price",
+] as const;
+const CONTRACT_PROJECT_LIST_COLUMNS = ["id", "name", "city", "uf"] as const;
+const CONTRACT_SALE_LIST_COLUMNS = [
+  "id",
+  "total_value",
+  "final_value",
+  "agreed_price",
+  "sale_value",
+  "sale_price",
+  "project_id",
+  "block_id",
+  "customer_id",
+] as const;
+
+/** Busca relações em lote, só com colunas que existem e que a lista usa. */
 async function enrichContractsWithRelations(contracts: any[]): Promise<any[]> {
   if (!contracts.length) return [];
 
@@ -530,11 +562,22 @@ async function enrichContractsWithRelations(contracts: any[]): Promise<any[]> {
   const projectIds = contracts.map((c) => c.project_id).filter(Boolean);
   const saleIds = contracts.map((c) => c.sale_id).filter(Boolean);
 
+  const [customerNames, blockNames, projectNames, saleNames] = await Promise.all([
+    sampleTableColumnNames(supabase, "customers"),
+    sampleTableColumnNames(supabase, "blocks"),
+    sampleTableColumnNames(supabase, "projects"),
+    sampleTableColumnNames(supabase, "sales"),
+  ]);
+  const customerSelect = selectFromDesiredColumns(customerNames, CONTRACT_CUSTOMER_LIST_COLUMNS);
+  const blockSelect = `${selectFromDesiredColumns(blockNames, CONTRACT_BLOCK_LIST_COLUMNS)}, projects(name)`;
+  const projectSelect = selectFromDesiredColumns(projectNames, CONTRACT_PROJECT_LIST_COLUMNS);
+  const saleSelect = selectFromDesiredColumns(saleNames, CONTRACT_SALE_LIST_COLUMNS);
+
   const [customers, blocks, projects, sales] = await Promise.all([
-    fetchRowsByIds("customers", "*", customerIds as string[]),
-    fetchRowsByIds("blocks", `*, projects(name)`, blockIds as string[]),
-    fetchRowsByIds("projects", "*", projectIds as string[]),
-    fetchRowsByIds("sales", "*", saleIds as string[]),
+    fetchRowsByIds("customers", customerSelect, customerIds as string[]),
+    fetchRowsByIds("blocks", blockSelect, blockIds as string[]),
+    fetchRowsByIds("projects", projectSelect, projectIds as string[]),
+    fetchRowsByIds("sales", saleSelect, saleIds as string[]),
   ]);
 
   console.log("[CONTRATOS] customer/block/sale encontrados", {
@@ -551,18 +594,7 @@ async function enrichContractsWithRelations(contracts: any[]): Promise<any[]> {
     sales: new Map(sales.map((r) => [r.id, r])),
   };
 
-  return contracts.map((contract) => {
-    const enriched = enrichContractWithRelations(contract, maps);
-    console.log("[CONTRATOS] contrato enriquecido", {
-      id: enriched.id,
-      contract_number: enriched.contract_number,
-      customer_name: enriched.customer_name,
-      project_name: enriched.project_name,
-      location_display: enriched.location_display,
-      sale_value_display: enriched.sale_value_display,
-    });
-    return enriched;
-  });
+  return contracts.map((contract) => enrichContractWithRelations(contract, maps));
 }
 
 function normalizeContractStatus(status?: string | null): string {
@@ -735,6 +767,9 @@ export default function ContractsPage() {
 
         setContracts(rows);
         processContractsFromRows(rows);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("sv-contracts-list-ready"));
+        }
       } catch (e) {
         console.error("[CONTRATOS] erro", e);
         setContracts([]);
@@ -821,6 +856,50 @@ export default function ContractsPage() {
       active = false;
     };
   }, [selectedContract?.id]);
+
+  useEffect(() => {
+    const contractId = String(selectedContract?.id || "");
+    if (!contractId || selectedContract?._relationsDetailed) return;
+    let active = true;
+    const customerId = String(selectedContract?.customer_id || "");
+    const blockId = String(selectedContract?.block_id || "");
+    const projectId = String(selectedContract?.project_id || "");
+    const saleId = String(selectedContract?.sale_id || "");
+    void (async () => {
+      const [customers, blocks, projects, sales] = await Promise.all([
+        customerId ? fetchRowsByIds("customers", "*", [customerId]) : [],
+        blockId ? fetchRowsByIds("blocks", "*", [blockId]) : [],
+        projectId ? fetchRowsByIds("projects", "*", [projectId]) : [],
+        saleId ? fetchRowsByIds("sales", "*", [saleId]) : [],
+      ]);
+      if (!active) return;
+      setSelectedContract((current: any) => {
+        if (!current || String(current.id) !== contractId) return current;
+        const project = projects[0] || current.projects;
+        const block = blocks[0]
+          ? { ...blocks[0], projects: project || current.blocks?.projects }
+          : current.blocks;
+        return {
+          ...current,
+          customers: customers[0] || current.customers,
+          blocks: block,
+          projects: project,
+          sales: sales[0] || current.sales,
+          _relationsDetailed: true,
+        };
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [
+    selectedContract?.id,
+    selectedContract?._relationsDetailed,
+    selectedContract?.customer_id,
+    selectedContract?.block_id,
+    selectedContract?.project_id,
+    selectedContract?.sale_id,
+  ]);
 
   const loadPromissoryNoteStatus = async (
     contractId: string,

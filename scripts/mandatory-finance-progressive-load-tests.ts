@@ -361,8 +361,10 @@ function testSourcesStaySeparated() {
   );
   assert(finance.includes('fetchFinanceReceiptsProgressive'), 'financeiro usa a carga progressiva');
   assert(!finance.includes('fetchAllFinanceReceiptsPaged'), 'financeiro não espera mais o bloco inteiro');
-  assert(charges.includes('fetchAllFinanceReceiptsPaged'), 'cobranças permanece na leitura publicada');
-  assert(!charges.includes('fetchFinanceReceiptsProgressive'), 'cobranças não mudou de estratégia');
+  assert(charges.includes('fetchFinanceReceiptsProgressive'), 'cobranças usa a carga progressiva');
+  assert(!charges.includes('fetchAllFinanceReceiptsPaged'), 'cobranças não espera mais o bloco inteiro');
+  assert(charges.includes('financeDatasetReadyForTotals'), 'cobranças só fecha total com a leitura completa');
+  assert(!charges.includes('asaas context background failed'), 'abertura não consulta Asaas');
   assert(finance.includes('calculateFinancialTotals(data || [], cashData, commsData)'), 'fórmula dos totais preservada');
   console.log('OK testSourcesStaySeparated');
 }

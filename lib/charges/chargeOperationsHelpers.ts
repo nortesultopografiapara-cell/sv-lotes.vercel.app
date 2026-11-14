@@ -194,6 +194,33 @@ export function canPerformMutableAsaasActions(params: {
   );
 }
 
+/** Asaas e Inter só podem ser emitidos depois que o status bancário foi lido. */
+export function chargeProviderRequiresBankStatusConsult(
+  provider: string | null | undefined,
+): boolean {
+  const normalized = String(provider || '').trim().toUpperCase();
+  return normalized === 'ASAAS_COMPANY' || normalized === 'ASAAS' || normalized === 'INTER';
+}
+
+/**
+ * A interface esconde Gerar enquanto o status daquele provider ainda não foi
+ * consultado. Parcela já elegível, e provider que não depende dessa consulta,
+ * continuam com a regra anterior.
+ */
+export function canOfferChargeGenerateInUi(params: {
+  provider: string | null | undefined;
+  bankStatusConsulted: boolean;
+  otherwiseEligible: boolean;
+}): boolean {
+  if (
+    chargeProviderRequiresBankStatusConsult(params.provider) &&
+    !params.bankStatusConsulted
+  ) {
+    return false;
+  }
+  return params.otherwiseEligible;
+}
+
 export function canGenerateAsaasCharge(params: {
   installmentPaid: boolean;
   integrationActive: boolean;

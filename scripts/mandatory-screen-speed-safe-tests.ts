@@ -232,6 +232,36 @@ function fakeContractsClient(missing: string[]) {
             eq() {
               return chain;
             },
+            limit() {
+              calls.push('sample');
+              const row: Record<string, string> = {
+                id: 'sample-1',
+                contract_number: '000000001/2024',
+                status: 'ativo',
+                signature_status: 'pendente',
+                created_at: '2026-01-01',
+                customer_id: 'c1',
+                block_id: 'b1',
+                project_id: 'p1',
+                sale_id: 's1',
+                tenant_id: 'tenant-1',
+                project_name_snapshot: 'Projeto',
+                version: '1',
+                regenerated_from: '',
+                broker_id: '',
+                needs_regenerar: 'false',
+                company_id: 'tenant-1',
+                installments: '12',
+                customer_name: 'Cliente',
+                location_display: 'QD 01',
+                plan_type: 'mensal',
+                contract_model: 'padrao',
+                sale_value: '1000',
+                down_payment: '100',
+              };
+              for (const column of missing) delete row[column];
+              return Promise.resolve({ data: [row], error: null });
+            },
             order() {
               calls.push(select);
               const absent = missing.find((column) =>
@@ -276,7 +306,9 @@ async function testContractSelectIsRemembered() {
   const loaded = await runContractsSelectWithFallback(first.supabase, 'tenant-1');
   assert(loaded.error == null, 'primeira lista sem erro');
   assert(loaded.rows.length === 2, 'contrato antigo e novo');
-  assert(first.calls.length === 3, 'descobre as colunas ausentes uma vez');
+  assert(first.calls[0] === 'sample', 'a amostra descobre as colunas sem varrer a lista');
+  assert(first.calls.length === 2, 'amostra e uma consulta válida');
+  assert(!first.calls[1].includes('sale_value'), 'a lista não pede sale_value ausente');
   const second = fakeContractsClient(missing);
   const again = await runContractsSelectWithFallback(second.supabase, 'tenant-1');
   assert(again.rows.length === 2, 'segunda abertura mantém os contratos');
@@ -486,7 +518,9 @@ function testSourcesStayInScope() {
   assert(!finance.includes('brokers(*)'), 'join inexistente de comissão removido');
   assert(finance.includes('financeAbortRef'), 'carga cancelável');
   assert(finance.includes('lotsReady={enterpriseLotsReady}'), 'lotes sem zero provisório');
-  assert(charges.includes('fetchAllFinanceReceiptsPaged'), 'cobranças fora desta etapa');
+  assert(charges.includes('fetchFinanceReceiptsProgressive'), 'cobranças usa a carga progressiva');
+  assert(charges.includes('publishFinanceNotificationSource'), 'cobranças entrega os alertas');
+  assert(!charges.includes('asaas context background failed'), 'abertura de cobranças não sincroniza banco');
   assert(customers.includes('blocks (id, block_name, name, number, status, projects(name))'), 'clientes preservados');
   assert(layout.includes('fetchFinanceNotificationReceipts'), 'sino paginado');
   assert(layout.includes('waitForPublishedFinanceNotificationSource'), 'sino não duplica a leitura da tela');
@@ -496,7 +530,8 @@ function testSourcesStayInScope() {
   assert(paged.includes('FINANCE_RECEIPTS_ESSENTIAL_SELECT'), 'financeiro separa a etapa A');
   assert(paged.includes('loadFinanceReceiptRelations'), 'cadastros em lote, não por parcela');
   assert(paged.includes('FINANCE_RECEIPTS_PROGRESS_CONCURRENCY = 2'), 'paralelismo segue em duas páginas');
-  assert(charges.includes('fetchAllFinanceReceiptsPaged'), 'cobranças fora desta etapa');
+  assert(layout.includes("path.startsWith('/charges')"), 'sino espera a leitura de cobranças');
+  assert(layout.includes('sv-contracts-list-ready'), 'sino espera a lista de contratos');
   assert(!layout.includes(".select('amount, due_date, status, sale_id')"), 'sino sem leitura única');
   console.log('OK fontes');
 }

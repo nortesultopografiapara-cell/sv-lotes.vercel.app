@@ -22,6 +22,8 @@ import {
   CHARGES_WHATSAPP_TOOLTIP,
   formatCancelledChargeHistoryLabel,
   isLocallyCancelledChargeStatus,
+  canOfferChargeGenerateInUi,
+  chargeProviderRequiresBankStatusConsult,
   resolveChargeActionVisibility,
   resolveCompanyAsaasDetailsUrl,
   resolveCompanyAsaasReceiptUrl,
@@ -53,6 +55,8 @@ export type ChargeInstallmentActionsProps = {
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
+  /** Falso enquanto Asaas/Inter ainda não foram lidos por Atualizar lista. */
+  bankStatusConsulted?: boolean;
   customerPhone?: string | null;
   customerEmail?: string | null;
   whatsappShareUrl?: string | null;
@@ -109,6 +113,7 @@ export function ChargeInstallmentActions({
   ownerReadOnly,
   busy,
   installmentsDataReady = true,
+  bankStatusConsulted = true,
   customerPhone,
   customerEmail,
   whatsappShareUrl,
@@ -156,12 +161,21 @@ export function ChargeInstallmentActions({
         customerPhone,
       })
     : null;
-  const showGenerate = Boolean(
-    actions.showGenerate &&
-      providerReady &&
-      !interActions?.hideGenerate &&
-      !installmentCanceled,
-  );
+  const emitProvider = isInter ? 'INTER' : 'ASAAS_COMPANY';
+  const awaitsBankStatus =
+    chargeProviderRequiresBankStatusConsult(emitProvider) && !bankStatusConsulted;
+  const showGenerate = canOfferChargeGenerateInUi({
+    provider: emitProvider,
+    bankStatusConsulted,
+    otherwiseEligible: Boolean(
+      actions.showGenerate &&
+        providerReady &&
+        !interActions?.hideGenerate &&
+        !installmentCanceled,
+    ),
+  });
+  const showConsultBeforeGenerate =
+    awaitsBankStatus && !installmentPaid && !installmentCanceled && !ownerReadOnly;
   const showCopyBarcodeLine =
     !installmentCanceled &&
     (isInter ? Boolean(interActions?.showCopyLinha) : actions.showCopyBarcodeLine);
@@ -187,7 +201,7 @@ export function ChargeInstallmentActions({
     );
   }
 
-  if (!isInter && !integrationActive) {
+  if (!isInter && !integrationActive && !awaitsBankStatus) {
     return (
       <span className="text-[10px] text-amber-400/90" title="Integração Asaas não está ativa.">
         Integração inativa
@@ -206,6 +220,14 @@ export function ChargeInstallmentActions({
   return (
     <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
       <div className="flex flex-wrap justify-end gap-1.5">
+        {showConsultBeforeGenerate ? (
+          <span
+            className="text-[10px] text-[var(--text-muted)]"
+            title="A geração fica disponível depois que o status bancário for consultado."
+          >
+            Consulte o status em Atualizar lista
+          </span>
+        ) : null}
         {showGenerate ? (
           <>
             <button
