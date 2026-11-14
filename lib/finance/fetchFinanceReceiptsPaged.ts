@@ -106,9 +106,12 @@ function attachAbort<T>(query: T, signal?: AbortSignal): T {
 }
 
 function applyListOrdering<T extends QueryBuilder>(query: T): T {
+  // O id é só desempate. Sem ele, vencimento e número iguais mudam de
+  // posição entre consultas, e o offset repete uma parcela e omite outra.
   return query
     .order('due_date', { ascending: true })
-    .order('installment_number', { ascending: true }) as T;
+    .order('installment_number', { ascending: true })
+    .order('id', { ascending: true }) as T;
 }
 
 /**

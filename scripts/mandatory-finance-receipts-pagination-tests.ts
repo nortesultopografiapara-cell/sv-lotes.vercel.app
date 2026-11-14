@@ -3,9 +3,12 @@
  * npx tsx scripts/mandatory-finance-receipts-pagination-tests.ts
  */
 
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import {
   DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
   FINANCE_RECEIPTS_UI_PAGE_SIZES,
+  loadFinanceReceiptPagesProgressive,
   normalizeFinanceReceiptsUiPageSize,
   paginateFinanceReceiptRows,
   simulatePostgrestTruncation,
@@ -128,13 +131,124 @@ function testNoDuplicatesInFortyEight() {
   console.log('OK testNoDuplicatesInFortyEight');
 }
 
-function main() {
+type TiedReceipt = {
+  id: string;
+  due_date: string;
+  installment_number: number;
+  amount: number;
+};
+
+function tieHash(id: string, salt: number): number {
+  let hash = (2166136261 ^ salt) >>> 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash;
+}
+
+function sortTied(rows: TiedReceipt[], salt: number | null): TiedReceipt[] {
+  return [...rows].sort((a, b) => {
+    const byDate = a.due_date.localeCompare(b.due_date);
+    if (byDate !== 0) return byDate;
+    const byNumber = a.installment_number - b.installment_number;
+    if (byNumber !== 0) return byNumber;
+    if (salt === null) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    const left = tieHash(a.id, salt);
+    const right = tieHash(b.id, salt);
+    if (left === right) return a.id < b.id ? -1 : 1;
+    return left < right ? -1 : 1;
+  });
+}
+
+function centsOf(rows: TiedReceipt[]): number {
+  return rows.reduce((sum, row) => sum + Math.round(row.amount * 100), 0);
+}
+
+async function testTiedDueDatesNeedIdOrder() {
+  const total = 6000;
+  const pageSize = 500;
+  const rows: TiedReceipt[] = Array.from({ length: total }, (_, index) => ({
+    id: `id-${String(total - index).padStart(5, '0')}`,
+    due_date: '2026-06-15',
+    installment_number: 12,
+    amount: 100 + (index % 50),
+  }));
+  const windowOf = (sorted: TiedReceipt[], pageIndex: number) => {
+    const from = pageIndex * pageSize;
+    return sorted.slice(from, from + pageSize);
+  };
+
+  const probeA = windowOf(sortTied(rows, 1000), 0).map((row) => row.id);
+  const probeB = windowOf(sortTied(rows, 1001), 1).map((row) => row.id);
+  const probeOverlap = probeA.filter((id) => probeB.includes(id)).length;
+  assert(probeOverlap > 0, `janelas com empates instáveis se cruzam (${probeOverlap})`);
+
+  const unstable = await loadFinanceReceiptPagesProgressive({
+    exactCount: total,
+    pageSize,
+    concurrency: 2,
+    loadPage: async (pageIndex) => windowOf(sortTied(rows, 1000 + pageIndex), pageIndex),
+  });
+  const unstableIds = unstable.rows.map((row) => row.id);
+  assert(unstable.complete, 'leitura instável completa a contagem pedida');
+  assert(unstable.rows.length === total, 'offset instável ainda devolve o tamanho das janelas');
+  const unstableUnique = new Set(unstableIds).size;
+  assert(
+    unstableUnique < total,
+    `sem o id, páginas paralelas repetem e omitem (únicos ${unstableUnique} de ${total})`,
+  );
+
+  const sequential = await loadFinanceReceiptPagesProgressive({
+    exactCount: total,
+    pageSize,
+    concurrency: 1,
+    loadPage: async (pageIndex) => windowOf(sortTied(rows, 2000 + pageIndex), pageIndex),
+  });
+  assert(
+    new Set(sequential.rows.map((row) => row.id)).size < total,
+    'a repetição também ocorre com páginas em série',
+  );
+
+  const stable = sortTied(rows, null);
+  const expectedIds = stable.map((row) => row.id).join('|');
+  const expectedCents = centsOf(stable);
+  for (let run = 0; run < 5; run += 1) {
+    const loaded = await loadFinanceReceiptPagesProgressive({
+      exactCount: total,
+      pageSize,
+      concurrency: 2,
+      loadPage: async (pageIndex) => windowOf(stable, pageIndex),
+    });
+    const ids = loaded.rows.map((row) => row.id);
+    assert(loaded.complete && loaded.rows.length === total, `leitura ${run + 1} completa`);
+    assert(new Set(ids).size === total, `leitura ${run + 1} sem id repetido ou omitido`);
+    assert(ids.join('|') === expectedIds, `leitura ${run + 1} conserva a ordem`);
+    assert(centsOf(loaded.rows) === expectedCents, `leitura ${run + 1} conserva os centavos`);
+    const ui = paginateFinanceReceiptRows(loaded.rows, 2, 20);
+    assert(ui.totalCount === total && ui.from === 21 && ui.pageRows[0]?.id === ids[20], 'página da tela segue a ordem estável');
+  }
+
+  const source = readFileSync(resolve('lib/finance/fetchFinanceReceiptsPaged.ts'), 'utf8');
+  const orderBlock = source.slice(source.indexOf('function applyListOrdering'), source.indexOf('/**', source.indexOf('function applyListOrdering')));
+  assert(orderBlock.includes(".order('due_date', { ascending: true })"), 'vencimento permanece primeiro');
+  assert(orderBlock.includes(".order('installment_number', { ascending: true })"), 'número da parcela permanece');
+  assert(orderBlock.includes(".order('id', { ascending: true })"), 'id é o último desempate');
+  const dueAt = orderBlock.indexOf(".order('due_date'");
+  const numberAt = orderBlock.indexOf(".order('installment_number'");
+  const idAt = orderBlock.indexOf(".order('id'");
+  assert(dueAt < numberAt && numberAt < idAt, 'a ordem é vencimento, número e id');
+  console.log('OK testTiedDueDatesNeedIdOrder');
+}
+
+async function main() {
   testPageSizes();
   testFortyEightInstallmentsPagination();
   testFiltersAndOrderingPreservedInSlice();
   testMultiTenantIsolation();
   testNoSilentPostgrestCut();
   testNoDuplicatesInFortyEight();
+  await testTiedDueDatesNeedIdOrder();
   console.log('ALL mandatory-finance-receipts-pagination-tests PASSED');
 }
 
