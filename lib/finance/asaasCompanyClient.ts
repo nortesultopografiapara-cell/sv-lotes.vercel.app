@@ -7,6 +7,7 @@ import {
   buildCompanyAsaasLateFeePayload,
   extractCompanyAsaasBankSlipIdentification,
 } from '@/lib/finance/asaasCompanyLateFees';
+import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
 import {
   ASAAS_OWN_WALLETS_PATH,
   ASAAS_WALLET_EMPTY_RESPONSE_MESSAGE,
@@ -101,6 +102,7 @@ export async function asaasCompanyFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  assertHomologOutboundAllowed();
   const res = await fetch(buildAsaasCompanyRequestUrl(environment, path), {
     ...init,
     headers: { ...asaasCompanyHeaders(apiKey), ...(init?.headers || {}) },

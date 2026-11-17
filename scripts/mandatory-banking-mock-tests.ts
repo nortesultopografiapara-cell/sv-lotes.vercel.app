@@ -196,6 +196,10 @@ async function testReconcilePaymentStructure(): Promise<void> {
 function testFeatureFlagDefaultOff(): void {
   const original = process.env.BANKING_MODULE_ENABLED;
   const originalUi = process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
+  const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const originalServerUrl = process.env.SUPABASE_URL;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://aezktedncttwpqeunjej.supabase.co';
+  delete process.env.SUPABASE_URL;
   delete process.env.BANKING_MODULE_ENABLED;
   delete process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
   assert(isBankingModuleEnabled() === false, 'flag server desligada por padrão');
@@ -210,6 +214,10 @@ function testFeatureFlagDefaultOff(): void {
   else process.env.BANKING_MODULE_ENABLED = original;
   if (originalUi === undefined) delete process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
   else process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = originalUi;
+  if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+  if (originalServerUrl === undefined) delete process.env.SUPABASE_URL;
+  else process.env.SUPABASE_URL = originalServerUrl;
 }
 
 function testIsBankingModuleEnabledForUi(): void {
@@ -221,16 +229,28 @@ function testIsBankingModuleEnabledForUi(): void {
   assert(parseBankingEnvFlag('1') === false, 'parse 1 rejeitado');
 
   const originalUi = process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
+  const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const originalServerUrl = process.env.SUPABASE_URL;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://aezktedncttwpqeunjej.supabase.co';
+  delete process.env.SUPABASE_URL;
   process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = 'true';
   assert(isBankingModuleEnabledForUi() === true, 'UI true com NEXT_PUBLIC');
   process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = 'false';
   assert(isBankingModuleEnabledForUi() === false, 'UI false com NEXT_PUBLIC false');
   if (originalUi === undefined) delete process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
   else process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = originalUi;
+  if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+  if (originalServerUrl === undefined) delete process.env.SUPABASE_URL;
+  else process.env.SUPABASE_URL = originalServerUrl;
 }
 
 function testFeatureFlagBlocksRoutes(): void {
   const original = process.env.BANKING_MODULE_ENABLED;
+  const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const originalServerUrl = process.env.SUPABASE_URL;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://aezktedncttwpqeunjej.supabase.co';
+  delete process.env.SUPABASE_URL;
   delete process.env.BANKING_MODULE_ENABLED;
   const blocked = assertBankingModuleEnabled();
   assert(blocked?.status === 404, 'rotas bloqueadas com 404 quando flag false');
@@ -238,6 +258,10 @@ function testFeatureFlagBlocksRoutes(): void {
   assert(assertBankingModuleEnabled() === null, 'rotas liberadas quando flag true');
   if (original === undefined) delete process.env.BANKING_MODULE_ENABLED;
   else process.env.BANKING_MODULE_ENABLED = original;
+  if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+  if (originalServerUrl === undefined) delete process.env.SUPABASE_URL;
+  else process.env.SUPABASE_URL = originalServerUrl;
 }
 
 function testRejectNonMockProvider(): void {

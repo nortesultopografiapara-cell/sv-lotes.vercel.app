@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
 import {
   getInterWebhookHmacSecretFromEnv,
   validateInterWebhookHmac,
@@ -25,6 +26,9 @@ function getAdmin() {
  * NÃO é o endpoint público cadastrado no Inter.
  */
 export async function POST(request: Request) {
+  if (isDevelopHomologRuntime()) {
+    return NextResponse.json({ error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE }, { status: 403 });
+  }
   const secret = getInterWebhookHmacSecretFromEnv();
   if (!secret) {
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { getCorporateFinanceServiceClient } from '@/lib/master/corporateFinance/apiAuth';
 import { requireCorporateAsaasWebhookToken } from '@/lib/master/corporateFinance/asaas/domain';
 import { processCorporateAsaasWebhook } from '@/lib/master/corporateFinance/asaas/webhookSettlement';
@@ -22,6 +23,9 @@ function extractAccessToken(request: Request): string {
  * Não processa SaaS nem tenant.
  */
 export async function POST(request: Request) {
+  if (isDevelopHomologRuntime()) {
+    return NextResponse.json({ error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE }, { status: 403 });
+  }
   let expected: string;
   try {
     expected = requireCorporateAsaasWebhookToken();

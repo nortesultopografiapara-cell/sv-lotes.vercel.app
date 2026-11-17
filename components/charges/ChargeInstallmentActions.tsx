@@ -70,6 +70,8 @@ export type ChargeInstallmentActionsProps = {
   onWhatsApp: () => void;
   onDownloadPdf?: () => void;
   onSendEmail?: () => void;
+  /** Homologação Develop: não oferece emissão, cancelamento nem envio. */
+  outboundBlocked?: boolean;
 };
 
 export function resolveChargeInstallmentActionsProps(
@@ -127,7 +129,15 @@ export function ChargeInstallmentActions({
   onWhatsApp,
   onDownloadPdf,
   onSendEmail,
+  outboundBlocked = false,
 }: ChargeInstallmentActionsProps) {
+  if (outboundBlocked) {
+    return (
+      <span className="text-[10px] text-[var(--text-muted)]">
+        Emissão bloqueada na homologação
+      </span>
+    );
+  }
   const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
   const st = String(view.installmentStatus || '').toLowerCase();

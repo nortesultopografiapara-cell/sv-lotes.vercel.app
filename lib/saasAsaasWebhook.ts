@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   processSaasChargeCancelled,
@@ -72,6 +73,9 @@ export async function handleAsaasPaymentWebhook(
   request: Request,
   deps: AsaasWebhookDeps = defaultDeps,
 ) {
+  if (isDevelopHomologRuntime()) {
+    return ignoredResponse('homolog-outbound-blocked');
+  }
   if (!verifyAsaasWebhookToken(request)) {
     return NextResponse.json({ error: 'Webhook não autorizado.' }, { status: 401 });
   }

@@ -3,6 +3,8 @@
  * Autenticação: instance id + instance token na URL; Client-Token opcional no header.
  */
 
+import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
+
 export const ZAPI_SEND_TEXT_BASE_URL = 'https://api.z-api.io';
 
 export type ZapiConfigStatus = {
@@ -287,6 +289,9 @@ function logZapiSendTextTemporaryPost(input: {
 }
 
 export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextResult> {
+  if (isDevelopHomologRuntime()) {
+    return { ok: false, error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE };
+  }
   const config = getZapiConfigStatus();
   if (!config.ready) {
     return { ok: false, error: 'Z-API não configurada.' };

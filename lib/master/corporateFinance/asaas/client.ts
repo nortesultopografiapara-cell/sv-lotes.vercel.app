@@ -2,6 +2,7 @@
  * Cliente HTTP Asaas — exclusivo Financeiro Corporativo MASTER.
  * Usa ASAAS_API_KEY / ASAAS_ENV (mesma conta SaaS), sem acoplar a saas_charges nem tenant.
  */
+import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
 import {
   requireCorporateAsaasApiKey,
   resolveCorporateAsaasEnvironment,
@@ -55,6 +56,7 @@ export async function corporateAsaasFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  assertHomologOutboundAllowed();
   const res = await fetch(`${baseUrl()}${path}`, {
     ...init,
     headers: { ...headers(), ...(init?.headers || {}) },
@@ -178,6 +180,7 @@ export async function corporateAsaasFetchPixQrCode(
 export async function corporateAsaasCancelPayment(
   paymentId: string,
 ): Promise<{ ok: boolean; httpStatus: number; message: string }> {
+  assertHomologOutboundAllowed();
   const res = await fetch(
     `${baseUrl()}/payments/${encodeURIComponent(paymentId)}`,
     { method: 'DELETE', headers: headers() },

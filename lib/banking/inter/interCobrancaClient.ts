@@ -13,6 +13,7 @@ import {
 } from '@/lib/banking/inter/interOAuthClient';
 import { isInterSituacaoTerminal } from '@/lib/banking/inter/interStatus';
 import {
+  assertHomologOutboundAllowed,
   isDevelopHomologRuntime,
   isProductionSupabaseRuntime,
 } from '@/lib/homolog/env';
@@ -429,6 +430,7 @@ async function authorizedRequest(
   bodyText: string;
   headers: Record<string, string>;
 }> {
+  assertHomologOutboundAllowed();
   const token = await requestInterAccessToken(creds, { fetchFn: options?.fetchFn });
   if (!token.ok) {
     throw new Error(token.message);

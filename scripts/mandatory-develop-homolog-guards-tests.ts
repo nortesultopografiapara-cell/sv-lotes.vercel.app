@@ -126,5 +126,66 @@ assert(
   envSrc.includes("PRODUCTION_PROJECT_REF = 'aezktedncttwpqeunjej'"),
 );
 
-console.log(`${pass}/${total} passed`);
-if (pass !== total) process.exit(1);
+assert('asaas company bloqueia homolog', asaasCompany.includes('assertHomologOutboundAllowed'));
+assert('asaas saas bloqueia homolog', asaasSaas.includes('assertHomologOutboundAllowed'));
+assert('inter oauth bloqueia homolog', inter.includes('assertHomologOutboundAllowed'));
+assert('inter cobranca bloqueia homolog', cobranca.includes('assertHomologOutboundAllowed'));
+assert('zapi bloqueia homolog', zapi.includes('isDevelopHomologRuntime'));
+assert('resend bloqueia homolog', resend.includes('isDevelopHomologRuntime'));
+
+async function testDevelopBlocksOutbound(): Promise<void> {
+  const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const prevServer = process.env.SUPABASE_URL;
+  const prevFlag = process.env.BANKING_MODULE_ENABLED;
+  const prevFetch = globalThis.fetch;
+  try {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = DEVELOP_HOST;
+    delete process.env.SUPABASE_URL;
+    process.env.BANKING_MODULE_ENABLED = 'true';
+    const { isBankingModuleEnabled } = await import('../lib/banking/config');
+    const { asaasCompanyFetch } = await import('../lib/finance/asaasCompanyClient');
+    const { sendText } = await import('../lib/whatsapp/zapiProvider');
+    assert('flag develop ignora true', isBankingModuleEnabled() === false);
+    let called: boolean = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    let blocked = false;
+    try {
+      await asaasCompanyFetch('test-key', 'SANDBOX', '/payments', { method: 'POST', body: '{}' });
+    } catch (err) {
+      blocked = err instanceof Error && err.message.includes('homologação');
+    }
+    assert('asaas company não chama a rede no develop', blocked && called === false);
+    const zapiResult = await sendText({ phone: '5599999999999', message: 'teste ficticio' });
+    assert('z-api não envia no develop', zapiResult.ok === false && called === false);
+
+    process.env.NEXT_PUBLIC_SUPABASE_URL = PRODUCTION_HOST;
+    process.env.BANKING_MODULE_ENABLED = 'true';
+    assert('flag production continua ligada', isBankingModuleEnabled() === true);
+    called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response('{}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+    await asaasCompanyFetch('test-key', 'SANDBOX', '/myAccount');
+    assert('asaas company segue liberado fora do develop', called === true);
+  } finally {
+    globalThis.fetch = prevFetch;
+    if (prevUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
+    if (prevServer === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = prevServer;
+    if (prevFlag === undefined) delete process.env.BANKING_MODULE_ENABLED;
+    else process.env.BANKING_MODULE_ENABLED = prevFlag;
+  }
+}
+
+void testDevelopBlocksOutbound().then(() => {
+  console.log(`${pass}/${total} passed`);
+  if (pass !== total) process.exit(1);
+});

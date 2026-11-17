@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isBankingModuleEnabled } from '@/lib/banking/config';
+import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { decryptBankingSecret } from '@/lib/banking/credentialsCrypto';
 import { getCompanyAsaasIntegrationConfig } from '@/lib/finance/asaasIntegrationRepository';
@@ -153,6 +154,9 @@ function buildEventId(payload: CompanyAsaasWebhookPayload): string {
 }
 
 export async function handleCompanyAsaasPaymentWebhook(request: Request): Promise<Response> {
+  if (isDevelopHomologRuntime()) {
+    return NextResponse.json({ error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE }, { status: 403 });
+  }
   if (!isBankingModuleEnabled()) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }

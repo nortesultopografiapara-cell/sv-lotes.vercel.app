@@ -5,6 +5,7 @@
 
 import https from 'node:https';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
 import {
   INTER_OAUTH_SCOPES,
   getInterOAuthTokenUrl,
@@ -185,6 +186,7 @@ export async function requestInterAccessToken(
     nowMs?: number;
   },
 ): Promise<InterOAuthResult> {
+  assertHomologOutboundAllowed();
   const environment = creds.environment;
   const clientId = String(creds.clientId || '').trim();
   const clientSecret = String(creds.clientSecret || '').trim();

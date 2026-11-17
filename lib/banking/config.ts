@@ -9,6 +9,8 @@
  * em request time — confiável no Preview Vercel sem depender só do bundle client.
  */
 
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
+
 export const BANKING_MODULE_FLAG = 'BANKING_MODULE_ENABLED' as const;
 export const BANKING_MODULE_UI_FLAG = 'NEXT_PUBLIC_BANKING_MODULE_ENABLED' as const;
 
@@ -29,8 +31,9 @@ export function getPublicBankingFlagRaw(): string {
   return raw === undefined ? '(undefined)' : raw;
 }
 
-/** Gate server/API — runtime. */
+/** Gate server/API — runtime. No Develop a emissão permanece fechada mesmo com a flag compartilhada ligada. */
 export function isBankingModuleEnabled(): boolean {
+  if (isDevelopHomologRuntime()) return false;
   return parseBankingEnvFlag(process.env[BANKING_MODULE_FLAG]);
 }
 
@@ -39,6 +42,7 @@ export function isBankingModuleEnabled(): boolean {
  * Preferir prop `bankingUiEnabled` vinda do Server Component em Configurações.
  */
 export function isBankingModuleEnabledForUi(): boolean {
+  if (isDevelopHomologRuntime()) return false;
   return parseBankingEnvFlag(readPublicBankingEnvRaw());
 }
 
@@ -47,6 +51,7 @@ export function isBankingModuleEnabledForUi(): boolean {
  * Usa NEXT_PUBLIC — disponível no servidor Vercel em runtime por request.
  */
 export function resolveBankingUiEnabled(): boolean {
+  if (isDevelopHomologRuntime()) return false;
   return parseBankingEnvFlag(readPublicBankingEnvRaw());
 }
 

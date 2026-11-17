@@ -3,6 +3,7 @@
  */
 
 import { Resend } from 'resend';
+import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
 import {
   buildSaasBillingReminderLateFeeLines,
   formatReminderAmountBr,
@@ -111,6 +112,9 @@ function escapeHtmlAttr(value: string): string {
 export async function sendSaasBillingReminderEmail(
   input: SaasBillingReminderEmailInput,
 ): Promise<SaasBillingReminderEmailResult> {
+  if (isDevelopHomologRuntime()) {
+    return { ok: false, error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE };
+  }
   const apiKey = String(process.env.RESEND_API_KEY || '').trim();
   if (!apiKey) {
     return { ok: false, error: 'RESEND_API_KEY não configurada.' };

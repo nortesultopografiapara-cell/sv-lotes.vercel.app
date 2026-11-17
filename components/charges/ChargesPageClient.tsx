@@ -21,6 +21,7 @@ import { ChargeInstallmentActions } from '@/components/charges/ChargeInstallment
 import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/FinancePremiumUI';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { ChargeWhatsAppBatchModal } from '@/components/charges/ChargeWhatsAppBatchModal';
 import { BuyerReminderHistoryPanel } from '@/components/charges/BuyerReminderHistoryPanel';
@@ -131,6 +132,7 @@ export type ChargesPageClientProps = {
 };
 
 export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) {
+  const homologOutboundBlocked = isDevelopHomologRuntime();
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [totalsReady, setTotalsReady] = useState(false);
@@ -1914,7 +1916,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         </button>
       </div>
 
-      {selectedIds.size > 0 && !ownerReadOnly ? (
+      {selectedIds.size > 0 && !ownerReadOnly && !homologOutboundBlocked ? (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/[0.06] px-3 py-2.5">
           <span className="text-xs font-medium text-violet-200">
             {selectedIds.size} selecionada(s)
@@ -2085,6 +2087,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         companyAsaasEnabled={asaasAccessAvailable}
                         chargeProvider={provider}
                         ownerReadOnly={ownerReadOnly}
+                        outboundBlocked={homologOutboundBlocked}
                         busy={rowBusy}
                         installmentsDataReady={installmentsDataReady}
                         bankStatusConsulted={chargeStatusReady}

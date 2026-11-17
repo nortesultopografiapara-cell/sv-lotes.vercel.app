@@ -5,6 +5,7 @@
  */
 
 import { Resend } from 'resend';
+import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
 
 export type ResendAttachment = {
   filename: string;
@@ -33,7 +34,8 @@ export type ResendErrorCode =
   | 'DOMAIN_UNVERIFIED'
   | 'RECIPIENT_INVALID'
   | 'ATTACHMENT_TOO_LARGE'
-  | 'PROVIDER_ERROR';
+  | 'PROVIDER_ERROR'
+  | 'HOMOLOG_BLOCKED';
 
 export type ResendSendResult = {
   ok: boolean;
@@ -199,6 +201,13 @@ function sanitizeProviderMessage(raw: string): string {
 }
 
 export async function sendResendEmail(input: ResendSendInput): Promise<ResendSendResult> {
+  if (isDevelopHomologRuntime()) {
+    return {
+      ok: false,
+      errorCode: 'HOMOLOG_BLOCKED',
+      error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE,
+    };
+  }
   const apiKey = String(process.env.RESEND_API_KEY || '').trim();
   if (!apiKey) {
     return {

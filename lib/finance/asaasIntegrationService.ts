@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
 import {
   getCompanyAsaasIntegrationConfig,
   loadAsaasApiKeyForEnvironment,
@@ -71,6 +72,7 @@ export async function runAsaasTestConnection(
 
   const started = Date.now();
   try {
+    assertHomologOutboundAllowed();
     const res = await fetch(`${asaasApiBaseUrl(config.environment)}/myAccount`, {
       headers: {
         'Content-Type': 'application/json',
