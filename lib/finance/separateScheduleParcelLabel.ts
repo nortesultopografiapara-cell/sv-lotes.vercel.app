@@ -79,3 +79,26 @@ export function formatFinanceParcelLabel(input: FinanceParcelLabelInput): string
   const shown = String(input.installmentNumber || 1);
   return lotCount ? `Parcela ${shown} / ${lotCount}` : `Parcela ${shown}`;
 }
+
+/** Rótulo de Cobranças. Venda sem grupo de sinal mantém Entrada e Parcela n / N. */
+export function formatChargeParcelLabel(
+  input: FinanceParcelLabelInput & { saleHasSignalSchedule?: boolean },
+): string {
+  const group = groupOf(input.scheduleGroup);
+  const number = Number(input.installmentNumber);
+  const lotCount = wholeCount(input.lotInstallmentCount);
+  const signalCount = wholeCount(input.signalFutureCount);
+  if (group === 'SIGNAL' && number === 0) return 'Sinal — recebido no ato';
+  if (group === 'SIGNAL' && Number.isInteger(number) && number >= 1) {
+    return signalCount ? `Sinal — parcela ${number}/${signalCount}` : `Sinal — parcela ${number}`;
+  }
+  const lotLike = group === 'LOT'
+    || (group === '' && input.saleHasSignalSchedule === true && Number.isInteger(number) && number >= 1);
+  if (lotLike && Number.isInteger(number) && number >= 1) {
+    return lotCount ? `Lote — parcela ${number}/${lotCount}` : `Lote — parcela ${number}`;
+  }
+  const isEntry = input.installmentNumber === 0 || input.installmentNumber === '0';
+  if (isEntry) return 'Entrada';
+  const shown = String(input.installmentNumber || 1);
+  return lotCount ? `Parcela ${shown} / ${lotCount}` : `Parcela ${shown}`;
+}

@@ -20,19 +20,25 @@ import {
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 import { buyerSnapshotFromForm, isBuyerLegalEntity } from '@/lib/buyerLegalEntity';
 import {
-  assertSeparateScheduleRecalcSupported,
   isMissingScheduleGroupColumn,
   mergeScheduleGroups,
+  SEPARATE_SIGNAL_RECALC_BLOCKED_MESSAGE,
 } from '@/lib/finance/recantoReceiptSchedule';
 import { readPersistedSeparateSignalForm } from '@/lib/recantoSeparateSignalForm';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
 import { saleSpouseFormFieldsFromSale } from '@/lib/saleSpouseFields';
 import {
   buildSaleEditFinancePayloads,
+  isLotScheduleReceipt,
   isPaidFinanceReceipt,
+  isPendingFinanceReceipt,
+  isSignalScheduleReceipt,
+  LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE,
+  legacySignalPlanConflicts,
   planFullFinanceRecalc,
   planPartialFinanceRecalc,
   resolveFinanceScheduleEditLock,
+  saleEditShouldRewriteReceipts,
 } from '@/lib/saleEditFinanceRecalc';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import {
@@ -233,16 +239,11 @@ export async function loadSaleEditContext(
   );
   const entryReceipt = (receipts || []).find((r) => Number(r.installment_number) === 0);
   const separateSignal = readPersistedSeparateSignalForm({ sale, receipts: receipts || [] });
-  const hasScheduleGroup = (receipts || []).some((row) => String(row.schedule_group || '').trim());
-  const firstParcel = hasScheduleGroup
-    ? (receipts || []).find(
-        (row) =>
-          String(row.schedule_group || '').trim().toUpperCase() === 'LOT' &&
-          Number(row.installment_number) === 1,
-      )
-    : (receipts || []).find((r) => Number(r.installment_number) === 1);
+  const lotReceipts = (receipts || []).filter((row) => isLotScheduleReceipt(row));
+  const firstParcel = lotReceipts.find((row) => Number(row.installment_number) === 1);
   const cashReceipt =
-    (receipts || []).find((r) => Number(r.installment_number) === 1 && isPaidReceipt(r)) ||
+    lotReceipts.find((row) => Number(row.installment_number) === 1 && isPaidReceipt(row)) ||
+    lotReceipts[0] ||
     (receipts || [])[0];
 
   const paymentType = String(sale.payment_type || 'À vista');
@@ -609,12 +610,35 @@ export async function updateSaleFromEdit(
     schedule_group?: string | null;
   }>;
 
-  assertSeparateScheduleRecalcSupported(await receiptRowsWithScheduleGroup(supabase, saleId, receiptRows));
+  const groupedRows = await receiptRowsWithScheduleGroup(supabase, saleId, receiptRows);
+  const proposedSignalCents = (value: unknown) => {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+  };
+  if (legacySignalPlanConflicts(groupedRows, {
+    signalContractCents: proposedSignalCents(signalContractValue ?? data.down_payment),
+    paidAtSaleCents: signalPaidAtSale == null ? null : proposedSignalCents(signalPaidAtSale),
+  })) {
+    throw new Error(LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE);
+  }
+  const rewriteReceipts = saleEditShouldRewriteReceipts({
+    financePlanChanged,
+    previousFirstDue: saleBefore.first_installment_due_date as string | null,
+    nextFirstDue: data.first_installment_due_date,
+    previousEntryDue: saleBefore.down_payment_due_date as string | null,
+    nextEntryDue: data.down_payment_due_date,
+  });
+  if (
+    String(saleBefore.signal_schedule_mode || '').trim().toUpperCase() === 'SEPARATE'
+    && rewriteReceipts
+  ) {
+    throw new Error(SEPARATE_SIGNAL_RECALC_BLOCKED_MESSAGE);
+  }
 
   const scheduleLock = resolveFinanceScheduleEditLock({
     financePlanChanged,
     hasAsaasCharges: balloonLocked,
-    receipts: receiptRows,
+    receipts: groupedRows,
   });
   if (scheduleLock.blocked) {
     throw new Error(scheduleLock.message || BALLOON_EDIT_LOCKED_MESSAGE);
@@ -763,11 +787,15 @@ export async function updateSaleFromEdit(
   }
 
   if (salePatch.financial_account_id) {
-    await supabase
-      .from('finance_receipts')
-      .update({ financial_account_id: salePatch.financial_account_id })
-      .eq('sale_id', saleId)
-      .in('status', ['pendente', 'pending']);
+    const accountIds = groupedRows
+      .filter((row) => !isSignalScheduleReceipt(row) && isPendingFinanceReceipt(row))
+      .map((row) => row.id);
+    if (accountIds.length > 0) {
+      await supabase
+        .from('finance_receipts')
+        .update({ financial_account_id: salePatch.financial_account_id })
+        .in('id', accountIds);
+    }
   }
 
   const newPayloads = buildSaleEditFinancePayloads(
@@ -785,11 +813,13 @@ export async function updateSaleFromEdit(
 
   let financeChanged = false;
 
-  const paid = receiptRows.filter(isPaidReceipt);
+  const paid = groupedRows.filter(isPaidReceipt);
 
-  if (paid.length > 0) {
+  if (!rewriteReceipts) {
+    console.log('EDIT_SALE_FINANCE_PRESERVED', { saleId, receipts: groupedRows.length });
+  } else if (paid.length > 0) {
     const plan = planPartialFinanceRecalc(
-      receiptRows,
+      groupedRows,
       newPayloads,
       data.final_value,
       financeOptions,
@@ -851,11 +881,18 @@ export async function updateSaleFromEdit(
       inserted: plan.toInsert.length,
     });
   } else {
-    const fullPlan = planFullFinanceRecalc(newPayloads);
-    const { error: delErr } = await supabase
-      .from('finance_receipts')
-      .delete()
-      .eq('sale_id', saleId);
+    const hasPreservedSignal = groupedRows.some((row) => isSignalScheduleReceipt(row));
+    const fullPlan = planFullFinanceRecalc(
+      hasPreservedSignal
+        ? newPayloads.filter((payload) => Number(payload.installment_number) > 0)
+        : newPayloads,
+    );
+    const removableIds = groupedRows
+      .filter((row) => !isSignalScheduleReceipt(row))
+      .map((row) => row.id);
+    const { error: delErr } = removableIds.length === 0
+      ? { error: null }
+      : await supabase.from('finance_receipts').delete().in('id', removableIds);
     if (delErr) {
       throw new Error(`Erro ao limpar parcelas antigas: ${delErr.message}`);
     }

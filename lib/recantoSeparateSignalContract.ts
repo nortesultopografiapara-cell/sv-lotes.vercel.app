@@ -379,3 +379,155 @@ export function buildSeparateSignalContractSchedule(input: {
     scheduleHtml,
   };
 }
+
+function isCancelledReceipt(row: SeparateSignalContractReceipt): boolean {
+  const status = String(row.status ?? '').trim().toLowerCase();
+  return status === 'cancelado' || status === 'cancelled' || status === 'canceled';
+}
+
+function activeReceipts(
+  receipts: ReadonlyArray<SeparateSignalContractReceipt> | null | undefined,
+): SeparateSignalContractReceipt[] {
+  return (Array.isArray(receipts) ? receipts : []).filter((row) => !isCancelledReceipt(row));
+}
+
+function ordinalParcel(index: number): string {
+  const names = ['primeira', 'segunda', 'terceira', 'quarta', 'quinta', 'sexta', 'sétima', 'oitava', 'nona', 'décima'];
+  return names[index] ?? `parcela ${index + 1}`;
+}
+
+function legacySignalClause(input: {
+  signalTotalCents: number;
+  paidAtActCents: number;
+  balanceCents: number;
+  future: SeparateSignalContractLine[];
+}): string {
+  const parts = input.future.map((line, index) =>
+    `a ${ordinalParcel(index)} de ${money(line.amountCents)} com vencimento em ${formatDue(line.dueDate)}`,
+  );
+  return `O COMPRADOR pagará, a título de SINAL, o valor de ${money(input.signalTotalCents)}. Desse SINAL, ${money(input.paidAtActCents)} foi recebido no ato. O saldo de ${money(input.balanceCents)} será pago em ${input.future.length} parcelas: ${parts.join('; ')}. O SINAL é independente das parcelas do lote e não reduz o preço do lote.`;
+}
+
+function explicitCents(sale: Record<string, unknown>, key: string): number | null {
+  if (!Object.prototype.hasOwnProperty.call(sale, key)) return null;
+  return saleCents(sale, key);
+}
+
+function explicitInteger(sale: Record<string, unknown>, key: string): number | null {
+  if (!Object.prototype.hasOwnProperty.call(sale, key)) return null;
+  const raw = sale[key];
+  if (raw == null || String(raw).trim() === '') return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) return null;
+  return value;
+}
+
+/**
+ * Cronograma de sinal antigo regularizado.
+ * Não altera a venda nem os recebíveis. Retorna nulo quando o modo já é SEPARATE
+ * ou quando os recebíveis não fecham com os valores gravados na venda.
+ */
+export function buildLegacyRegularizedSignalContractSchedule(input: {
+  sale: Record<string, unknown>;
+  contractSnapshot?: Record<string, unknown> | null;
+  receipts?: ReadonlyArray<SeparateSignalContractReceipt> | null;
+}): SeparateSignalContractSchedule | null {
+  const modeSource = scheduleModeSource(input.sale, input.contractSnapshot);
+  if (isSeparateSignalScheduleMode(modeSource) || isSeparateSignalScheduleMode(input.sale)) {
+    return null;
+  }
+
+  const rows = activeReceipts(input.receipts);
+  const signalLines = rows
+    .filter((row) => scheduleGroup(row) === 'SIGNAL')
+    .map((row) => toLine(row, 'SIGNAL'))
+    .sort(bySchedule);
+  if (signalLines.length === 0) return null;
+  if (signalLines.some((line) => line.installmentNumber == null || line.signalAddonCents > 0)) return null;
+
+  const numbers = signalLines.map((line) => line.installmentNumber);
+  if (new Set(numbers).size !== numbers.length) return null;
+  const initial = signalLines.filter((line) => line.installmentNumber === 0);
+  const future = signalLines
+    .filter((line) => (line.installmentNumber ?? -1) > 0)
+    .sort(bySchedule);
+  if (initial.length !== 1 || future.length === 0) return null;
+  if (future.some((line, index) => line.installmentNumber !== index + 1 || !line.dueDate)) return null;
+
+  const signalTotalCents = signalLines.reduce((sum, line) => sum + line.amountCents, 0);
+  const paidAtActCents = initial[0].amountCents;
+  const balanceCents = future.reduce((sum, line) => sum + line.amountCents, 0);
+  if (paidAtActCents + balanceCents !== signalTotalCents || balanceCents <= 0) return null;
+
+  const contracted = explicitCents(input.sale, 'signal_contract_value')
+    ?? explicitCents(input.sale, 'down_payment');
+  const paidField = explicitCents(input.sale, 'signal_paid_at_sale');
+  const remainingField = explicitCents(input.sale, 'signal_remaining_value');
+  const remainingCount = explicitInteger(input.sale, 'signal_remaining_installments');
+  if (contracted != null && contracted !== signalTotalCents) return null;
+  if (paidField != null && paidField !== paidAtActCents) return null;
+  if (remainingField != null && remainingField !== balanceCents) return null;
+  if (remainingCount != null && remainingCount !== future.length) return null;
+
+  const lotLines = rows
+    .filter((row) => {
+      const group = scheduleGroup(row);
+      const number = installmentNumber(row);
+      return number != null && number >= 1 && (group === 'LOT' || group == null);
+    })
+    .map((row) => toLine(row, 'LOT'))
+    .sort(bySchedule);
+  if (lotLines.length === 0) return null;
+  if (lotLines.some((line) => line.installmentNumber == null || !line.dueDate || line.signalAddonCents > 0)) {
+    return null;
+  }
+  const lotNumbers = lotLines.map((line) => line.installmentNumber);
+  if (new Set(lotNumbers).size !== lotNumbers.length) return null;
+  const lotTotalCents = lotLines.reduce((sum, line) => sum + line.amountCents, 0);
+  const saleLot = explicitCents(input.sale, 'total_value')
+    ?? explicitCents(input.sale, 'agreed_price');
+  const saleCount = explicitInteger(input.sale, 'installments_count');
+  if (saleLot != null && saleLot !== lotTotalCents) return null;
+  if (saleCount != null && saleCount !== lotLines.length) return null;
+
+  const signalRows = [
+    `<tr data-schedule-band="SIGNAL" data-kind="initial" data-from="0" data-to="0" data-count="1" data-amount-cents="${paidAtActCents}">
+      <td style="border: 1px solid #111; padding: 6px; font-weight: 700;">Recebido no ato</td>
+      <td style="border: 1px solid #111; padding: 6px; text-align: right;">${money(paidAtActCents)}</td>
+      <td style="border: 1px solid #111; padding: 6px;">no ato da celebração</td>
+    </tr>`,
+    ...future.map((line) => `<tr data-schedule-band="SIGNAL" data-kind="range" data-from="${line.installmentNumber}" data-to="${line.installmentNumber}" data-count="1" data-amount-cents="${line.amountCents}">
+      <td style="border: 1px solid #111; padding: 6px;">Parcela ${line.installmentNumber}</td>
+      <td style="border: 1px solid #111; padding: 6px; text-align: right;">${money(line.amountCents)}</td>
+      <td style="border: 1px solid #111; padding: 6px;">${escapeHtml(formatDue(line.dueDate))}</td>
+    </tr>`),
+  ].join('');
+  const lotRows = groupSeparateSignalScheduleLines(lotLines).map((band) => bandRowHtml(band)).join('');
+  const lotIntro = `Condições de pagamento do lote, em cronograma separado: ${lotLines.length} parcelas, no total de ${money(lotTotalCents)}, com início em ${formatDue(lotLines[0].dueDate)}. Esse valor é o preço do lote e não sofre redução pelo SINAL.`;
+  const scheduleHtml = `${tableHtml('Cronograma do SINAL', `${signalRows}${totalRowHtml('Total do SINAL', signalTotalCents)}`)}
+    <p style="margin: 10px 0 6px 0;">${lotIntro}</p>
+    ${tableHtml('Cronograma do lote', `${lotRows}${totalRowHtml('Total do lote', lotTotalCents)}`)}
+    <p style="margin: 8px 0 0 0;"><strong>Total financeiro da operação: ${money(signalTotalCents + lotTotalCents)}.</strong> O SINAL não reduz o preço do lote.</p>`;
+
+  return {
+    signalTotalCents,
+    paidAtActCents,
+    balanceCents,
+    signalInstallmentCount: future.length,
+    signalInstallmentCents: future.map((line) => line.amountCents),
+    signalDueDates: future.map((line) => line.dueDate ?? ''),
+    lotTotalCents,
+    lotInstallmentCents: lotLines.map((line) => line.amountCents),
+    lotDueDates: lotLines.map((line) => line.dueDate ?? ''),
+    financialTotalCents: signalTotalCents + lotTotalCents,
+    signalLines,
+    lotLines,
+    clauseText: legacySignalClause({
+      signalTotalCents,
+      paidAtActCents,
+      balanceCents,
+      future,
+    }),
+    scheduleHtml,
+  };
+}

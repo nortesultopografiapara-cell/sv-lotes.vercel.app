@@ -31,6 +31,7 @@ import {
   CreditCard,
   DatabaseBackup,
   ShoppingBag,
+  Scale,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
@@ -264,6 +265,12 @@ const getMenuItems = (role: string) => {
         color: 'text-[#0ea5e9]',
       });
     }
+    items.push({
+      name: 'Regularizar sinal',
+      href: '/finance/regularizar-sinal',
+      icon: Scale,
+      color: 'text-[var(--color-warning)]',
+    });
     items.push({
       name: 'Configurações',
       href: '/settings',

@@ -20,6 +20,7 @@ import {
 } from '@/lib/salePaymentMode';
 import {
   resolveContractPaymentDates,
+  formatContractDueDateBr,
   formatContractSaleDateBr,
   parseContractSaleDate,
   type ContractFinanceReceiptRef,
@@ -58,7 +59,10 @@ import {
   buildRecantoSignalClauseText,
   resolveRecantoSignalPlan,
 } from '@/lib/recantoSignalRemaining';
-import { buildSeparateSignalContractSchedule } from '@/lib/recantoSeparateSignalContract';
+import {
+  buildLegacyRegularizedSignalContractSchedule,
+  buildSeparateSignalContractSchedule,
+} from '@/lib/recantoSeparateSignalContract';
 import {
   resolveInstallmentPrincipal,
   splitInstallmentAmounts,
@@ -151,7 +155,7 @@ export type RecantoPrimaveraContractContext = {
   signalClauseText: string;
   hasSignalRemaining: boolean;
   signalPaidFullyAtSale: boolean;
-  /** true somente quando sales.signal_schedule_mode = SEPARATE. */
+  /** Cronograma próprio do sinal: modo SEPARATE ou sinal antigo regularizado. */
   separateSignalSchedule: boolean;
   valorParcelaBaseFmt: string;
   valorParcelaComAcrescimoFmt: string;
@@ -493,13 +497,21 @@ export function buildRecantoPrimaveraContractContext(
     remainingInstallments: sale?.signal_remaining_installments as number | null,
     totalInstallments: qtdParcelas,
   });
-  const separateView = swapFinance
+  const separateModeView = swapFinance
     ? null
     : buildSeparateSignalContractSchedule({
         sale: sale as Record<string, unknown>,
         contractSnapshot,
         receipts: financeReceipts,
       });
+  const legacyRegularizedView = separateModeView || swapFinance
+    ? null
+    : buildLegacyRegularizedSignalContractSchedule({
+        sale: sale as Record<string, unknown>,
+        contractSnapshot,
+        receipts: financeReceipts,
+      });
+  const separateView = separateModeView ?? legacyRegularizedView;
 
   // Recanto: parcela base = valor total da chácara / parcelas (sinal NÃO abate).
   // FIXED_AMOUNT: N × valor fixo + residual opcional (parcela final de ajuste).
@@ -860,8 +872,14 @@ export function buildRecantoPrimaveraContractContext(
     singleFutureDueLongFmt,
     singleFutureDueFmt,
     dueDay,
-    dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
-    dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
+    dataPrimeiraParcelaFmt: legacyRegularizedView?.lotDueDates[0]
+      ? formatContractDueDateBr(legacyRegularizedView.lotDueDates[0])
+      : paymentDates.firstInstallmentDueFmt,
+    dataUltimaParcelaFmt: legacyRegularizedView?.lotDueDates[legacyRegularizedView.lotDueDates.length - 1]
+      ? formatContractDueDateBr(
+          legacyRegularizedView.lotDueDates[legacyRegularizedView.lotDueDates.length - 1],
+        )
+      : paymentDates.lastInstallmentDueFmt,
     brokerNome: broker.nome,
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,

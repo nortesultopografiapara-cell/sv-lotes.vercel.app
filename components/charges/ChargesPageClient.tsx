@@ -48,6 +48,7 @@ import {
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
   buildChargeInstallmentView,
+  chargeParcelLabelContext,
   computeChargeKpiSummary,
   filterChargeInstallments,
   type ChargeInstallmentView,
@@ -774,6 +775,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   }, [currentPage, pagination.totalPages]);
 
   const pageRows = pagination.pageRows;
+  const chargeLabels = useMemo(() => chargeParcelLabelContext(filteredRows), [filteredRows]);
 
   const filteredViews = useMemo(
     () =>
@@ -782,6 +784,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         const provider = resolveRowProvider(row);
         const charge = chargeForInstallment(installmentId, provider);
         return buildChargeInstallmentView(row, charge, undefined, financialAccountLabels, {
+          ...chargeLabels.get(String(row.sale_id || '')),
           hasChargeHistory:
             provider === 'INTER'
               ? Boolean(charge?.asaasPaymentId)
@@ -795,6 +798,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       chargeForInstallment,
       financialAccountLabels,
       asaasChargeHistoryIds,
+      chargeLabels,
     ],
   );
 
@@ -2016,6 +2020,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                 const provider = resolveRowProvider(row);
                 const charge = chargeForInstallment(installmentId, provider);
                 const view = buildChargeInstallmentView(row, charge, undefined, financialAccountLabels, {
+                  ...chargeLabels.get(String(row.sale_id || '')),
                   hasChargeHistory:
                     provider === 'INTER'
                       ? Boolean(charge?.asaasPaymentId)

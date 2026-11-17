@@ -40,7 +40,29 @@ export type FinanceReceiptRow = {
   installment_number: number | string;
   amount?: number | string | null;
   due_date?: string | null;
+  schedule_group?: string | null;
+  scheduleGroup?: string | null;
 };
+
+export const LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE =
+  'As parcelas do sinal não são alteradas por esta edição. Use Regularizar sinal para mudar o valor recebido, o saldo ou os vencimentos do sinal.';
+
+export function isSignalScheduleReceipt(row: {
+  schedule_group?: string | null;
+  scheduleGroup?: string | null;
+} | null | undefined): boolean {
+  return String(row?.schedule_group ?? row?.scheduleGroup ?? '').trim().toUpperCase() === 'SIGNAL';
+}
+
+export function isLotScheduleReceipt(row: {
+  schedule_group?: string | null;
+  scheduleGroup?: string | null;
+  installment_number?: number | string | null;
+} | null | undefined): boolean {
+  if (isSignalScheduleReceipt(row)) return false;
+  const group = String(row?.schedule_group ?? row?.scheduleGroup ?? '').trim().toUpperCase();
+  return group === 'LOT' || group === '';
+}
 
 export type FinanceReceiptPayload = Record<string, unknown> & {
   installment_number: number;
@@ -352,15 +374,20 @@ export function planPartialFinanceRecalc(
     paymentType?: string;
   },
 ): PartialRecalcPlan {
-  const paid = receipts.filter(isPaidFinanceReceipt);
-  const pending = receipts.filter(isPendingFinanceReceipt);
+  const preservedSignal = receipts.filter((row) => isSignalScheduleReceipt(row));
+  const editable = receipts.filter((row) => !isSignalScheduleReceipt(row));
+  const paid = editable.filter(isPaidFinanceReceipt);
+  const pending = editable.filter(isPendingFinanceReceipt);
   const paidInstallmentNumbers = new Set(
     paid.map((r) => installmentKey(r.installment_number)),
   );
+  const preservedSignalTotal = preservedSignal.reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
-  const paidTotal = paid.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const paidTotal = paid.reduce((s, r) => s + Number(r.amount || 0), 0) + preservedSignalTotal;
+  const replacesPreservedSignal = (installmentNumber: number) =>
+    preservedSignal.length > 0 && installmentNumber <= 0;
   const newPendingTotal = newPayloads
-    .filter((p) => p.status === 'pendente')
+    .filter((p) => p.status === 'pendente' && !replacesPreservedSignal(installmentKey(p.installment_number)))
     .reduce((s, p) => s + Number(p.amount || 0), 0);
   const expectedTotal = expectedSaleFinanceTotal({
     finalValue,
@@ -376,7 +403,8 @@ export function planPartialFinanceRecalc(
   const toInsert = newPayloads.filter(
     (p) =>
       p.status === 'pendente' &&
-      !paidInstallmentNumbers.has(installmentKey(p.installment_number)),
+      !paidInstallmentNumbers.has(installmentKey(p.installment_number)) &&
+      !replacesPreservedSignal(installmentKey(p.installment_number)),
   );
 
   return {
@@ -404,8 +432,50 @@ export function isPaidScheduleInstallment(r: {
   status?: string | null;
   paid_at?: string | null;
   installment_number?: number | string | null;
+  schedule_group?: string | null;
+  scheduleGroup?: string | null;
 }): boolean {
+  if (isSignalScheduleReceipt(r)) return false;
   return installmentKey(r.installment_number) >= 1 && isPaidFinanceReceipt(r);
+}
+
+export function saleEditShouldRewriteReceipts(input: {
+  financePlanChanged: boolean;
+  previousFirstDue?: string | null;
+  nextFirstDue?: string | null;
+  previousEntryDue?: string | null;
+  nextEntryDue?: string | null;
+}): boolean {
+  if (input.financePlanChanged) return true;
+  const day = (value?: string | null) => String(value || '').slice(0, 10);
+  return day(input.previousFirstDue) !== day(input.nextFirstDue)
+    || day(input.previousEntryDue) !== day(input.nextEntryDue);
+}
+
+export function legacySignalPlanConflicts(
+  receipts: Array<{
+    schedule_group?: string | null;
+    scheduleGroup?: string | null;
+    amount?: number | string | null;
+    paid_amount?: number | string | null;
+    status?: string | null;
+    paid_at?: string | null;
+  }>,
+  proposal: { signalContractCents: number | null; paidAtSaleCents: number | null },
+): boolean {
+  const signal = receipts.filter((row) => isSignalScheduleReceipt(row));
+  if (signal.length === 0) return false;
+  const cents = (value: number | string | null | undefined) => {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+  };
+  const total = signal.reduce((sum, row) => sum + cents(row.amount), 0);
+  const paid = signal
+    .filter((row) => isPaidFinanceReceipt(row))
+    .reduce((sum, row) => sum + cents(row.paid_amount ?? row.amount), 0);
+  if (proposal.signalContractCents != null && proposal.signalContractCents !== total) return true;
+  if (proposal.paidAtSaleCents != null && proposal.paidAtSaleCents !== paid) return true;
+  return false;
 }
 
 export function hasPaidScheduleInstallments(

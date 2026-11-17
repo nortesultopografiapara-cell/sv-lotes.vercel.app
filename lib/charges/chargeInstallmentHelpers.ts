@@ -1,6 +1,7 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import { resolveAsaasStatusDisplayLabel } from '@/lib/charges/chargeOperationsHelpers';
 import { formatInterChargeStatusLabel } from '@/lib/banking/inter/interStatus';
+import { formatChargeParcelLabel } from '@/lib/finance/separateScheduleParcelLabel';
 
 export type FinanceReceiptRow = Record<string, unknown>;
 
@@ -72,6 +73,8 @@ export function buildChargeInstallmentView(
     environmentMismatch?: boolean;
     legacySandbox?: boolean;
     chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+    signalFutureCount?: number | null;
+    saleHasSignalSchedule?: boolean;
   },
 ): ChargeInstallmentView {
   const projects = row.projects as { name?: string } | undefined;
@@ -93,12 +96,13 @@ export function buildChargeInstallmentView(
   const lotNumber = blocks?.number || '?';
   const lotLabel = `QD ${blockName} • LT ${lotNumber}`;
 
-  const isEntry =
-    row.installment_number === 0 || row.installment_number === '0';
-  const parcelInfo = isEntry ? 'ENTRADA' : String(row.installment_number || 1);
-  const maxParcel =
-    sales?.installments_count && !isEntry ? ` / ${sales.installments_count}` : '';
-  const parcelLabel = isEntry ? 'Entrada' : `Parcela ${parcelInfo}${maxParcel}`;
+  const parcelLabel = formatChargeParcelLabel({
+    scheduleGroup: row.schedule_group as string | null | undefined,
+    installmentNumber: row.installment_number as number | string | null | undefined,
+    lotInstallmentCount: sales?.installments_count,
+    signalFutureCount: options?.signalFutureCount,
+    saleHasSignalSchedule: options?.saleHasSignalSchedule,
+  });
 
   const dueStr = String(row.due_date || '').split('T')[0];
   const installmentStatus = computeInstallmentStatus(row, todayStr);
@@ -218,6 +222,29 @@ export function computeChargeKpiSummary(
   };
 }
 
+export function chargeParcelLabelContext(
+  rows: FinanceReceiptRow[],
+): Map<string, { signalFutureCount: number | null; saleHasSignalSchedule: boolean }> {
+  const counts = new Map<string, { signal: boolean; future: number }>();
+  for (const row of rows) {
+    const saleId = String(row.sale_id || '');
+    const bucket = counts.get(saleId) ?? { signal: false, future: 0 };
+    if (String(row.schedule_group || '').trim().toUpperCase() === 'SIGNAL') {
+      bucket.signal = true;
+      if (Number(row.installment_number) > 0) bucket.future += 1;
+    }
+    counts.set(saleId, bucket);
+  }
+  const index = new Map<string, { signalFutureCount: number | null; saleHasSignalSchedule: boolean }>();
+  for (const [saleId, bucket] of counts) {
+    index.set(saleId, {
+      saleHasSignalSchedule: bucket.signal,
+      signalFutureCount: bucket.future > 0 ? bucket.future : null,
+    });
+  }
+  return index;
+}
+
 export function filterChargeInstallments(
   rows: FinanceReceiptRow[],
   filters: {
@@ -232,8 +259,10 @@ export function filterChargeInstallments(
   financialAccountLabels?: Record<string, string>,
 ): FinanceReceiptRow[] {
   const search = filters.search.trim().toLowerCase();
+  const labels = chargeParcelLabelContext(rows);
   return rows.filter((row) => {
-    const view = buildChargeInstallmentView(row, null, todayStr, financialAccountLabels);
+    const schedule = labels.get(String(row.sale_id || ''));
+    const view = buildChargeInstallmentView(row, null, todayStr, financialAccountLabels, schedule);
     const matchSearch = search
       ? view.clientName.toLowerCase().includes(search) ||
         view.projectName.toLowerCase().includes(search) ||
