@@ -192,14 +192,12 @@ export function planExplicitSeparateSignalEdit(input: {
         return { updates: [], deleteIds: [], inserts: [], blocked: SIGNAL_REVERSAL_REQUIRED_MESSAGE };
       }
     } else {
-      // O valor recebido fica na parcela. Não cria caixa: o estorno anterior já preservou o lançamento.
+      // Valor contratual da parcela. Não quita, não preenche paid_at e não cria caixa.
       updates.push({
         id: act.id,
         amount: input.paidAtAct,
         due_date: input.actDueDate || undefined,
-        status: input.paidAtAct > 0.009 ? 'pago' : 'pendente',
-        paid_amount: input.paidAtAct > 0.009 ? input.paidAtAct : 0,
-        paid_at: input.paidAtAct > 0.009 ? input.actDueDate || null : null,
+        status: 'pendente',
         schedule_group: 'SIGNAL',
       });
     }
@@ -215,9 +213,9 @@ export function planExplicitSeparateSignalEdit(input: {
       base_amount: input.paidAtAct,
       signal_addon_amount: 0,
       due_date: input.actDueDate,
-      status: 'pago',
-      paid_amount: input.paidAtAct,
-      paid_at: input.actDueDate || null,
+      status: 'pendente',
+      paid_amount: 0,
+      paid_at: null,
       schedule_group: 'SIGNAL',
     });
   }

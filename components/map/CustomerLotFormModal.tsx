@@ -2085,6 +2085,11 @@ export function CustomerLotFormModal({
                             placeholder="800,00"
                             className={GIS_INPUT}
                           />
+                          {isEditMode ? (
+                            <p className="mt-1 text-[11px] text-slate-600 leading-snug">
+                              Salvar grava este valor no cronograma e mantém a parcela em aberto. A baixa financeira continua no Financeiro, com autorização do Administrador Principal.
+                            </p>
+                          ) : null}
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">

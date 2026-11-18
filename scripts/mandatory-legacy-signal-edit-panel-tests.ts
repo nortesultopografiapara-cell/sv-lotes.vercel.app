@@ -147,7 +147,10 @@ const separateEdit = planExplicitSeparateSignalEdit({
   ],
 });
 assert(separateEdit.blocked === null, 'edição após o estorno grava o novo sinal');
-assert(separateEdit.updates.some((row) => row.id === 'signal-act' && row.amount === 1500 && row.status === 'pago' && row.schedule_group === 'SIGNAL'), 'o valor recebido fica na parcela do sinal');
+const actUpdate = separateEdit.updates.find((row) => row.id === 'signal-act');
+assert(actUpdate?.amount === 1500 && actUpdate.status === 'pendente' && actUpdate.schedule_group === 'SIGNAL', 'o valor informado fica na parcela do sinal, em aberto');
+assert(!('paid_amount' in (actUpdate || {})) && !('paid_at' in (actUpdate || {})), 'a edição não quita nem lança o valor informado');
+assert(separateEdit.inserts.filter((row) => row.schedule_group === 'SIGNAL' && Number(row.installment_number) > 0).every((row) => row.status === 'pendente' && Number(row.paid_amount) === 0), 'as parcelas do saldo nascem em aberto');
 assert(separateEdit.inserts.filter((row) => row.schedule_group === 'SIGNAL' && Number(row.installment_number) > 0).length === 3, 'o saldo vira três parcelas');
 assert(!separateEdit.updates.some((row) => row.id === 'lot-1' && row.amount != null && Math.abs(Number(row.amount) - 589.74) > 0.009), 'o saldo não entra na parcela do lote');
 assert(separateEdit.updates.some((row) => row.id === 'lot-1' && row.schedule_group === 'LOT'), 'a parcela pendente do lote fica no grupo LOT');
@@ -187,6 +190,27 @@ const separateWithoutLotTemplate = planExplicitSeparateSignalEdit({
 assert(separateWithoutLotTemplate.blocked === null, 'o saldo do sinal não depende de parcela do lote');
 assert(separateWithoutLotTemplate.deleteIds.length === 0, 'a ausência do modelo não apaga as parcelas do lote');
 assert(separateWithoutLotTemplate.inserts.filter((row) => row.schedule_group === 'SIGNAL').length === 3, 'as três parcelas do saldo são criadas');
+const insertedAct = planExplicitSeparateSignalEdit({
+  receipts: [],
+  protectedIds: new Set(),
+  lotPayloads: [],
+  signalTemplate: {
+    installment_number: 1,
+    amount: 0,
+    due_date: '2026-10-24',
+    status: 'pago',
+    paid_amount: 3500,
+    paid_at: '2026-10-24',
+    tenant_id: 'tenant',
+    sale_id: 'sale',
+    customer_id: 'customer',
+  },
+  paidAtAct: 1500,
+  actDueDate: '2026-10-24',
+  balance: [{ amount: 2000, dueDate: '2026-12-20' }],
+});
+assert(insertedAct.blocked === null, 'a parcela informada pode ser criada sem baixa');
+assert(insertedAct.inserts.some((row) => row.installment_number === 0 && row.status === 'pendente' && Number(row.paid_amount) === 0 && row.paid_at == null), 'a parcela nova não nasce paga');
 const paidConflict = planExplicitSeparateSignalEdit({
   receipts: [{
     id: 'signal-act',
@@ -417,5 +441,18 @@ const otherCompany = previewLegacySignalRegularization(state, { ...admin, tenant
   confirm: false,
 });
 assert(otherCompany.code === 'wrong_company', 'outra empresa é recusada');
+
+const manualSql = fs.readFileSync(path.join(root, 'supabase/migrations/20261021120000_manual_receipt_payment_authorization.sql'), 'utf8');
+const manualRoute = fs.readFileSync(path.join(root, 'app/api/finance/receipts/[receiptId]/mark-paid/route.ts'), 'utf8');
+const gis = fs.readFileSync(path.join(root, 'components/map/GISMap.tsx'), 'utf8');
+assert(manualSql.includes('Baixa manual de parcela só pode ser feita com autorização do Administrador Principal.'), 'a baixa manual continua exigindo o Administrador Principal');
+assert(manualSql.includes("jwt_role NOT IN ('authenticated', 'anon')"), 'o gatilho continua bloqueando a quitação pelo aplicativo');
+assert(manualRoute.indexOf('verifyPrimaryAdminPassword') < manualRoute.indexOf('execute_authorized_manual_receipt_payment'), 'a senha continua antes da baixa');
+assert(!saleEdit.includes('execute_authorized_manual_receipt_payment'), 'a edição da venda não chama a baixa manual');
+assert(!saleEdit.includes('/mark-paid'), 'a edição da venda não registra pagamento');
+assert(modal.includes('A baixa financeira continua no Financeiro, com autorização do Administrador Principal.'), 'o formulário explica a baixa separada');
+const successAt = gis.indexOf('Venda atualizada com sucesso.');
+assert(successAt > gis.lastIndexOf('await updateSaleFromEdit', successAt), 'o sucesso só aparece depois da gravação');
+assert(gis.includes('O valor informado como recebido permanece em aberto.'), 'o sucesso não trata o valor informado como pagamento');
 
 console.log('LEGACY_SIGNAL_EDIT_PANEL_OK');

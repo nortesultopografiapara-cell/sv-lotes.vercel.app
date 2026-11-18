@@ -117,6 +117,12 @@ assert(JSON.stringify(versions) === versionsBefore, 'versões anteriores não s�
 assert(!versions.some((version) => version.html.includes('666,67')), 'o histórico não recebe a cláusula nova');
 assert(html.includes('R$ 3.500,00'), 'contrato mostra o sinal contratado');
 assert(html.includes('R$ 1.500,00'), 'contrato mostra o valor recebido');
+assert(html.includes('foi recebido no ato'), 'parcela já paga continua descrita como recebida');
+const pendingReceipts = receipts.map((row) => row.id === 'receipt-signal-0' ? { ...row, status: 'pendente' } : row);
+const pendingView = buildLegacyRegularizedSignalContractSchedule({ sale, receipts: pendingReceipts });
+assert(pendingView != null && pendingView.clauseText.includes('foi informado no ato e permanece em aberto'), 'parcela em aberto não é descrita como recebida');
+assert(pendingView?.scheduleHtml.includes('Informado no ato (em aberto)'), 'o quadro separa o valor informado da baixa');
+assert(pendingView?.signalInstallmentCents.join(',') === '66667,66667,66666', 'o saldo permanece nas parcelas do sinal');
 assert(html.includes('R$ 2.000,00'), 'contrato mostra o saldo');
 assert(html.includes('R$ 666,67') && html.includes('20/12/2026'), 'primeira parcela');
 assert(html.includes('20/01/2027'), 'segunda parcela');

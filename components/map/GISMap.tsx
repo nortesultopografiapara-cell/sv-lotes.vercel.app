@@ -6367,7 +6367,7 @@ export default function GISMap({
                 const regen =
                   ctx.contractId &&
                   confirm(
-                    "Venda atualizada com sucesso.\n\nRegere o contrato para refletir as alterações?\n\n(O contrato anterior permanece no histórico.)",
+                    "Venda atualizada com sucesso.\n\nO valor informado como recebido permanece em aberto. A baixa financeira continua no Financeiro, com autorização do Administrador Principal.\n\nRegere o contrato para refletir as alterações?\n\n(O contrato anterior permanece no histórico.)",
                   );
                 if (regen && ctx.contractId) {
                   await handleRegenerateContractFromMap({

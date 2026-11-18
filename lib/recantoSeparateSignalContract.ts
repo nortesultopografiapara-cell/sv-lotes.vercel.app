@@ -401,11 +401,15 @@ function legacySignalClause(input: {
   paidAtActCents: number;
   balanceCents: number;
   future: SeparateSignalContractLine[];
+  receivedSettled: boolean;
 }): string {
   const parts = input.future.map((line, index) =>
     `a ${ordinalParcel(index)} de ${money(line.amountCents)} com vencimento em ${formatDue(line.dueDate)}`,
   );
-  return `O COMPRADOR pagará, a título de SINAL, o valor de ${money(input.signalTotalCents)}. Desse SINAL, ${money(input.paidAtActCents)} foi recebido no ato. O saldo de ${money(input.balanceCents)} será pago em ${input.future.length} parcelas: ${parts.join('; ')}. O SINAL é independente das parcelas do lote e não reduz o preço do lote.`;
+  const receivedText = input.receivedSettled
+    ? `${money(input.paidAtActCents)} foi recebido no ato`
+    : `${money(input.paidAtActCents)} foi informado no ato e permanece em aberto até a baixa autorizada`;
+  return `O COMPRADOR pagará, a título de SINAL, o valor de ${money(input.signalTotalCents)}. Desse SINAL, ${receivedText}. O saldo de ${money(input.balanceCents)} será pago em ${input.future.length} parcelas: ${parts.join('; ')}. O SINAL é independente das parcelas do lote e não reduz o preço do lote.`;
 }
 
 function explicitCents(sale: Record<string, unknown>, key: string): number | null {
@@ -490,9 +494,11 @@ export function buildLegacyRegularizedSignalContractSchedule(input: {
   if (saleLot != null && saleLot !== lotTotalCents) return null;
   if (saleCount != null && saleCount !== lotLines.length) return null;
 
+  const receivedSettled = ['pago', 'paid', 'paga'].includes(String(initial[0].status || ''));
+  const initialLabel = receivedSettled ? 'Recebido no ato' : 'Informado no ato (em aberto)';
   const signalRows = [
     `<tr data-schedule-band="SIGNAL" data-kind="initial" data-from="0" data-to="0" data-count="1" data-amount-cents="${paidAtActCents}">
-      <td style="border: 1px solid #111; padding: 6px; font-weight: 700;">Recebido no ato</td>
+      <td style="border: 1px solid #111; padding: 6px; font-weight: 700;">${initialLabel}</td>
       <td style="border: 1px solid #111; padding: 6px; text-align: right;">${money(paidAtActCents)}</td>
       <td style="border: 1px solid #111; padding: 6px;">no ato da celebração</td>
     </tr>`,
@@ -527,6 +533,7 @@ export function buildLegacyRegularizedSignalContractSchedule(input: {
       paidAtActCents,
       balanceCents,
       future,
+      receivedSettled,
     }),
     scheduleHtml,
   };
