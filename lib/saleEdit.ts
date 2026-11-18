@@ -671,10 +671,25 @@ export async function updateSaleFromEdit(
       data,
       { contractModel, financialAccountId: data.financial_account_id || null },
     );
+    const lotPayloads = lotPayloadsWithoutEmbeddedSignal(preparedPayloads);
+    const signalTemplate = lotPayloads[0] || preparedPayloads[0] || {
+      tenant_id: tenantId,
+      company_id: tenantId,
+      sale_id: saleId,
+      customer_id: customerId,
+      broker_id: brokerId,
+      project_id: lot.project_id || null,
+      block_id: lot.id,
+      installment_number: 0,
+      amount: paidAtAct,
+      due_date: String(data.down_payment_due_date || firstDue || '').slice(0, 10),
+      status: 'pendente',
+    };
     separatedPlan = planExplicitSeparateSignalEdit({
       receipts: groupedRows,
       protectedIds: await protectedFinanceReceiptIds(supabase, saleId, groupedRows.map((row) => row.id)),
-      lotPayloads: lotPayloadsWithoutEmbeddedSignal(preparedPayloads),
+      lotPayloads,
+      signalTemplate,
       paidAtAct,
       actDueDate: String(data.down_payment_due_date || '').slice(0, 10),
       balance,

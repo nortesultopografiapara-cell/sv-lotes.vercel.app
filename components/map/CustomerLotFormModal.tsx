@@ -855,10 +855,6 @@ export function CustomerLotFormModal({
       alert(separateSignalPreview.confirmBlockMessage);
       return;
     }
-    if (separateLotConflict) {
-      alert(separateLotConflict);
-      return;
-    }
     let confirmedInstallmentsCount = installmentsCountStr;
     let confirmedInstallmentValue = installmentValue;
 
@@ -1044,8 +1040,12 @@ export function CustomerLotFormModal({
         contractModel,
         persistedCorrection,
       );
+      const lotFirstDueToSave = separateLotCalculated
+        ? separateSignalPreview.schedule?.lotFirstDueDate || ''
+        : formData.first_installment_due_date;
       await onConfirm({
         ...formData,
+        first_installment_due_date: lotFirstDueToSave || formData.first_installment_due_date,
         legacy_signal_due_dates: legacySignalDueDates,
         payment_type: paymentType,
         discount_value: serializeCurrencyBRL(formData.discount_value),
@@ -2508,15 +2508,8 @@ export function CustomerLotFormModal({
                             &quot;Em data específica&quot;.
                           </p>
                           {separateLotConflict ? (
-                            <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-700">
                               <p>{separateLotConflict}</p>
-                              <button
-                                type="button"
-                                className="mt-1 font-semibold underline"
-                                onClick={() => setField({ first_installment_due_date: '' })}
-                              >
-                                Descartar a data digitada
-                              </button>
                             </div>
                           ) : null}
                         </>

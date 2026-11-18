@@ -109,7 +109,7 @@ export function separateLotDueConflictMessage(input: {
     : 'Após o cronograma do sinal';
   const typedLabel = formatContractDueDateBr(typed);
   const calculatedLabel = formatContractDueDateBr(calculated);
-  return `A data ${typedLabel} foi digitada no vencimento da primeira parcela. No modo "${modeLabel}" o início do lote é calculado em ${calculatedLabel}. Para gravar ${typedLabel}, escolha "Em data específica". Para seguir o cálculo, descarte a data digitada.`;
+  return `Neste modo "${modeLabel}", o início do lote que será gravado é ${calculatedLabel}. A data ${typedLabel} só será gravada se você escolher "Em data específica".`;
 }
 
 function inactive(offered: boolean): RecantoSeparateSignalPreview {

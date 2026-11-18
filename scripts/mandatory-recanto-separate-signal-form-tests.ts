@@ -283,7 +283,7 @@ function main() {
     'abrir a edição não grava o cronograma',
   );
 
-  assert(modal.includes('enabled: separateSignalEnabled'), '2. interruptor vem de fora');
+  assert(modal.includes('enabled: isEditMode || separateSignalEnabled'), 'a edição oferece o parcelamento e a venda nova segue o interruptor');
   assert(!modal.includes('RECANTO_SEPARATE_SIGNAL_ENABLED = true'), '1. modal não liga a flag');
 
   const ivanilde = preview({
@@ -473,10 +473,11 @@ function main() {
   assert(separateLotDueConflictMessage({ lotStartMode: '', typedLotDueDate: '2026-12-15', calculatedLotDueDate: '2026-12-30' }) === null, 'LEGACY não entra na regra do sinal separado');
 
   const confirmAt = modal.indexOf('await onConfirm({');
-  assert(modal.includes('if (separateLotConflict)'), 'divergência real bloqueia a confirmação');
-  assert(modal.indexOf('if (separateLotConflict)') < confirmAt, 'o bloqueio acontece antes da gravação');
+  assert(!modal.includes('if (separateLotConflict)'), 'a data antiga não bloqueia o modo calculado');
+  assert(modal.includes('lotFirstDueToSave'), 'o início calculado é a data gravada');
+  assert(modal.indexOf('lotFirstDueToSave') < confirmAt, 'a data calculada entra antes da gravação');
   assert(modal.includes('Início calculado das parcelas do lote'), 'início calculado deixa de parecer editável');
-  assert(modal.includes('Descartar a data digitada'), 'a data digitada só sai por ação explícita');
+  assert(modal.includes('Em data específica'), 'a data digitada continua disponível na opção explícita');
   assert(modal.includes('Vencimento 1ª Parcela *'), 'LEGACY conserva o vencimento da primeira parcela');
   assert(!editLoader.slice(editUpdateAt).includes('separateLotDueConflictMessage('), 'visualizar a simulação não grava');
 

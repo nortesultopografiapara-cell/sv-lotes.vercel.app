@@ -150,6 +150,43 @@ assert(separateEdit.blocked === null, 'edição após o estorno grava o novo sin
 assert(separateEdit.updates.some((row) => row.id === 'signal-act' && row.amount === 1500 && row.status === 'pago' && row.schedule_group === 'SIGNAL'), 'o valor recebido fica na parcela do sinal');
 assert(separateEdit.inserts.filter((row) => row.schedule_group === 'SIGNAL' && Number(row.installment_number) > 0).length === 3, 'o saldo vira três parcelas');
 assert(!separateEdit.updates.some((row) => row.id === 'lot-1' && row.amount != null && Math.abs(Number(row.amount) - 589.74) > 0.009), 'o saldo não entra na parcela do lote');
+assert(separateEdit.updates.some((row) => row.id === 'lot-1' && row.schedule_group === 'LOT'), 'a parcela pendente do lote fica no grupo LOT');
+const separateWithoutLotTemplate = planExplicitSeparateSignalEdit({
+  receipts: [{
+    id: 'signal-act',
+    installment_number: 0,
+    amount: 3500,
+    due_date: '2026-10-24',
+    status: 'pendente',
+  }, {
+    id: 'lot-1',
+    installment_number: 1,
+    amount: 589.74,
+    due_date: '2026-11-25',
+    status: 'pendente',
+  }],
+  protectedIds: new Set(),
+  lotPayloads: [],
+  signalTemplate: {
+    installment_number: 0,
+    amount: 0,
+    due_date: '2026-10-24',
+    status: 'pendente',
+    tenant_id: 'tenant',
+    sale_id: 'sale',
+    customer_id: 'customer',
+  },
+  paidAtAct: 1500,
+  actDueDate: '2026-10-24',
+  balance: [
+    { amount: 666.67, dueDate: '2026-12-20' },
+    { amount: 666.67, dueDate: '2027-01-20' },
+    { amount: 666.66, dueDate: '2027-02-20' },
+  ],
+});
+assert(separateWithoutLotTemplate.blocked === null, 'o saldo do sinal não depende de parcela do lote');
+assert(separateWithoutLotTemplate.deleteIds.length === 0, 'a ausência do modelo não apaga as parcelas do lote');
+assert(separateWithoutLotTemplate.inserts.filter((row) => row.schedule_group === 'SIGNAL').length === 3, 'as três parcelas do saldo são criadas');
 const paidConflict = planExplicitSeparateSignalEdit({
   receipts: [{
     id: 'signal-act',

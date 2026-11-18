@@ -161,15 +161,18 @@ export function planExplicitSeparateSignalEdit(input: {
   receipts: FinanceReceiptRow[];
   protectedIds: ReadonlySet<string>;
   lotPayloads: FinanceReceiptPayload[];
+  signalTemplate?: FinanceReceiptPayload | null;
   paidAtAct: number;
   actDueDate: string;
   balance: Array<{ amount: number; dueDate: string }>;
 }): ReturnType<typeof planSeparatedSignalScheduleEdit> {
-  const lotPlan = planSeparatedSignalScheduleEdit({
-    receipts: input.receipts,
-    protectedIds: input.protectedIds,
-    lotPayloads: input.lotPayloads,
-  });
+  const lotPlan = input.lotPayloads.length === 0
+    ? { updates: [], deleteIds: [], inserts: [] as FinanceReceiptPayload[], blocked: null }
+    : planSeparatedSignalScheduleEdit({
+        receipts: input.receipts,
+        protectedIds: input.protectedIds,
+        lotPayloads: input.lotPayloads,
+      });
   if (lotPlan.blocked) return lotPlan;
 
   const active = input.receipts.filter((row) => !isCancelledFinanceReceipt(row));
@@ -180,6 +183,7 @@ export function planExplicitSeparateSignalEdit(input: {
   const deleteIds = [...lotPlan.deleteIds];
   const inserts = [...lotPlan.inserts];
   const locked = (row: FinanceReceiptRow) => isPaidFinanceReceipt(row) || input.protectedIds.has(row.id);
+  const signalTemplate = input.signalTemplate || input.lotPayloads[0] || null;
 
   if (act) {
     const currentAmount = Number(act.amount);
@@ -188,6 +192,7 @@ export function planExplicitSeparateSignalEdit(input: {
         return { updates: [], deleteIds: [], inserts: [], blocked: SIGNAL_REVERSAL_REQUIRED_MESSAGE };
       }
     } else {
+      // O valor recebido fica na parcela. Não cria caixa: o estorno anterior já preservou o lançamento.
       updates.push({
         id: act.id,
         amount: input.paidAtAct,
@@ -199,9 +204,9 @@ export function planExplicitSeparateSignalEdit(input: {
       });
     }
   } else if (input.paidAtAct > 0.009) {
-    const template = input.lotPayloads[0];
+    const template = signalTemplate;
     if (!template) {
-      return { updates: [], deleteIds: [], inserts: [], blocked: 'Não há parcela do lote para vincular o sinal recebido.' };
+      return { updates: [], deleteIds: [], inserts: [], blocked: 'Não foi possível montar a parcela do valor recebido.' };
     }
     inserts.push({
       ...template,
@@ -224,9 +229,9 @@ export function planExplicitSeparateSignalEdit(input: {
     const number = index + 1;
     const row = byNumber.get(number);
     if (!row) {
-      const template = input.lotPayloads[0];
+      const template = signalTemplate;
       if (!template) {
-        return { updates: [], deleteIds: [], inserts: [], blocked: 'Não há parcela do lote para vincular o saldo do sinal.' };
+        return { updates: [], deleteIds: [], inserts: [], blocked: 'Não foi possível montar as parcelas do saldo do sinal.' };
       }
       inserts.push({
         ...template,
@@ -265,6 +270,16 @@ export function planExplicitSeparateSignalEdit(input: {
       return { updates: [], deleteIds: [], inserts: [], blocked: SIGNAL_REVERSAL_REQUIRED_MESSAGE };
     }
     deleteIds.push(row.id);
+  }
+
+  for (const row of active) {
+    const number = Number(row.installment_number);
+    if (!Number.isFinite(number) || number < 1 || isSignalScheduleReceipt(row) || locked(row)) continue;
+    const group = String(row.schedule_group ?? row.scheduleGroup ?? '').trim().toUpperCase();
+    if (group === 'LOT') continue;
+    const current = updates.find((item) => item.id === row.id);
+    if (current) current.schedule_group = 'LOT';
+    else updates.push({ id: row.id, schedule_group: 'LOT' });
   }
 
   return { updates, deleteIds, inserts, blocked: null };
