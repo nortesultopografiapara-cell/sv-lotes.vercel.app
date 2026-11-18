@@ -54,6 +54,9 @@ assert(!reversalRoute.includes("status: 'estornado'"), 'o estorno não grava o c
 assert(reversalSql.includes('pg_advisory_xact_lock'), 'a função serializa a mesma venda');
 assert(!reversalSql.includes('DELETE FROM public.cash_movements'), 'o caixa não é apagado');
 assert(reversalSql.includes('Parcela paga ou com cobrança bancária'), 'parcela protegida bloqueia a edição inteira');
+assert(!reversalSql.includes('entity_type') && !reversalSql.includes('old_data') && !reversalSql.includes('new_data'), 'a auditoria usa só colunas existentes');
+assert(reversalRoute.includes('functionNotInApi'), 'só a ausência no cache da API vira função indisponível');
+assert(!reversalRoute.includes('execute_receipt_payment_reversal|schema cache|does not exist'), 'erro de coluna não é tratado como função ausente');
 assert(saleEdit.includes('preparedPayloads = buildSaleEditFinancePayloads'), 'a edição prepara o cronograma antes de gravar');
 
 assert(dialog.includes('/api/finance/receipt-payment-reversal'), 'consulta e confirma o estorno');

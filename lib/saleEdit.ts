@@ -787,12 +787,14 @@ export async function updateSaleFromEdit(
       p_inserts: separatedPlan.inserts,
     });
     const payload = (atomic.data || {}) as { ok?: boolean; message?: string };
-    const missing = /apply_sale_edit_finance|schema cache|does not exist/i.test(atomic.error?.message || '');
+    const rawError = String(atomic.error?.message || '');
+    const errorCode = String((atomic.error as { code?: string } | null)?.code || '');
+    const missing = errorCode === 'PGRST202' || /schema cache|could not find the function/i.test(rawError);
     if (atomic.error || payload.ok !== true) {
       throw new Error(
         missing
-          ? 'A gravação segura da edição ainda não está instalada no Develop. Nenhuma parcela foi alterada.'
-          : String(payload.message || atomic.error?.message || 'A edição financeira não foi concluída. Nenhuma parcela foi alterada.'),
+          ? 'A gravação segura da edição ainda não está visível para o aplicativo. Nenhuma parcela foi alterada.'
+          : String(payload.message || rawError || 'A edição financeira não foi concluída. Nenhuma parcela foi alterada.'),
       );
     }
     atomicFinanceApplied = true;

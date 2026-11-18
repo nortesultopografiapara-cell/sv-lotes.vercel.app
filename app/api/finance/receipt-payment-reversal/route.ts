@@ -16,6 +16,22 @@ function missingRelation(message: string): boolean {
   return /does not exist|schema cache|Could not find/i.test(message);
 }
 
+function safeTechnicalMessage(message: string): string {
+  const clean = message
+    .replace(/eyJ[A-Za-z0-9_-]{10,}/g, '[token]')
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, '[conexao]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+  return clean;
+}
+
+function functionNotInApi(error: { code?: string; message?: string } | null): boolean {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return code === 'PGRST202' || /schema cache|could not find the function/i.test(message);
+}
+
 export async function POST(request: Request) {
   const { user, configError } = await getRequestAuthUser(request);
   if (configError || !user) {
@@ -119,14 +135,22 @@ export async function POST(request: Request) {
   });
   const payload = (executed.data || {}) as Row;
   if (executed.error || payload.ok !== true) {
-    const missing = /execute_receipt_payment_reversal|schema cache|does not exist/i.test(executed.error?.message || '');
+    const unavailable = functionNotInApi(executed.error);
+    const technical = safeTechnicalMessage(String(executed.error?.message || ''));
+    if (executed.error) {
+      console.error('[receipt-payment-reversal]', {
+        code: executed.error.code || null,
+        message: technical || null,
+      });
+    }
     return NextResponse.json({
       success: false,
-      message: missing
-        ? 'O estorno seguro ainda não está instalado no Develop. Nenhuma parcela foi alterada.'
-        : String(payload.message || executed.error?.message || 'O estorno não foi concluído. Nenhuma parcela foi alterada.'),
+      message: unavailable
+        ? 'O estorno seguro ainda não está visível para o aplicativo. Nenhuma parcela foi alterada.'
+        : String(payload.message || technical || 'O estorno não foi concluído. Nenhuma parcela foi alterada.'),
+      code: executed.error?.code || payload.code || null,
       mutation: false,
-    }, { status: missing ? 503 : 409 });
+    }, { status: unavailable ? 503 : 409 });
   }
 
   return NextResponse.json({

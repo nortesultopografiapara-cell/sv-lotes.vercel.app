@@ -128,19 +128,22 @@ BEGIN
   SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_cash_ids FROM marked;
 
   INSERT INTO public.audit_logs (
-    tenant_id, company_id, user_id, action, module, entity_type, entity_id, reference_id, description, old_data, new_data
+    tenant_id, company_id, user_id, action, module, reference_id, description
   ) VALUES (
     v_sale.tenant_id,
     v_sale.tenant_id,
     auth.uid(),
     'payment_reversed',
     'FINANCE',
-    'finance_receipts',
-    v_receipt.id,
     v_receipt.sale_id,
-    btrim(p_reason),
-    v_before,
-    jsonb_build_object('status', 'pendente', 'paid_amount', NULL, 'paid_at', NULL, 'cash_ids', v_cash_ids, 'operation', 'receipt_payment_reversal')
+    left(
+      btrim(p_reason)
+      || ' | parcela=' || v_receipt.id::text
+      || ' | anterior=' || v_before::text
+      || ' | novo={"status":"pendente","paid_amount":null,"paid_at":null}'
+      || ' | caixa=' || coalesce(array_to_string(v_cash_ids, ','), ''),
+      4000
+    )
   );
 
   RETURN jsonb_build_object('ok', true, 'replayed', false, 'message', 'Pagamento estornado. A parcela voltou a pendente e o caixa vinculado foi estornado.', 'cashIds', v_cash_ids);
@@ -339,18 +342,21 @@ BEGIN
   END IF;
 
   INSERT INTO public.audit_logs (
-    tenant_id, company_id, user_id, action, module, entity_type, entity_id, reference_id, description, new_data
+    tenant_id, company_id, user_id, action, module, reference_id, description
   ) VALUES (
     v_sale.tenant_id,
     v_sale.tenant_id,
     auth.uid(),
     'sale_finance_updated',
     'FINANCE',
-    'sales',
     p_sale_id,
-    p_sale_id,
-    'Edição financeira da venda gravada em uma transação.',
-    jsonb_build_object('updates', COALESCE(jsonb_array_length(p_updates), 0), 'deletes', COALESCE(array_length(p_delete_ids, 1), 0), 'inserts', COALESCE(jsonb_array_length(p_inserts), 0))
+    left(
+      'Edição financeira da venda gravada em uma transação.'
+      || ' atualizacoes=' || COALESCE(jsonb_array_length(p_updates), 0)::text
+      || ' exclusoes=' || COALESCE(array_length(p_delete_ids, 1), 0)::text
+      || ' inclusoes=' || COALESCE(jsonb_array_length(p_inserts), 0)::text,
+      4000
+    )
   );
 
   RETURN jsonb_build_object('ok', true, 'message', 'Venda e parcelas gravadas.');
