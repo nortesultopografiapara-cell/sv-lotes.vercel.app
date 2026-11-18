@@ -7,10 +7,9 @@ import {
   FileText,
   Loader2,
   MessageCircle,
-  Scale,
+  RotateCcw,
   Trash2,
 } from 'lucide-react';
-import { legacySignalParcelActionVisible } from '@/lib/finance/legacySignalParcelAction';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import { formatFinanceParcelLabel } from '@/lib/finance/separateScheduleParcelLabel';
 import { AsaasInstallmentChargePanel } from '@/components/finance/AsaasInstallmentChargePanel';
@@ -149,7 +148,7 @@ export type PaymentRowProps = {
   onWhatsApp: () => void;
   onCarne: () => void;
   onDelete: () => void;
-  onCorrectLegacySignal?: () => void;
+  onReversePayment?: () => void;
   readOnly?: boolean;
   asaasEnabled?: boolean;
   asaasCharge?: CompanyAsaasChargeResponse | null;
@@ -175,7 +174,7 @@ export const PaymentTableRow = memo(
     onWhatsApp,
     onCarne,
     onDelete,
-    onCorrectLegacySignal,
+    onReversePayment,
     readOnly = false,
     asaasEnabled = false,
     asaasCharge = null,
@@ -298,9 +297,9 @@ export const PaymentTableRow = memo(
             <FinanceParcelActionBtn title="Visualizar" onClick={onView}>
               <Eye />
             </FinanceParcelActionBtn>
-            {onCorrectLegacySignal && legacySignalParcelActionVisible(p, { asaasStatus: asaasCharge?.status }) ? (
-              <FinanceParcelActionBtn title="Corrigir sinal antigo" onClick={onCorrectLegacySignal}>
-                <Scale />
+            {isPaid && !readOnly && onReversePayment ? (
+              <FinanceParcelActionBtn title="Estornar pagamento" onClick={onReversePayment}>
+                <RotateCcw />
               </FinanceParcelActionBtn>
             ) : null}
             {!isPaid && !readOnly && (

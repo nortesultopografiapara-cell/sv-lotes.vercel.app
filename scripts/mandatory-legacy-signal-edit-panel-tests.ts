@@ -17,7 +17,8 @@ import {
 import { formatFinanceParcelLabel } from '../lib/finance/separateScheduleParcelLabel';
 import { isDevelopHomologRuntime } from '../lib/homolog/env';
 import { legacySignalParcelActionVisible } from '../lib/finance/legacySignalParcelAction';
-import { planSeparatedSignalScheduleEdit } from '../lib/saleEditFinanceRecalc';
+import { planExplicitSeparateSignalEdit, planSeparatedSignalScheduleEdit } from '../lib/saleEditFinanceRecalc';
+import { planReceiptPaymentReversal } from '../lib/finance/reverseReceiptPayment';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -25,7 +26,8 @@ function assert(condition: boolean, message: string) {
 
 const root = path.resolve(__dirname, '..');
 const modal = fs.readFileSync(path.join(root, 'components', 'map', 'CustomerLotFormModal.tsx'), 'utf8');
-const dialog = fs.readFileSync(path.join(root, 'components', 'finance', 'LegacySignalCorrectionDialog.tsx'), 'utf8');
+const dialog = fs.readFileSync(path.join(root, 'components', 'finance', 'ReversePaymentDialog.tsx'), 'utf8');
+const reversal = fs.readFileSync(path.join(root, 'lib', 'finance', 'reverseReceiptPayment.ts'), 'utf8');
 const finance = fs.readFileSync(path.join(root, 'app', 'finance', 'page.tsx'), 'utf8');
 const financeRow = fs.readFileSync(path.join(root, 'components', 'finance', 'FinancePremiumUI.tsx'), 'utf8');
 const saleEdit = fs.readFileSync(path.join(root, 'lib', 'saleEdit.ts'), 'utf8');
@@ -38,21 +40,30 @@ assert(!fs.existsSync(path.join(root, 'components', 'finance', 'LegacySignalRegu
 assert(!fs.existsSync(path.join(root, 'app', 'finance', 'regularizar-sinal', 'page.tsx')), 'a rota antiga foi removida');
 assert(!layout.includes('/finance/regularizar-sinal'), 'o menu Regularizar sinal foi removido');
 assert(modal.includes('Saldo do sinal em parcelas separadas do lote'), 'a edição mostra o saldo já separado');
-assert(modal.includes('legacy_signal_due_dates'), 'a edição envia os vencimentos do sinal');
+assert(modal.includes('persist_separate_signal_schedule'), 'a edição grava o saldo separado do lote');
 assert(!modal.slice(formStart, formEnd).includes('legacy-signal-regularization'), 'salvar a venda não chama a regularização');
-assert(finance.includes('LegacySignalCorrectionDialog') && financeRow.includes('title="Corrigir sinal antigo"'), 'a ação fica no Financeiro');
-assert(saleEdit.includes('planSeparatedSignalScheduleEdit'), 'salvar atualiza as parcelas em aberto');
+assert(!finance.includes('LegacySignalCorrectionDialog'), 'a tela paralela saiu do Financeiro');
+assert(finance.includes('ReversePaymentDialog') && financeRow.includes('title="Estornar pagamento"'), 'o estorno fica nas parcelas');
+assert(saleEdit.includes('planExplicitSeparateSignalEdit'), 'salvar grava as parcelas do sinal');
+assert(saleEdit.includes("rpc('apply_sale_edit_finance'"), 'a edição grava venda e parcelas na mesma função');
+assert(!saleEdit.includes('Erro ao incluir parcela do cronograma'), 'a edição não grava parcelas uma a uma');
+const reversalRoute = fs.readFileSync(path.join(root, 'app', 'api', 'finance', 'receipt-payment-reversal', 'route.ts'), 'utf8');
+const reversalSql = fs.readFileSync(path.join(root, 'supabase', 'migrations', '20261117233000_receipt_reversal_and_sale_edit_finance.sql'), 'utf8');
+assert(reversalRoute.includes("rpc('execute_receipt_payment_reversal'"), 'o estorno confirma pela função do banco');
+assert(!reversalRoute.includes("status: 'estornado'"), 'o estorno não grava o caixa fora da transação');
+assert(reversalSql.includes('pg_advisory_xact_lock'), 'a função serializa a mesma venda');
+assert(!reversalSql.includes('DELETE FROM public.cash_movements'), 'o caixa não é apagado');
+assert(reversalSql.includes('Parcela paga ou com cobrança bancária'), 'parcela protegida bloqueia a edição inteira');
 assert(saleEdit.includes('preparedPayloads = buildSaleEditFinancePayloads'), 'a edição prepara o cronograma antes de gravar');
 
-assert(dialog.includes('/api/finance/legacy-signal-regularization/preview'), 'consulta a prévia existente');
-assert(dialog.includes('/api/finance/legacy-signal-regularization/execute'), 'confirma pela função existente');
+assert(dialog.includes('/api/finance/receipt-payment-reversal'), 'consulta e confirma o estorno');
 assert(dialog.includes('confirm: false') && dialog.includes('confirm: true'), 'confirmação explícita separada da consulta');
-assert(dialog.includes('type="button"'), 'os botões da correção não submetem outro formulário');
-assert(!dialog.includes('regenerateContract') && !dialog.includes('needs_regenerar'), 'a correção não regenera o contrato');
+assert(dialog.includes('type="button"'), 'os botões do estorno não submetem outro formulário');
+assert(!dialog.includes('regenerateContract') && !dialog.includes('needs_regenerar'), 'o estorno não regenera o contrato');
 assert(dialog.includes("new Event('finance_updated')"), 'atualiza a visualização financeira');
-assert(dialog.includes('Há lançamento de caixa vinculado.'), 'bloqueio de caixa visível');
-assert(dialog.includes('Há cobrança bancária vinculada.'), 'bloqueio bancário visível');
-assert(dialog.includes('Há recibo vinculado à parcela.'), 'bloqueio de recibo visível');
+assert(reversal.includes('será estornado e não apagado'), 'caixa existente é estornado');
+assert(reversal.includes('Há cobrança bancária vinculada'), 'cobrança bancária bloqueia o estorno');
+assert(reversal.includes('Há recibo emitido'), 'recibo emitido bloqueia o estorno');
 
 const paidSignal = {
   installment_number: 0,
@@ -69,6 +80,90 @@ assert(!legacySignalParcelActionVisible({ ...paidSignal, schedule_group: 'SIGNAL
 assert(!legacySignalParcelActionVisible({ ...paidSignal, sales: { status: 'cancelada' } }), 'venda encerrada não aparece');
 assert(!legacySignalParcelActionVisible(paidSignal, { asaasStatus: 'PENDING' }), 'cobrança Asaas oculta a ação');
 assert(legacySignalParcelActionVisible(paidSignal, { asaasStatus: 'CANCELLED' }), 'cobrança cancelada não impede a ação');
+
+const reversalPlan = planReceiptPaymentReversal({
+  receipt: { id: 'receipt-1', amount: 3500, paidAmount: 3500, paidAt: '2026-10-24T14:12:49.000Z', status: 'pago' },
+  cash: [{ id: 'cash-1', receiptId: 'receipt-1', status: 'ativo' }],
+  bankCharges: [],
+  asaasCharges: [],
+  commissions: [],
+  reason: 'O valor recebido foi menor que o lançado.',
+});
+assert(reversalPlan.ok && reversalPlan.cashIds[0] === 'cash-1', 'estorno devolve o caixa para reversão');
+assert(reversalPlan.previous?.paidAt === '2026-10-24T14:12:49.000Z', 'estorno conserva a data anterior na auditoria');
+const blockedBank = planReceiptPaymentReversal({
+  receipt: { id: 'receipt-1', amount: 3500, paidAmount: 3500, paidAt: '2026-10-24', status: 'pago' },
+  cash: [],
+  bankCharges: [{ id: 'bank-1', receiptId: 'receipt-1', status: 'PENDING' }],
+  asaasCharges: [],
+  commissions: [],
+  reason: 'Tentativa com cobrança bancária.',
+});
+assert(!blockedBank.ok, 'cobrança bancária impede o estorno');
+const alreadyPending = planReceiptPaymentReversal({
+  receipt: { id: 'receipt-1', amount: 1500, paidAmount: null, paidAt: null, status: 'pendente' },
+  cash: [],
+  bankCharges: [],
+  asaasCharges: [],
+  commissions: [],
+  reason: 'Segunda execução do estorno.',
+});
+assert(!alreadyPending.ok, 'segunda execução não estorna de novo');
+
+const separateEdit = planExplicitSeparateSignalEdit({
+  receipts: [{
+    id: 'signal-act',
+    installment_number: 0,
+    amount: 3500,
+    due_date: '2026-10-24',
+    status: 'pendente',
+    schedule_group: null,
+  }, {
+    id: 'lot-1',
+    installment_number: 1,
+    amount: 589.74,
+    due_date: '2027-03-20',
+    status: 'pendente',
+    schedule_group: null,
+  }],
+  protectedIds: new Set(),
+  lotPayloads: [{
+    installment_number: 1,
+    amount: 589.74,
+    due_date: '2027-03-20',
+    status: 'pendente',
+    tenant_id: 'tenant',
+    sale_id: 'sale',
+  }],
+  paidAtAct: 1500,
+  actDueDate: '2026-10-24',
+  balance: [
+    { amount: 666.67, dueDate: '2026-12-20' },
+    { amount: 666.67, dueDate: '2027-01-20' },
+    { amount: 666.66, dueDate: '2027-02-20' },
+  ],
+});
+assert(separateEdit.blocked === null, 'edição após o estorno grava o novo sinal');
+assert(separateEdit.updates.some((row) => row.id === 'signal-act' && row.amount === 1500 && row.status === 'pago' && row.schedule_group === 'SIGNAL'), 'o valor recebido fica na parcela do sinal');
+assert(separateEdit.inserts.filter((row) => row.schedule_group === 'SIGNAL' && Number(row.installment_number) > 0).length === 3, 'o saldo vira três parcelas');
+assert(!separateEdit.updates.some((row) => row.id === 'lot-1' && row.amount != null && Math.abs(Number(row.amount) - 589.74) > 0.009), 'o saldo não entra na parcela do lote');
+const paidConflict = planExplicitSeparateSignalEdit({
+  receipts: [{
+    id: 'signal-act',
+    installment_number: 0,
+    amount: 3500,
+    due_date: '2026-10-24',
+    status: 'pago',
+    paid_at: '2026-10-24',
+    schedule_group: null,
+  }],
+  protectedIds: new Set(),
+  lotPayloads: [{ installment_number: 1, amount: 589.74, due_date: '2027-03-20', status: 'pendente' }],
+  paidAtAct: 1500,
+  actDueDate: '2026-10-24',
+  balance: [{ amount: 2000, dueDate: '2026-12-20' }],
+});
+assert(paidConflict.blocked != null && paidConflict.updates.length === 0, 'parcela paga bloqueia a alteração e não salva parcialmente');
 
 const openLot = {
   id: 'lot-open',

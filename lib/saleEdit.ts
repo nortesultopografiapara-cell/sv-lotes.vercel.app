@@ -25,6 +25,7 @@ import {
   SEPARATE_SIGNAL_RECALC_BLOCKED_MESSAGE,
 } from '@/lib/finance/recantoReceiptSchedule';
 import { readPersistedSeparateSignalForm } from '@/lib/recantoSeparateSignalForm';
+import { addMonthsKeepingEndOfMonth, splitCents } from '@/lib/recantoBrokerageInstallments';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
 import { saleSpouseFormFieldsFromSale } from '@/lib/saleSpouseFields';
 import {
@@ -37,6 +38,7 @@ import {
   LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE,
   legacySignalPlanConflicts,
   lotPayloadsWithoutEmbeddedSignal,
+  planExplicitSeparateSignalEdit,
   planSeparatedSignalScheduleEdit,
   planFullFinanceRecalc,
   planPartialFinanceRecalc,
@@ -478,10 +480,15 @@ export async function updateSaleFromEdit(
     installmentsCount,
   });
   const signalRemainingValue = splitPersist.signalRemainingValue;
-  const signalRemainingMode = splitPersist.signalRemainingPaymentMode;
-  const signalRemainingInstallments = splitPersist.signalRemainingInstallments;
-  const signalRemainingInstallmentValue =
+  let signalRemainingMode = splitPersist.signalRemainingPaymentMode;
+  let signalRemainingInstallments = splitPersist.signalRemainingInstallments;
+  let signalRemainingInstallmentValue =
     splitPersist.signalRemainingInstallmentValue;
+  if (data.persist_separate_signal_schedule === true) {
+    signalRemainingMode = null;
+    signalRemainingInstallments = null;
+    signalRemainingInstallmentValue = null;
+  }
 
   const financialAccountId =
     String(data.financial_account_id || saleBefore.financial_account_id || '').trim() || null;
@@ -618,13 +625,14 @@ export async function updateSaleFromEdit(
     const amount = Number(value);
     return Number.isFinite(amount) ? Math.round(amount * 100) : null;
   };
-  if (legacySignalPlanConflicts(groupedRows, {
+  const persistSeparateSignal = data.persist_separate_signal_schedule === true;
+  if (!persistSeparateSignal && legacySignalPlanConflicts(groupedRows, {
     signalContractCents: proposedSignalCents(signalContractValue ?? data.down_payment),
     paidAtSaleCents: signalPaidAtSale == null ? null : proposedSignalCents(signalPaidAtSale),
   })) {
     throw new Error(LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE);
   }
-  const rewriteReceipts = saleEditShouldRewriteReceipts({
+  const rewriteReceipts = persistSeparateSignal || saleEditShouldRewriteReceipts({
     financePlanChanged,
     previousFirstDue: saleBefore.first_installment_due_date as string | null,
     nextFirstDue: data.first_installment_due_date,
@@ -639,7 +647,40 @@ export async function updateSaleFromEdit(
   }
   let separatedPlan: ReturnType<typeof planSeparatedSignalScheduleEdit> | null = null;
   let preparedPayloads: ReturnType<typeof buildSaleEditFinancePayloads> | null = null;
-  if (groupedRows.some((row) => isSignalScheduleReceipt(row)) && rewriteReceipts) {
+  if (persistSeparateSignal && rewriteReceipts) {
+    const paidAtAct = signalPaidAtSale ?? 0;
+    const contracted = signalContractValue ?? parseCurrencyBRLNumber(data.down_payment);
+    const remainingCents = Math.round((contracted - paidAtAct) * 100);
+    const balanceCount = Number(data.signal_installment_count) || 0;
+    const firstDue = String(data.signal_first_due_date || '').slice(0, 10);
+    if (remainingCents > 0 && (balanceCount < 1 || !firstDue)) {
+      throw new Error('Informe a quantidade e o primeiro vencimento das parcelas do sinal.');
+    }
+    const balance = remainingCents > 0
+      ? splitCents(remainingCents, balanceCount).map((cents, index) => ({
+          amount: cents / 100,
+          dueDate: addMonthsKeepingEndOfMonth(firstDue, index),
+        }))
+      : [];
+    preparedPayloads = buildSaleEditFinancePayloads(
+      tenantId,
+      saleId,
+      customerId,
+      brokerId,
+      lot,
+      data,
+      { contractModel, financialAccountId: data.financial_account_id || null },
+    );
+    separatedPlan = planExplicitSeparateSignalEdit({
+      receipts: groupedRows,
+      protectedIds: await protectedFinanceReceiptIds(supabase, saleId, groupedRows.map((row) => row.id)),
+      lotPayloads: lotPayloadsWithoutEmbeddedSignal(preparedPayloads),
+      paidAtAct,
+      actDueDate: String(data.down_payment_due_date || '').slice(0, 10),
+      balance,
+    });
+    if (separatedPlan.blocked) throw new Error(separatedPlan.blocked);
+  } else if (groupedRows.some((row) => isSignalScheduleReceipt(row)) && rewriteReceipts) {
     preparedPayloads = buildSaleEditFinancePayloads(
       tenantId,
       saleId,
@@ -736,7 +777,28 @@ export async function updateSaleFromEdit(
   }
   // notes permanece apenas no formulário; coluna ausente em produção (20260608120000 não aplicada).
 
-  {
+  let atomicFinanceApplied = false;
+  if (separatedPlan) {
+    const atomic = await supabase.rpc('apply_sale_edit_finance', {
+      p_sale_id: saleId,
+      p_sale_patch: salePatch,
+      p_updates: separatedPlan.updates,
+      p_delete_ids: separatedPlan.deleteIds,
+      p_inserts: separatedPlan.inserts,
+    });
+    const payload = (atomic.data || {}) as { ok?: boolean; message?: string };
+    const missing = /apply_sale_edit_finance|schema cache|does not exist/i.test(atomic.error?.message || '');
+    if (atomic.error || payload.ok !== true) {
+      throw new Error(
+        missing
+          ? 'A gravação segura da edição ainda não está instalada no Develop. Nenhuma parcela foi alterada.'
+          : String(payload.message || atomic.error?.message || 'A edição financeira não foi concluída. Nenhuma parcela foi alterada.'),
+      );
+    }
+    atomicFinanceApplied = true;
+  }
+
+  if (!atomicFinanceApplied) {
     let patchToApply: Record<string, unknown> = { ...salePatch };
     let saleUpdErr: { message?: string } | null = null;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -809,10 +871,12 @@ export async function updateSaleFromEdit(
     }
   }
 
-  if (salePatch.financial_account_id) {
-    const accountIds = groupedRows
+  if (salePatch.financial_account_id && !atomicFinanceApplied) {
+    const pendingIds = groupedRows
       .filter((row) => !isSignalScheduleReceipt(row) && isPendingFinanceReceipt(row))
       .map((row) => row.id);
+    const protectedIds = await protectedFinanceReceiptIds(supabase, saleId, pendingIds);
+    const accountIds = pendingIds.filter((id) => !protectedIds.has(id));
     if (accountIds.length > 0) {
       await supabase
         .from('finance_receipts')
@@ -834,34 +898,15 @@ export async function updateSaleFromEdit(
     },
   );
 
-  let financeChanged = false;
+  let financeChanged = atomicFinanceApplied;
 
   const paid = groupedRows.filter(isPaidReceipt);
 
   if (!rewriteReceipts) {
     console.log('EDIT_SALE_FINANCE_PRESERVED', { saleId, receipts: groupedRows.length });
   } else if (separatedPlan) {
-    for (const update of separatedPlan.updates) {
-      const patch: Record<string, unknown> = {};
-      if (update.due_date) patch.due_date = update.due_date;
-      if (update.amount != null) {
-        patch.amount = update.amount;
-        patch.base_amount = update.amount;
-        patch.signal_addon_amount = 0;
-      }
-      const { error } = await supabase.from('finance_receipts').update(patch).eq('id', update.id);
-      if (error) throw new Error(`Erro ao atualizar parcela em aberto: ${error.message}`);
-      financeChanged = true;
-    }
-    if (separatedPlan.deleteIds.length > 0) {
-      const { error } = await supabase.from('finance_receipts').delete().in('id', separatedPlan.deleteIds);
-      if (error) throw new Error(`Erro ao remover parcela em aberto: ${error.message}`);
-      financeChanged = true;
-    }
-    if (separatedPlan.inserts.length > 0) {
-      const { error } = await supabase.from('finance_receipts').insert(separatedPlan.inserts);
-      if (error) throw new Error(`Erro ao incluir parcela do cronograma: ${error.message}`);
-      financeChanged = true;
+    if (!atomicFinanceApplied) {
+      throw new Error('A edição financeira precisa da função transacional. Nenhuma parcela foi alterada.');
     }
   } else if (paid.length > 0) {
     const plan = planPartialFinanceRecalc(

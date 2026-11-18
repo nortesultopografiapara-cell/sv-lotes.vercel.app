@@ -45,7 +45,10 @@ export type FinanceReceiptRow = {
 };
 
 export const LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE =
-  'O valor recebido e o saldo do sinal já regularizado só mudam por Corrigir sinal antigo. A edição grava os vencimentos das parcelas em aberto sem cobrança.';
+  'Estorne o pagamento do sinal antes de alterar o valor recebido. Depois salve a edição da venda para gravar o saldo em parcelas separadas.';
+
+export const SIGNAL_REVERSAL_REQUIRED_MESSAGE =
+  'Estorne o pagamento desta parcela antes de alterar o valor recebido. A edição não foi salva.';
 
 export const LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE =
   'Parcelas pagas ou com cobrança bancária permanecem. A edição grava vencimento e valor somente nas parcelas em aberto e sem cobrança.';
@@ -76,13 +79,29 @@ export function planSeparatedSignalScheduleEdit(input: {
   lotPayloads: FinanceReceiptPayload[];
   signalDueDates?: Record<string, string> | null;
 }): {
-  updates: Array<{ id: string; due_date?: string; amount?: number }>;
+  updates: Array<{
+    id: string;
+    due_date?: string;
+    amount?: number;
+    status?: string;
+    paid_amount?: number | null;
+    paid_at?: string | null;
+    schedule_group?: string;
+  }>;
   deleteIds: string[];
   inserts: FinanceReceiptPayload[];
   blocked: string | null;
 } {
   const empty = { updates: [], deleteIds: [], inserts: [] as FinanceReceiptPayload[] };
-  const updates: Array<{ id: string; due_date?: string; amount?: number }> = [];
+  const updates: Array<{
+    id: string;
+    due_date?: string;
+    amount?: number;
+    status?: string;
+    paid_amount?: number | null;
+    paid_at?: string | null;
+    schedule_group?: string;
+  }> = [];
   const deleteIds: string[] = [];
   const lotPayloads = input.lotPayloads.filter((payload) => Number(payload.installment_number) >= 1);
   const byNumber = new Map(lotPayloads.map((payload) => [Number(payload.installment_number), payload]));
@@ -133,6 +152,119 @@ export function planSeparatedSignalScheduleEdit(input: {
       return { ...empty, blocked: LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE };
     }
     updates.push({ id: row.id, due_date: requested });
+  }
+
+  return { updates, deleteIds, inserts, blocked: null };
+}
+
+export function planExplicitSeparateSignalEdit(input: {
+  receipts: FinanceReceiptRow[];
+  protectedIds: ReadonlySet<string>;
+  lotPayloads: FinanceReceiptPayload[];
+  paidAtAct: number;
+  actDueDate: string;
+  balance: Array<{ amount: number; dueDate: string }>;
+}): ReturnType<typeof planSeparatedSignalScheduleEdit> {
+  const lotPlan = planSeparatedSignalScheduleEdit({
+    receipts: input.receipts,
+    protectedIds: input.protectedIds,
+    lotPayloads: input.lotPayloads,
+  });
+  if (lotPlan.blocked) return lotPlan;
+
+  const active = input.receipts.filter((row) => !isCancelledFinanceReceipt(row));
+  const act = active.find((row) => isSignalScheduleReceipt(row) && Number(row.installment_number) === 0)
+    || active.find((row) => Number(row.installment_number) === 0)
+    || null;
+  const updates = [...lotPlan.updates];
+  const deleteIds = [...lotPlan.deleteIds];
+  const inserts = [...lotPlan.inserts];
+  const locked = (row: FinanceReceiptRow) => isPaidFinanceReceipt(row) || input.protectedIds.has(row.id);
+
+  if (act) {
+    const currentAmount = Number(act.amount);
+    if (locked(act)) {
+      if (Math.abs(currentAmount - input.paidAtAct) > 0.009) {
+        return { updates: [], deleteIds: [], inserts: [], blocked: SIGNAL_REVERSAL_REQUIRED_MESSAGE };
+      }
+    } else {
+      updates.push({
+        id: act.id,
+        amount: input.paidAtAct,
+        due_date: input.actDueDate || undefined,
+        status: input.paidAtAct > 0.009 ? 'pago' : 'pendente',
+        paid_amount: input.paidAtAct > 0.009 ? input.paidAtAct : 0,
+        paid_at: input.paidAtAct > 0.009 ? input.actDueDate || null : null,
+        schedule_group: 'SIGNAL',
+      });
+    }
+  } else if (input.paidAtAct > 0.009) {
+    const template = input.lotPayloads[0];
+    if (!template) {
+      return { updates: [], deleteIds: [], inserts: [], blocked: 'Não há parcela do lote para vincular o sinal recebido.' };
+    }
+    inserts.push({
+      ...template,
+      installment_number: 0,
+      amount: input.paidAtAct,
+      base_amount: input.paidAtAct,
+      signal_addon_amount: 0,
+      due_date: input.actDueDate,
+      status: 'pago',
+      paid_amount: input.paidAtAct,
+      paid_at: input.actDueDate || null,
+      schedule_group: 'SIGNAL',
+    });
+  }
+
+  const futures = active.filter((row) => isSignalScheduleReceipt(row) && Number(row.installment_number) > 0);
+  const byNumber = new Map(futures.map((row) => [Number(row.installment_number), row]));
+  for (let index = 0; index < input.balance.length; index += 1) {
+    const item = input.balance[index]!;
+    const number = index + 1;
+    const row = byNumber.get(number);
+    if (!row) {
+      const template = input.lotPayloads[0];
+      if (!template) {
+        return { updates: [], deleteIds: [], inserts: [], blocked: 'Não há parcela do lote para vincular o saldo do sinal.' };
+      }
+      inserts.push({
+        ...template,
+        installment_number: number,
+        amount: item.amount,
+        base_amount: item.amount,
+        signal_addon_amount: 0,
+        due_date: item.dueDate,
+        status: 'pendente',
+        paid_amount: 0,
+        paid_at: null,
+        schedule_group: 'SIGNAL',
+      });
+      continue;
+    }
+    byNumber.delete(number);
+    const sameAmount = Math.abs(Number(row.amount) - item.amount) <= 0.009;
+    const sameDue = String(row.due_date || '').slice(0, 10) === item.dueDate;
+    if (locked(row)) {
+      if (!sameAmount || !sameDue) {
+        return { updates: [], deleteIds: [], inserts: [], blocked: SIGNAL_REVERSAL_REQUIRED_MESSAGE };
+      }
+      continue;
+    }
+    if (!sameAmount || !sameDue) {
+      updates.push({
+        id: row.id,
+        amount: item.amount,
+        due_date: item.dueDate,
+        schedule_group: 'SIGNAL',
+      });
+    }
+  }
+  for (const row of byNumber.values()) {
+    if (locked(row)) {
+      return { updates: [], deleteIds: [], inserts: [], blocked: SIGNAL_REVERSAL_REQUIRED_MESSAGE };
+    }
+    deleteIds.push(row.id);
   }
 
   return { updates, deleteIds, inserts, blocked: null };

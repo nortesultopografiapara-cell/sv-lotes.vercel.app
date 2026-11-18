@@ -155,6 +155,8 @@ export type LotFormState = CustomerFormValues &
   signal_schedule_mode?: 'SEPARATE' | '';
   /** Vencimentos das parcelas de sinal já separadas, por id do recebível. */
   legacy_signal_due_dates?: Record<string, string>;
+  /** Edição: gravar o saldo do sinal em parcelas SIGNAL, sem mudar o modo SEPARATE. */
+  persist_separate_signal_schedule?: boolean;
   signal_installment_count?: string;
   signal_first_due_date?: string;
   lot_schedule_start_mode?: string;
@@ -806,8 +808,8 @@ export function CustomerLotFormModal({
   const separateSignalPreview = useMemo(
     () => buildRecantoSeparateSignalPreview({
       contractModel,
-      enabled: separateSignalEnabled,
-      writeEnabled: separateSignalWriteEnabled,
+      enabled: isEditMode || separateSignalEnabled,
+      writeEnabled: isEditMode || separateSignalWriteEnabled,
       selected: separateSignalSelected,
       installmentSale: paymentMode.isInstallment,
       lotPrice: finalValue,
@@ -817,7 +819,7 @@ export function CustomerLotFormModal({
       actDate: formData.down_payment_due_date,
       signalFirstDueDate: separateSignalFirstDueDate,
       lotInstallmentCount: installmentsCount,
-      lotStartMode: separateLotStartMode,
+      lotStartMode: separateLotStartMode || (isEditMode ? 'SPECIFIC_DATE' : ''),
       lotSpecificStartDate: formData.first_installment_due_date,
       holdLotChargesUntilSignalSettled,
     }),
@@ -1111,7 +1113,16 @@ export function CustomerLotFormModal({
         sale_commission_fixed_amount: String(
           parseCurrencyBRLNumber(formData.sale_commission_fixed_amount) || 0,
         ),
-        ...(separateSignalWriteEnabled && separateSignalPreview.active
+        ...(isEditMode && separateSignalPreview.active
+          ? {
+              persist_separate_signal_schedule: true,
+              signal_installment_count: separateSignalInstallmentCount,
+              signal_first_due_date: separateSignalFirstDueDate,
+              signal_remaining_payment_mode: '' as const,
+              signal_remaining_installments: '',
+            }
+          : {}),
+        ...(separateSignalWriteEnabled && separateSignalPreview.active && !isEditMode
           ? {
               signal_schedule_mode: 'SEPARATE' as const,
               signal_installment_count: separateSignalInstallmentCount,
@@ -2111,12 +2122,32 @@ export function CustomerLotFormModal({
                               className="mt-0.5"
                               checked={separateSignalSelected}
                               disabled={submitting || prefillLoading}
-                              onChange={(e) => setSeparateSignalSelected(e.target.checked)}
+                              onChange={(e) => {
+                                setSeparateSignalSelected(e.target.checked);
+                                if (e.target.checked && !separateLotStartMode) {
+                                  setSeparateLotStartMode('SPECIFIC_DATE');
+                                }
+                              }}
                             />
                             <span>Parcelar sinal separadamente das parcelas do lote.</span>
                           </label>
                         ) : null}
-                        {legacySignalRows.length > 0 ? (
+                        {separateSignalPreview.active ? (
+                          <SeparateSignalSchedulePanel
+                            preview={separateSignalPreview}
+                            remainingValue={recantoSignalPlan?.remainingValue ?? 0}
+                            fullyPaid={signalContractValue > 0 && (recantoSignalPlan?.remainingValue ?? 0) === 0}
+                            installmentCount={separateSignalInstallmentCount}
+                            firstDueDate={separateSignalFirstDueDate}
+                            lotStartMode={separateLotStartMode || 'SPECIFIC_DATE'}
+                            holdCharges={holdLotChargesUntilSignalSettled}
+                            disabled={submitting || prefillLoading}
+                            onInstallmentCountChange={setSeparateSignalInstallmentCount}
+                            onFirstDueDateChange={setSeparateSignalFirstDueDate}
+                            onLotStartModeChange={setSeparateLotStartMode}
+                            onHoldChargesChange={setHoldLotChargesUntilSignalSettled}
+                          />
+                        ) : legacySignalRows.length > 0 ? (
                           <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
                             <p className="font-semibold">Saldo do sinal em parcelas separadas do lote</p>
                             <ul className="mt-2 space-y-2">
@@ -2145,22 +2176,7 @@ export function CustomerLotFormModal({
                               Salvar grava vencimentos e valores das parcelas em aberto sem cobrança. Parcelas pagas ou com cobrança bancária permanecem. O contrato só muda por regeneração separada.
                             </p>
                           </div>
-                        ) : separateSignalPreview.active ? (
-                          <SeparateSignalSchedulePanel
-                            preview={separateSignalPreview}
-                            remainingValue={recantoSignalPlan?.remainingValue ?? 0}
-                            fullyPaid={signalContractValue > 0 && (recantoSignalPlan?.remainingValue ?? 0) === 0}
-                            installmentCount={separateSignalInstallmentCount}
-                            firstDueDate={separateSignalFirstDueDate}
-                            lotStartMode={separateLotStartMode}
-                            holdCharges={holdLotChargesUntilSignalSettled}
-                            disabled={submitting || prefillLoading}
-                            onInstallmentCountChange={setSeparateSignalInstallmentCount}
-                            onFirstDueDateChange={setSeparateSignalFirstDueDate}
-                            onLotStartModeChange={setSeparateLotStartMode}
-                            onHoldChargesChange={setHoldLotChargesUntilSignalSettled}
-                          />
-                        ) : (recantoSignalPlan?.remainingValue ?? 0) > 0 ? (
+                        ) : (recantoSignalPlan?.remainingValue ?? 0) > 0 && legacySignalRows.length === 0 ? (
                           <>
                             <div className="md:col-span-2">
                               <label className="block text-xs font-semibold text-gray-700 mb-1">

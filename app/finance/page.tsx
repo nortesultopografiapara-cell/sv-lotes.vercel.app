@@ -11,10 +11,9 @@ import {
   FinanceTableEmpty,
   FinanceTableLoading,
   PaymentTableRow,
-  resolvePaymentSaleId,
 } from '@/components/finance/FinancePremiumUI';
 import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
-import { LegacySignalCorrectionDialog } from '@/components/finance/LegacySignalCorrectionDialog';
+import { ReversePaymentDialog } from '@/components/finance/ReversePaymentDialog';
 import { MarkPaidAuthModal } from '@/components/finance/MarkPaidAuthModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -231,7 +230,7 @@ export default function FinancePage() {
   );
   const [loading, setLoading] = useState(true);
   const [manualPaymentReceiptId, setManualPaymentReceiptId] = useState<string | null>(null);
-  const [legacySignalPayment, setLegacySignalPayment] = useState<Record<string, unknown> | null>(null);
+  const [reversePayment, setReversePayment] = useState<Record<string, unknown> | null>(null);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [financeProjects, setFinanceProjects] = useState<any[]>([]);
   const [enterpriseBlocks, setEnterpriseBlocks] = useState<
@@ -2858,9 +2857,9 @@ export default function FinancePage() {
                     onWhatsApp={() => handleWhatsApp(p)}
                     onCarne={() => handleGenerateCarne(p)}
                     onDelete={() => handleDeleteReceipt(p)}
-                    onCorrectLegacySignal={
+                    onReversePayment={
                       isTenantEnterpriseAdminRole(user?.role) && !ownerReadOnly
-                        ? () => setLegacySignalPayment(p)
+                        ? () => setReversePayment(p)
                         : undefined
                     }
                     signalFutureCount={signalFutureCountBySale.get(String(p.sale_id || '')) ?? null}
@@ -3600,15 +3599,16 @@ export default function FinancePage() {
         </div>
       )}
 
-      {legacySignalPayment ? (
-        <LegacySignalCorrectionDialog
-          saleId={resolvePaymentSaleId(legacySignalPayment)}
-          lotLabel={`Quadra ${String((legacySignalPayment.blocks as { block_name?: string; name?: string } | undefined)?.block_name || (legacySignalPayment.blocks as { name?: string } | undefined)?.name || '—')} · Lote ${String((legacySignalPayment.blocks as { number?: string } | undefined)?.number || '—')}`}
-          projectName={String((legacySignalPayment.projects as { name?: string } | undefined)?.name || (legacySignalPayment.sales as { projects?: { name?: string } } | undefined)?.projects?.name || '—')}
-          registeredAmount={Number(legacySignalPayment.amount) || 0}
-          onClose={() => setLegacySignalPayment(null)}
+      {reversePayment ? (
+        <ReversePaymentDialog
+          receiptId={String(reversePayment.id)}
+          saleLabel={`Quadra ${String((reversePayment.blocks as { block_name?: string; name?: string } | undefined)?.block_name || (reversePayment.blocks as { name?: string } | undefined)?.name || '—')} · Lote ${String((reversePayment.blocks as { number?: string } | undefined)?.number || '—')}`}
+          parcelLabel={String(reversePayment.installment_number ?? 'Parcela')}
+          amount={Number(reversePayment.paid_amount || reversePayment.amount) || 0}
+          paidAt={reversePayment.paid_at ? String(reversePayment.paid_at) : null}
+          onClose={() => setReversePayment(null)}
           onCompleted={() => {
-            setLegacySignalPayment(null);
+            setReversePayment(null);
             void loadFinance();
           }}
         />
