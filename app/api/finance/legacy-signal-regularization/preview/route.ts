@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isLegacySignalRegularizationRouteEnabled } from '@/lib/homolog/env';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 import {
   LegacySignalAccessError,
@@ -11,6 +12,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  if (!isLegacySignalRegularizationRouteEnabled()) {
+    return NextResponse.json(
+      { success: false, code: 'not_found', message: 'Recurso não disponível.', mutation: false },
+      { status: 404 },
+    );
+  }
   try {
     const { user, configError } = await getRequestAuthUser(request);
     if (configError || !user) {

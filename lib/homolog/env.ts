@@ -30,6 +30,11 @@ export function isDevelopHomologRuntime(url?: string): boolean {
   return resolveSupabaseProjectRef(url) === DEVELOP_PROJECT_REF;
 }
 
+/** Só o host Develop abre a regularização legada. Não recebe URL do navegador. */
+export function isLegacySignalRegularizationRouteEnabled(): boolean {
+  return resolveSupabaseProjectRef() === DEVELOP_PROJECT_REF;
+}
+
 export function isProductionSupabaseRuntime(url?: string): boolean {
   return resolveSupabaseProjectRef(url) === PRODUCTION_PROJECT_REF;
 }
