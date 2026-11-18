@@ -2161,7 +2161,7 @@ export function CustomerLotFormModal({
                                 return (
                                   <li key={row.id} className="grid grid-cols-[1fr_auto] items-center gap-2">
                                     <span>
-                                      Parcela {row.installment_number} · {formatCurrencyBRL(Number(row.amount) || 0)} · {paid ? 'paga' : 'em aberto'}
+                                      Parcela {row.installment_number == null || String(row.installment_number).trim().toLowerCase() === 'null' ? '—' : row.installment_number} · {formatCurrencyBRL(Number(row.amount) || 0)} · {paid ? 'paga' : 'em aberto'}
                                     </span>
                                     <input
                                       type="date"

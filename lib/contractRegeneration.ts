@@ -73,6 +73,7 @@ import {
   shouldLoadProjectBlocksForContract,
 } from '@/lib/contractHtmlGlobal';
 import { fetchAllBlocksForProject } from '@/lib/blocksFetchAll';
+import { contractReplacementBlocked } from '@/lib/contractVersionSwap';
 
 export {
   CONTRACT_HTML_READ_COLUMNS,
@@ -1214,65 +1215,73 @@ export async function regenerateSaleContract(
     version: maxVersion,
   });
 
-  const htmlFields = buildRegeneratedContractHtmlFields(html, contract);
-
-  const newRow = await insertRegeneratedContractRow(
-    supabase,
-    {
-    tenant_id: tenantId,
-    company_id: tenantId,
-    sale_id: saleId,
-    customer_id: contract.customer_id,
-    project_id:
-      contract.project_id ||
-      sale.project_id ||
-      (block.id as string) ||
-      null,
-    block_id: contract.block_id || block.id || sale.block_id,
-    broker_id: contract.broker_id || sale.broker_id || null,
-    contract_number: contractNumber,
-    ...htmlFields,
-    pdf_url: null,
-    status: 'ativo',
-    is_current: true,
-    needs_regenerar: false,
-    version: newVersion,
-    regenerated_from: contract.id,
-    regenerated_at: now,
-    regenerated_by: params.regeneratedByUserId || null,
-    sale_value: sale.total_value ?? sale.agreed_price ?? contract.sale_value,
-    down_payment: sale.down_payment ?? contract.down_payment,
-    installments: sale.installments_count ?? contract.installments,
-    contract_model:
-      tenant.contract_model ||
-      sale.contract_model ||
-      contract.contract_model ||
-      null,
-    ...contractPayloadPartial,
-    ...copyTerminationPolicyPersistFromSale(sale),
-    created_at: now,
-    },
-    html,
-  );
-
-  await updateContractRowWithFallback(supabase, contract.id as string, {
-    status: 'superseded',
-    is_current: false,
-    superseded_by: newRow.id,
-    regenerated_at: now,
-    pdf_url: null,
-  });
-
-  for (const ver of existingVersions) {
-    if (ver.id === newRow.id || ver.id === contract.id) continue;
-    try {
-      await updateContractRowWithFallback(supabase, ver.id, {
-        is_current: false,
-      });
-    } catch (e) {
-      console.warn('[REGENERATE] is_current em versão anterior', ver.id, e);
-    }
+  if (contractReplacementBlocked(contract)) {
+    throw new Error('Contrato assinado não pode ser substituído. A versão vigente permanece.');
   }
+
+  const htmlFields = buildRegeneratedContractHtmlFields(html, contract);
+  const replacement = await supabase.rpc('replace_current_contract_version', {
+    p_source_id: contract.id,
+    p_row: {
+      tenant_id: tenantId,
+      company_id: tenantId,
+      sale_id: saleId,
+      customer_id: contract.customer_id,
+      project_id:
+        contract.project_id ||
+        sale.project_id ||
+        (block.id as string) ||
+        null,
+      block_id: contract.block_id || block.id || sale.block_id,
+      broker_id: contract.broker_id || sale.broker_id || null,
+      contract_number: contractNumber,
+      ...htmlFields,
+      pdf_url: null,
+      status: 'ativo',
+      is_current: true,
+      needs_regenerar: false,
+      version: newVersion,
+      regenerated_from: contract.id,
+      regenerated_at: now,
+      regenerated_by: params.regeneratedByUserId || null,
+      sale_value: sale.total_value ?? sale.agreed_price ?? contract.sale_value,
+      down_payment: sale.down_payment ?? contract.down_payment,
+      installments: sale.installments_count ?? contract.installments,
+      contract_model:
+        tenant.contract_model ||
+        sale.contract_model ||
+        contract.contract_model ||
+        null,
+      ...contractPayloadPartial,
+      ...copyTerminationPolicyPersistFromSale(sale),
+      created_at: now,
+    },
+  });
+  const replacementError = String(replacement.error?.message || '');
+  const replacementCode = String((replacement.error as { code?: string } | null)?.code || '');
+  if (
+    replacementCode === 'PGRST202'
+    || /schema cache|could not find the function/i.test(replacementError)
+  ) {
+    throw new Error('A troca segura de versão ainda não está visível para o aplicativo. A versão vigente permanece.');
+  }
+  if (replacement.error) {
+    throw new Error(replacementError || 'A regeneração não foi concluída. A versão vigente permanece.');
+  }
+  const replaced = (replacement.data || {}) as { ok?: boolean; id?: string; version?: number };
+  if (replaced.ok !== true || !replaced.id) {
+    throw new Error('A regeneração não foi concluída. A versão vigente permanece.');
+  }
+  const { data: inserted, error: insertedError } = await supabase
+    .from('contracts')
+    .select('*')
+    .eq('id', replaced.id)
+    .single();
+  if (insertedError || !inserted) {
+    throw new Error(insertedError?.message || 'A nova versão não foi localizada depois da gravação.');
+  }
+  const newRow = attachHtmlToContractRow(inserted as Record<string, unknown>, html);
+  const persistedVersion = Number(replaced.version || newRow.version || newVersion);
 
   if (contract.block_id || block.id) {
     await supabase

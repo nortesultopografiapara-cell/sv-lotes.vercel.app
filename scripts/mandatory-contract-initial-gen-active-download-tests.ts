@@ -259,8 +259,16 @@ function testViewAndRegenShareLoader() {
     regen.includes('is_current: true'),
     'nova versão marcada is_current',
   );
+  const swapSql = fs.readFileSync(
+    'supabase/migrations/20261118120000_replace_current_contract_version.sql',
+    'utf8',
+  );
   assert(
-    regen.includes("status: 'superseded'"),
+    regen.includes('replace_current_contract_version'),
+    'regeneração usa a troca atômica',
+  );
+  assert(
+    swapSql.includes("status = 'superseded'"),
     'anterior superseded',
   );
   console.log('OK testViewAndRegenShareLoader');

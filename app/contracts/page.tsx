@@ -1812,8 +1812,11 @@ export default function ContractsPage() {
         }).format(Number(r.amount));
         const bg = idx % 2 === 0 ? "#ffffff" : "#f8f9fa";
         
+        const parcelText = String(r.installment_number ?? '').trim().toLowerCase();
         const isEntry = r.installment_number === 0 || r.installment_number === '0';
-        const parcelLabel = isEntry ? "ENTRADA" : `${r.installment_number || 1}/${maxParcelas}`;
+        const parcelLabel = isEntry
+          ? "ENTRADA"
+          : `${parcelText && parcelText !== 'null' && parcelText !== 'undefined' ? r.installment_number : '—'}/${maxParcelas}`;
 
         html += `
                   <tr style="color: #333; font-size: 11px; background: ${bg}; border-bottom: 1px solid #eee;">

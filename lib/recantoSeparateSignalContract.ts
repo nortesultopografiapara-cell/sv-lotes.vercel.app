@@ -202,7 +202,7 @@ function bandLabel(band: SeparateSignalScheduleBand): string {
   if (band.count > 1 && band.fromNumber != null && band.toNumber != null) {
     return `Parcelas ${band.fromNumber} a ${band.toNumber}`;
   }
-  return `Parcela ${band.fromNumber ?? ''}`.trim();
+  return band.fromNumber == null ? 'Parcela' : `Parcela ${band.fromNumber}`;
 }
 
 function bandValue(band: SeparateSignalScheduleBand): string {
@@ -503,7 +503,7 @@ export function buildLegacyRegularizedSignalContractSchedule(input: {
       <td style="border: 1px solid #111; padding: 6px;">no ato da celebração</td>
     </tr>`,
     ...future.map((line) => `<tr data-schedule-band="SIGNAL" data-kind="range" data-from="${line.installmentNumber}" data-to="${line.installmentNumber}" data-count="1" data-amount-cents="${line.amountCents}">
-      <td style="border: 1px solid #111; padding: 6px;">Parcela ${line.installmentNumber}</td>
+      <td style="border: 1px solid #111; padding: 6px;">${line.installmentNumber == null ? 'Parcela' : `Parcela ${line.installmentNumber}`}</td>
       <td style="border: 1px solid #111; padding: 6px; text-align: right;">${money(line.amountCents)}</td>
       <td style="border: 1px solid #111; padding: 6px;">${escapeHtml(formatDue(line.dueDate))}</td>
     </tr>`),
