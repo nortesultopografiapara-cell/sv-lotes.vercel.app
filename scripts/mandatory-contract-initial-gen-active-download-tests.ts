@@ -260,7 +260,7 @@ function testViewAndRegenShareLoader() {
     'nova versão marcada is_current',
   );
   const swapSql = fs.readFileSync(
-    'supabase/migrations/20261118120000_replace_current_contract_version.sql',
+    'supabase/migrations/20261118150000_fix_replace_current_contract_version_existing_columns.sql',
     'utf8',
   );
   assert(

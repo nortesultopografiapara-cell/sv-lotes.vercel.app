@@ -18,7 +18,7 @@ function assert(condition: boolean, message: string) {
 
 const root = path.resolve(__dirname, '..');
 const sql = fs.readFileSync(
-  path.join(root, 'supabase/migrations/20261118120000_replace_current_contract_version.sql'),
+  path.join(root, 'supabase/migrations/20261118150000_fix_replace_current_contract_version_existing_columns.sql'),
   'utf8',
 );
 const regen = fs.readFileSync(path.join(root, 'lib/contractRegeneration.ts'), 'utf8');
@@ -34,6 +34,15 @@ assert(sql.includes('pg_advisory_xact_lock'), 'regenerações simultâneas esper
 assert(sql.includes('IS DISTINCT FROM v_previous_html'), 'alteração do HTML anterior desfaz a transação');
 assert(sql.includes('GRANT EXECUTE ON FUNCTION public.replace_current_contract_version(uuid, jsonb) TO service_role'), 'somente o servidor executa a troca');
 assert(!/GRANT EXECUTE ON FUNCTION public.replace_current_contract_version[\s\S]*TO authenticated/.test(sql), 'o navegador não executa a troca');
+assert(!sql.includes('v_new.superseded_by :='), 'a linha nova não acessa superseded_by como coluna fixa');
+assert(!sql.includes('v_new.pdf_url'), 'pdf_url só é gravado quando a coluna existe');
+assert(!sql.includes('v_new.regenerated_by'), 'regenerated_by só é gravado quando a coluna existe');
+assert(!/ALTER TABLE/i.test(sql), 'a correção não cria nem altera colunas');
+assert(sql.includes("column_name = 'superseded_by'"), 'o vínculo superseded_by fica condicionado à coluna');
+assert(sql.includes("column_name = 'pdf_url'"), 'pdf_url fica condicionado à coluna');
+assert(sql.includes("column_name = 'regenerated_by'"), 'regenerated_by fica condicionado à coluna');
+const supersedeLinkAt = sql.indexOf('SET superseded_by = $1');
+assert(supersedeLinkAt > supersedeAt, 'o vínculo opcional só ocorre depois que a versão anterior vira histórico');
 assert(regen.includes('replace_current_contract_version'), 'a regeneração chama a troca atômica');
 assert(regen.includes('contractReplacementBlocked'), 'a regeneração recusa contrato assinado antes da gravação');
 assert(!regen.includes('await insertRegeneratedContractRow'), 'a regeneração não insere a versão nova fora da transação');
