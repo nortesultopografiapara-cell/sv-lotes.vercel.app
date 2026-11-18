@@ -61,7 +61,7 @@ export function LegacySignalRegularizationPanel({
   const [formError, setFormError] = useState('');
   const [regenConfirmed, setRegenConfirmed] = useState(false);
   const [regenMessage, setRegenMessage] = useState('');
-  const [expanded, setExpanded] = useState(Boolean(onSaleIdChange));
+  const [expanded, setExpanded] = useState(true);
   const seeded = useRef(false);
 
   useEffect(() => {

@@ -1341,6 +1341,12 @@ export function CustomerLotFormModal({
             />
           ) : (
           <>
+          {isEditMode && saleId ? (
+            <LegacySignalRegularizationPanel
+              saleId={saleId}
+              suggestedReceived={formData.signal_paid_at_sale || ''}
+            />
+          ) : null}
           <form id="customer-lot-form" onSubmit={handleSubmit} className={isSaleFormWorkspaceDesktop ? "sv-sale-workspace-grid" : isReservationWorkspaceDesktop ? "sv-reservation-workspace-grid" : "space-y-6"}>
             <div className={isWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"}>
             <div className={isWorkspaceDesktop ? "sv-sale-workspace-card" : "space-y-4"}>
@@ -2648,12 +2654,6 @@ export function CustomerLotFormModal({
               </div>
             )}
           </form>
-          {isEditMode && saleId ? (
-            <LegacySignalRegularizationPanel
-              saleId={saleId}
-              suggestedReceived={formData.signal_paid_at_sale || ''}
-            />
-          ) : null}
           </>
           )}
         </div>

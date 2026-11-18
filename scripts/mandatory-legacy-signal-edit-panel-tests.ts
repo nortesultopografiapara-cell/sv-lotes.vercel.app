@@ -28,7 +28,7 @@ const formStart = modal.indexOf('<form id="customer-lot-form"');
 const formEnd = modal.indexOf('</form>', formStart);
 const panelAt = modal.indexOf('<LegacySignalRegularizationPanel');
 assert(formStart > 0 && formEnd > formStart, 'formulário da venda localizado');
-assert(panelAt > formEnd, 'a regularização fica fora do formulário Salvar alterações');
+assert(panelAt > 0 && panelAt < formStart, 'a regularização abre no início da aba Dados, fora do formulário Salvar alterações');
 assert(modal.includes('suggestedReceived={formData.signal_paid_at_sale'), 'o valor recebido sugerido vem da venda aberta');
 assert(modal.includes('saleId={saleId}'), 'a edição usa a venda selecionada');
 assert(!modal.slice(formStart, formEnd).includes('legacy-signal-regularization'), 'salvar a venda não chama a regularização');
@@ -37,6 +37,7 @@ assert(panel.includes('/api/finance/legacy-signal-regularization/preview'), 'con
 assert(panel.includes('/api/finance/legacy-signal-regularization/execute'), 'confirma pela função existente');
 assert(panel.includes('confirm: false') && panel.includes('confirm: true'), 'confirmação explícita separada da consulta');
 assert(panel.includes("type=\"button\""), 'os botões da regularização não submetem a venda');
+assert(panel.includes('useState(true)'), 'o painel abre visível na venda selecionada');
 assert(panel.includes('needs_regenerar: true'), 'a regeneração apenas marca o contrato');
 assert(!panel.includes('regenerateContract') && !panel.includes('contractRegeneration'), 'não regenera o texto do contrato');
 assert(panel.includes("new Event('finance_updated')"), 'atualiza a visualização financeira');
