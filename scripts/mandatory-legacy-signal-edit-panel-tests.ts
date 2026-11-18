@@ -16,6 +16,8 @@ import {
 } from '../lib/finance/recantoReceiptSchedule';
 import { formatFinanceParcelLabel } from '../lib/finance/separateScheduleParcelLabel';
 import { isDevelopHomologRuntime } from '../lib/homolog/env';
+import { legacySignalParcelActionVisible } from '../lib/finance/legacySignalParcelAction';
+import { planSeparatedSignalScheduleEdit } from '../lib/saleEditFinanceRecalc';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -23,26 +25,128 @@ function assert(condition: boolean, message: string) {
 
 const root = path.resolve(__dirname, '..');
 const modal = fs.readFileSync(path.join(root, 'components', 'map', 'CustomerLotFormModal.tsx'), 'utf8');
-const panel = fs.readFileSync(path.join(root, 'components', 'finance', 'LegacySignalRegularizationPanel.tsx'), 'utf8');
+const dialog = fs.readFileSync(path.join(root, 'components', 'finance', 'LegacySignalCorrectionDialog.tsx'), 'utf8');
+const finance = fs.readFileSync(path.join(root, 'app', 'finance', 'page.tsx'), 'utf8');
+const financeRow = fs.readFileSync(path.join(root, 'components', 'finance', 'FinancePremiumUI.tsx'), 'utf8');
+const saleEdit = fs.readFileSync(path.join(root, 'lib', 'saleEdit.ts'), 'utf8');
+const layout = fs.readFileSync(path.join(root, 'components', 'Layout.tsx'), 'utf8');
 const formStart = modal.indexOf('<form id="customer-lot-form"');
 const formEnd = modal.indexOf('</form>', formStart);
-const panelAt = modal.indexOf('<LegacySignalRegularizationPanel');
 assert(formStart > 0 && formEnd > formStart, 'formulário da venda localizado');
-assert(panelAt > 0 && panelAt < formStart, 'a regularização abre no início da aba Dados, fora do formulário Salvar alterações');
-assert(modal.includes('suggestedReceived={formData.signal_paid_at_sale'), 'o valor recebido sugerido vem da venda aberta');
-assert(modal.includes('saleId={saleId}'), 'a edição usa a venda selecionada');
+assert(!modal.includes('LegacySignalRegularizationPanel'), 'o painel amarelo saiu da edição da venda');
+assert(!fs.existsSync(path.join(root, 'components', 'finance', 'LegacySignalRegularizationPanel.tsx')), 'o painel amarelo foi removido');
+assert(!fs.existsSync(path.join(root, 'app', 'finance', 'regularizar-sinal', 'page.tsx')), 'a rota antiga foi removida');
+assert(!layout.includes('/finance/regularizar-sinal'), 'o menu Regularizar sinal foi removido');
+assert(modal.includes('Saldo do sinal em parcelas separadas do lote'), 'a edição mostra o saldo já separado');
+assert(modal.includes('legacy_signal_due_dates'), 'a edição envia os vencimentos do sinal');
 assert(!modal.slice(formStart, formEnd).includes('legacy-signal-regularization'), 'salvar a venda não chama a regularização');
+assert(finance.includes('LegacySignalCorrectionDialog') && financeRow.includes('title="Corrigir sinal antigo"'), 'a ação fica no Financeiro');
+assert(saleEdit.includes('planSeparatedSignalScheduleEdit'), 'salvar atualiza as parcelas em aberto');
+assert(saleEdit.includes('preparedPayloads = buildSaleEditFinancePayloads'), 'a edição prepara o cronograma antes de gravar');
 
-assert(panel.includes('/api/finance/legacy-signal-regularization/preview'), 'consulta a prévia existente');
-assert(panel.includes('/api/finance/legacy-signal-regularization/execute'), 'confirma pela função existente');
-assert(panel.includes('confirm: false') && panel.includes('confirm: true'), 'confirmação explícita separada da consulta');
-assert(panel.includes("type=\"button\""), 'os botões da regularização não submetem a venda');
-assert(panel.includes('useState(true)'), 'o painel abre visível na venda selecionada');
-assert(panel.includes('needs_regenerar: true'), 'a regeneração apenas marca o contrato');
-assert(!panel.includes('regenerateContract') && !panel.includes('contractRegeneration'), 'não regenera o texto do contrato');
-assert(panel.includes("new Event('finance_updated')"), 'atualiza a visualização financeira');
-assert(panel.includes('Há lançamento de caixa vinculado.'), 'bloqueio de caixa visível');
-assert(panel.includes('Há cobrança bancária vinculada.'), 'bloqueio bancário visível');
+assert(dialog.includes('/api/finance/legacy-signal-regularization/preview'), 'consulta a prévia existente');
+assert(dialog.includes('/api/finance/legacy-signal-regularization/execute'), 'confirma pela função existente');
+assert(dialog.includes('confirm: false') && dialog.includes('confirm: true'), 'confirmação explícita separada da consulta');
+assert(dialog.includes('type="button"'), 'os botões da correção não submetem outro formulário');
+assert(!dialog.includes('regenerateContract') && !dialog.includes('needs_regenerar'), 'a correção não regenera o contrato');
+assert(dialog.includes("new Event('finance_updated')"), 'atualiza a visualização financeira');
+assert(dialog.includes('Há lançamento de caixa vinculado.'), 'bloqueio de caixa visível');
+assert(dialog.includes('Há cobrança bancária vinculada.'), 'bloqueio bancário visível');
+assert(dialog.includes('Há recibo vinculado à parcela.'), 'bloqueio de recibo visível');
+
+const paidSignal = {
+  installment_number: 0,
+  status: 'pago',
+  amount: 3500,
+  paid_amount: 3500,
+  paid_at: '2026-10-24T14:12:49.000Z',
+  schedule_group: null,
+  sales: { status: 'ACTIVE' },
+};
+assert(legacySignalParcelActionVisible(paidSignal), 'parcela antiga paga aparece na ação');
+assert(!legacySignalParcelActionVisible({ ...paidSignal, installment_number: 1 }), 'parcela do lote não aparece');
+assert(!legacySignalParcelActionVisible({ ...paidSignal, schedule_group: 'SIGNAL' }), 'sinal já separado não aparece');
+assert(!legacySignalParcelActionVisible({ ...paidSignal, sales: { status: 'cancelada' } }), 'venda encerrada não aparece');
+assert(!legacySignalParcelActionVisible(paidSignal, { asaasStatus: 'PENDING' }), 'cobrança Asaas oculta a ação');
+assert(legacySignalParcelActionVisible(paidSignal, { asaasStatus: 'CANCELLED' }), 'cobrança cancelada não impede a ação');
+
+const openLot = {
+  id: 'lot-open',
+  installment_number: 1,
+  amount: 589.74,
+  due_date: '2027-03-20',
+  status: 'pendente',
+  schedule_group: null,
+};
+const paidLot = {
+  id: 'lot-paid',
+  installment_number: 2,
+  amount: 589.74,
+  due_date: '2027-04-20',
+  status: 'pago',
+  paid_at: '2027-04-20',
+  schedule_group: null,
+};
+const chargedLot = {
+  id: 'lot-charged',
+  installment_number: 3,
+  amount: 589.74,
+  due_date: '2027-05-20',
+  status: 'pendente',
+  schedule_group: null,
+};
+const signalPaid = {
+  id: 'signal-paid',
+  installment_number: 0,
+  amount: 1500,
+  due_date: '2026-10-24',
+  status: 'pago',
+  paid_at: '2026-10-24',
+  schedule_group: 'SIGNAL',
+};
+const signalOpen = {
+  id: 'signal-open',
+  installment_number: 1,
+  amount: 666.67,
+  due_date: '2026-12-20',
+  status: 'pendente',
+  schedule_group: 'SIGNAL',
+};
+const receipts = [signalPaid, signalOpen, openLot, paidLot, chargedLot];
+const nextLots = [
+  { installment_number: 1, amount: 600, due_date: '2027-06-20', status: 'pendente' },
+  { installment_number: 2, amount: 589.74, due_date: '2027-07-20', status: 'pendente' },
+  { installment_number: 3, amount: 589.74, due_date: '2027-08-20', status: 'pendente' },
+];
+const edited = planSeparatedSignalScheduleEdit({
+  receipts,
+  protectedIds: new Set(['lot-charged']),
+  lotPayloads: nextLots,
+  signalDueDates: { 'signal-open': '2026-12-25' },
+});
+assert(edited.blocked === null, 'parcelas em aberto podem ser editadas');
+assert(edited.updates.some((row) => row.id === 'lot-open' && row.amount === 600 && row.due_date === '2027-06-20'), 'parcela em aberto recebe valor e vencimento');
+assert(!edited.updates.some((row) => row.id === 'lot-paid' || row.id === 'lot-charged'), 'paga e cobrada permanecem');
+assert(edited.updates.some((row) => row.id === 'signal-open' && row.due_date === '2026-12-25' && row.amount == null), 'vencimento do saldo muda sem alterar o valor');
+assert(!edited.deleteIds.includes('signal-paid') && !edited.deleteIds.includes('signal-open'), 'as parcelas do sinal não são apagadas');
+const blockedAmount = planSeparatedSignalScheduleEdit({
+  receipts,
+  protectedIds: new Set(),
+  lotPayloads: nextLots.map((row) => row.installment_number === 2 ? { ...row, amount: 1 } : row),
+});
+assert(blockedAmount.blocked != null && blockedAmount.updates.length === 0, 'valor de parcela paga bloqueia a gravação');
+const blockedCharge = planSeparatedSignalScheduleEdit({
+  receipts,
+  protectedIds: new Set(['lot-charged']),
+  lotPayloads: nextLots.map((row) => row.installment_number === 3 ? { ...row, amount: 1 } : row),
+});
+assert(blockedCharge.blocked != null, 'valor de parcela com cobrança bloqueia a gravação');
+const droppedPaid = planSeparatedSignalScheduleEdit({
+  receipts,
+  protectedIds: new Set(),
+  lotPayloads: nextLots.filter((row) => row.installment_number !== 2),
+});
+assert(droppedPaid.blocked != null, 'reduzir a quantidade não remove parcela paga');
 
 const company = '11111111-1111-4111-8111-111111111111';
 const admin: LegacySignalActor = { id: 'admin-1', tenantId: company, role: 'ADMIN', status: 'ACTIVE' };

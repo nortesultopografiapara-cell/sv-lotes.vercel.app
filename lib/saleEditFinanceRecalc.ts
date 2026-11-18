@@ -45,7 +45,98 @@ export type FinanceReceiptRow = {
 };
 
 export const LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE =
-  'As parcelas do sinal não são alteradas por esta edição. Use Regularizar sinal para mudar o valor recebido, o saldo ou os vencimentos do sinal.';
+  'O valor recebido e o saldo do sinal já regularizado só mudam por Corrigir sinal antigo. A edição grava os vencimentos das parcelas em aberto sem cobrança.';
+
+export const LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE =
+  'Parcelas pagas ou com cobrança bancária permanecem. A edição grava vencimento e valor somente nas parcelas em aberto e sem cobrança.';
+
+export function lotPayloadsWithoutEmbeddedSignal(
+  payloads: FinanceReceiptPayload[],
+): FinanceReceiptPayload[] {
+  return payloads
+    .filter((payload) => Number(payload.installment_number) >= 1)
+    .map((payload) => {
+      const addon = Number(payload.signal_addon_amount || 0);
+      const base = payload.base_amount != null
+        ? Number(payload.base_amount)
+        : Number(payload.amount) - addon;
+      const amount = Number.isFinite(base) ? Math.round(base * 100) / 100 : Number(payload.amount);
+      return {
+        ...payload,
+        amount,
+        base_amount: amount,
+        signal_addon_amount: 0,
+      };
+    });
+}
+
+export function planSeparatedSignalScheduleEdit(input: {
+  receipts: FinanceReceiptRow[];
+  protectedIds: ReadonlySet<string>;
+  lotPayloads: FinanceReceiptPayload[];
+  signalDueDates?: Record<string, string> | null;
+}): {
+  updates: Array<{ id: string; due_date?: string; amount?: number }>;
+  deleteIds: string[];
+  inserts: FinanceReceiptPayload[];
+  blocked: string | null;
+} {
+  const empty = { updates: [], deleteIds: [], inserts: [] as FinanceReceiptPayload[] };
+  const updates: Array<{ id: string; due_date?: string; amount?: number }> = [];
+  const deleteIds: string[] = [];
+  const lotPayloads = input.lotPayloads.filter((payload) => Number(payload.installment_number) >= 1);
+  const byNumber = new Map(lotPayloads.map((payload) => [Number(payload.installment_number), payload]));
+  const seen = new Set<number>();
+
+  for (const row of input.receipts) {
+    if (isSignalScheduleReceipt(row) || isCancelledFinanceReceipt(row)) continue;
+    const number = Number(row.installment_number);
+    if (!Number.isFinite(number) || number < 1) continue;
+    seen.add(number);
+    const next = byNumber.get(number);
+    const locked = isPaidFinanceReceipt(row) || input.protectedIds.has(row.id);
+    if (!next) {
+      if (locked) return { ...empty, blocked: LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE };
+      deleteIds.push(row.id);
+      continue;
+    }
+    const nextAmount = Number(next.amount);
+    const currentAmount = Number(row.amount);
+    if (locked) {
+      if (Math.abs(nextAmount - currentAmount) > 0.009) {
+        return { ...empty, blocked: LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE };
+      }
+      continue;
+    }
+    const nextDue = String(next.due_date || '').slice(0, 10);
+    const currentDue = String(row.due_date || '').slice(0, 10);
+    const patch: { id: string; due_date?: string; amount?: number } = { id: row.id };
+    if (nextDue && nextDue !== currentDue) patch.due_date = nextDue;
+    if (Math.abs(nextAmount - currentAmount) > 0.009) patch.amount = nextAmount;
+    if (patch.due_date || patch.amount != null) updates.push(patch);
+  }
+
+  const inserts = lotPayloads
+    .filter((payload) => !seen.has(Number(payload.installment_number)))
+    .map((payload) => ({
+      ...payload,
+      status: 'pendente',
+      paid_amount: 0,
+      paid_at: null,
+    }));
+
+  for (const row of input.receipts.filter((item) => isSignalScheduleReceipt(item))) {
+    const requested = String(input.signalDueDates?.[row.id] || '').slice(0, 10);
+    const current = String(row.due_date || '').slice(0, 10);
+    if (!requested || requested === current) continue;
+    if (isPaidFinanceReceipt(row) || input.protectedIds.has(row.id)) {
+      return { ...empty, blocked: LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE };
+    }
+    updates.push({ id: row.id, due_date: requested });
+  }
+
+  return { updates, deleteIds, inserts, blocked: null };
+}
 
 export function isSignalScheduleReceipt(row: {
   schedule_group?: string | null;

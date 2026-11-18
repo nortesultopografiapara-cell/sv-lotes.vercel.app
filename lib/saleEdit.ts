@@ -34,7 +34,10 @@ import {
   isPendingFinanceReceipt,
   isSignalScheduleReceipt,
   LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE,
+  LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE,
   legacySignalPlanConflicts,
+  lotPayloadsWithoutEmbeddedSignal,
+  planSeparatedSignalScheduleEdit,
   planFullFinanceRecalc,
   planPartialFinanceRecalc,
   resolveFinanceScheduleEditLock,
@@ -634,13 +637,33 @@ export async function updateSaleFromEdit(
   ) {
     throw new Error(SEPARATE_SIGNAL_RECALC_BLOCKED_MESSAGE);
   }
+  let separatedPlan: ReturnType<typeof planSeparatedSignalScheduleEdit> | null = null;
+  let preparedPayloads: ReturnType<typeof buildSaleEditFinancePayloads> | null = null;
+  if (groupedRows.some((row) => isSignalScheduleReceipt(row)) && rewriteReceipts) {
+    preparedPayloads = buildSaleEditFinancePayloads(
+      tenantId,
+      saleId,
+      customerId,
+      brokerId,
+      lot,
+      data,
+      { contractModel, financialAccountId: data.financial_account_id || null },
+    );
+    separatedPlan = planSeparatedSignalScheduleEdit({
+      receipts: groupedRows,
+      protectedIds: await protectedFinanceReceiptIds(supabase, saleId, groupedRows.map((row) => row.id)),
+      lotPayloads: lotPayloadsWithoutEmbeddedSignal(preparedPayloads),
+      signalDueDates: data.legacy_signal_due_dates || null,
+    });
+    if (separatedPlan.blocked) throw new Error(separatedPlan.blocked);
+  }
 
   const scheduleLock = resolveFinanceScheduleEditLock({
     financePlanChanged,
     hasAsaasCharges: balloonLocked,
     receipts: groupedRows,
   });
-  if (scheduleLock.blocked) {
+  if (scheduleLock.blocked && !separatedPlan) {
     throw new Error(scheduleLock.message || BALLOON_EDIT_LOCKED_MESSAGE);
   }
 
@@ -798,7 +821,7 @@ export async function updateSaleFromEdit(
     }
   }
 
-  const newPayloads = buildSaleEditFinancePayloads(
+  const newPayloads = preparedPayloads ?? buildSaleEditFinancePayloads(
     tenantId,
     saleId,
     customerId,
@@ -817,6 +840,29 @@ export async function updateSaleFromEdit(
 
   if (!rewriteReceipts) {
     console.log('EDIT_SALE_FINANCE_PRESERVED', { saleId, receipts: groupedRows.length });
+  } else if (separatedPlan) {
+    for (const update of separatedPlan.updates) {
+      const patch: Record<string, unknown> = {};
+      if (update.due_date) patch.due_date = update.due_date;
+      if (update.amount != null) {
+        patch.amount = update.amount;
+        patch.base_amount = update.amount;
+        patch.signal_addon_amount = 0;
+      }
+      const { error } = await supabase.from('finance_receipts').update(patch).eq('id', update.id);
+      if (error) throw new Error(`Erro ao atualizar parcela em aberto: ${error.message}`);
+      financeChanged = true;
+    }
+    if (separatedPlan.deleteIds.length > 0) {
+      const { error } = await supabase.from('finance_receipts').delete().in('id', separatedPlan.deleteIds);
+      if (error) throw new Error(`Erro ao remover parcela em aberto: ${error.message}`);
+      financeChanged = true;
+    }
+    if (separatedPlan.inserts.length > 0) {
+      const { error } = await supabase.from('finance_receipts').insert(separatedPlan.inserts);
+      if (error) throw new Error(`Erro ao incluir parcela do cronograma: ${error.message}`);
+      financeChanged = true;
+    }
   } else if (paid.length > 0) {
     const plan = planPartialFinanceRecalc(
       groupedRows,
@@ -910,6 +956,41 @@ export async function updateSaleFromEdit(
       inserted: fullPlan.toInsert.length,
     });
   }
+
+async function protectedFinanceReceiptIds(
+  supabase: SupabaseClient,
+  saleId: string,
+  receiptIds: string[],
+): Promise<Set<string>> {
+  const protectedIds = new Set<string>();
+  const open = (status: unknown) => {
+    const value = String(status || '').trim().toUpperCase();
+    return value !== 'CANCELLED' && value !== 'CANCELED' && value !== 'CANCELADO';
+  };
+  if (receiptIds.length > 0) {
+    const bank = await supabase
+      .from('bank_charges')
+      .select('finance_receipt_id, status')
+      .in('finance_receipt_id', receiptIds);
+    if (!bank.error) {
+      for (const row of bank.data || []) {
+        if (open(row.status) && row.finance_receipt_id) protectedIds.add(String(row.finance_receipt_id));
+      }
+    }
+  }
+  const asaas = await supabase
+    .from('company_asaas_charges')
+    .select('installment_id, status')
+    .eq('sale_id', saleId);
+  if (!asaas.error) {
+    for (const row of asaas.data || []) {
+      if (!open(row.status)) continue;
+      if (!row.installment_id) throw new Error(LEGACY_SIGNAL_SEPARATED_SAVE_MESSAGE);
+      protectedIds.add(String(row.installment_id));
+    }
+  }
+  return protectedIds;
+}
 
   if (!balloonLocked) {
     try {

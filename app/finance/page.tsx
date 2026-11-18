@@ -11,8 +11,10 @@ import {
   FinanceTableEmpty,
   FinanceTableLoading,
   PaymentTableRow,
+  resolvePaymentSaleId,
 } from '@/components/finance/FinancePremiumUI';
 import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
+import { LegacySignalCorrectionDialog } from '@/components/finance/LegacySignalCorrectionDialog';
 import { MarkPaidAuthModal } from '@/components/finance/MarkPaidAuthModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +22,7 @@ import {
   canViewEnterpriseValues,
   isBrokerRole,
   isOwnerRole,
+  isTenantEnterpriseAdminRole,
 } from '@/lib/rolePermissions';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
@@ -228,6 +231,7 @@ export default function FinancePage() {
   );
   const [loading, setLoading] = useState(true);
   const [manualPaymentReceiptId, setManualPaymentReceiptId] = useState<string | null>(null);
+  const [legacySignalPayment, setLegacySignalPayment] = useState<Record<string, unknown> | null>(null);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [financeProjects, setFinanceProjects] = useState<any[]>([]);
   const [enterpriseBlocks, setEnterpriseBlocks] = useState<
@@ -2854,6 +2858,11 @@ export default function FinancePage() {
                     onWhatsApp={() => handleWhatsApp(p)}
                     onCarne={() => handleGenerateCarne(p)}
                     onDelete={() => handleDeleteReceipt(p)}
+                    onCorrectLegacySignal={
+                      isTenantEnterpriseAdminRole(user?.role) && !ownerReadOnly
+                        ? () => setLegacySignalPayment(p)
+                        : undefined
+                    }
                     signalFutureCount={signalFutureCountBySale.get(String(p.sale_id || '')) ?? null}
                     readOnly={ownerReadOnly}
                     asaasEnabled={companyAsaasActive && bankingUiEnabled && asaasAccessAvailable}
@@ -3591,6 +3600,19 @@ export default function FinancePage() {
         </div>
       )}
 
+      {legacySignalPayment ? (
+        <LegacySignalCorrectionDialog
+          saleId={resolvePaymentSaleId(legacySignalPayment)}
+          lotLabel={`Quadra ${String((legacySignalPayment.blocks as { block_name?: string; name?: string } | undefined)?.block_name || (legacySignalPayment.blocks as { name?: string } | undefined)?.name || '—')} · Lote ${String((legacySignalPayment.blocks as { number?: string } | undefined)?.number || '—')}`}
+          projectName={String((legacySignalPayment.projects as { name?: string } | undefined)?.name || (legacySignalPayment.sales as { projects?: { name?: string } } | undefined)?.projects?.name || '—')}
+          registeredAmount={Number(legacySignalPayment.amount) || 0}
+          onClose={() => setLegacySignalPayment(null)}
+          onCompleted={() => {
+            setLegacySignalPayment(null);
+            void loadFinance();
+          }}
+        />
+      ) : null}
       <MarkPaidAuthModal
         receiptId={manualPaymentReceiptId}
         onClose={() => setManualPaymentReceiptId(null)}

@@ -170,7 +170,7 @@ assert(resolveFinanceScheduleEditLock({
 }).blocked === false, 'histórico do sinal não bloqueia a edição do lote');
 
 assert(legacySignalPlanConflicts(rows, { signalContractCents: 300000, paidAtSaleCents: 150000 }) === true, 'mudança do sinal é bloqueada');
-assert(LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE.includes('Regularizar sinal'), 'orientação para a rotina própria');
+assert(LEGACY_SIGNAL_EDIT_BLOCKED_MESSAGE.includes('Corrigir sinal antigo'), 'orientação para a rotina do Financeiro');
 assert(legacySignalPlanConflicts(rows, { signalContractCents: 350000, paidAtSaleCents: 150000 }) === false, 'o mesmo sinal pode ser salvo');
 
 const chargeRows = rows.map((row) => ({

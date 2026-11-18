@@ -11,7 +11,6 @@ import { SaleDocumentsPanel } from '@/components/sales/SaleDocumentsPanel';
 import { BuyerLegalEntityFields } from '@/components/customers/BuyerLegalEntityFields';
 import { SaleChargesPanel } from '@/components/sales/SaleChargesPanel';
 import { SaleCarneCoverPanel } from '@/components/sales/SaleCarneCoverPanel';
-import { LegacySignalRegularizationPanel } from '@/components/finance/LegacySignalRegularizationPanel';
 import {
   customerToFormValues,
   emptyCustomerFormValues,
@@ -154,6 +153,8 @@ export type LotFormState = CustomerFormValues &
   /** Recanto: qtd de parcelas para o restante (primeiras parcelas). */
   signal_remaining_installments?: string;
   signal_schedule_mode?: 'SEPARATE' | '';
+  /** Vencimentos das parcelas de sinal já separadas, por id do recebível. */
+  legacy_signal_due_dates?: Record<string, string>;
   signal_installment_count?: string;
   signal_first_due_date?: string;
   lot_schedule_start_mode?: string;
@@ -313,6 +314,41 @@ export function CustomerLotFormModal({
   onCustomerValidationFailed,
 }: Props) {
   const isEditMode = mode === 'edit';
+  const [legacySignalRows, setLegacySignalRows] = useState<Array<{
+    id: string;
+    installment_number: number | string | null;
+    amount: number | string | null;
+    due_date: string | null;
+    status: string | null;
+    paid_at: string | null;
+  }>>([]);
+  const [legacySignalDueDates, setLegacySignalDueDates] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!isEditMode || !saleId) {
+      setLegacySignalRows([]);
+      setLegacySignalDueDates({});
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('finance_receipts')
+      .select('id, installment_number, amount, due_date, status, paid_at')
+      .eq('sale_id', saleId)
+      .eq('schedule_group', 'SIGNAL')
+      .order('installment_number', { ascending: true })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rows = data || [];
+        setLegacySignalRows(rows);
+        setLegacySignalDueDates(Object.fromEntries(
+          rows.filter((row) => row.due_date).map((row) => [row.id, String(row.due_date).slice(0, 10)]),
+        ));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode, saleId]);
   const isWideDesktop = useIsWideDesktop();
   const isSaleWorkspaceDesktop =
     isWideDesktop && !isEditMode && actionName === 'Vendido';
@@ -1008,6 +1044,7 @@ export function CustomerLotFormModal({
       );
       await onConfirm({
         ...formData,
+        legacy_signal_due_dates: legacySignalDueDates,
         payment_type: paymentType,
         discount_value: serializeCurrencyBRL(formData.discount_value),
         down_payment: recantoDownPayment,
@@ -1341,12 +1378,6 @@ export function CustomerLotFormModal({
             />
           ) : (
           <>
-          {isEditMode && saleId ? (
-            <LegacySignalRegularizationPanel
-              saleId={saleId}
-              suggestedReceived={formData.signal_paid_at_sale || ''}
-            />
-          ) : null}
           <form id="customer-lot-form" onSubmit={handleSubmit} className={isSaleFormWorkspaceDesktop ? "sv-sale-workspace-grid" : isReservationWorkspaceDesktop ? "sv-reservation-workspace-grid" : "space-y-6"}>
             <div className={isWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"}>
             <div className={isWorkspaceDesktop ? "sv-sale-workspace-card" : "space-y-4"}>
@@ -2085,7 +2116,36 @@ export function CustomerLotFormModal({
                             <span>Parcelar sinal separadamente das parcelas do lote.</span>
                           </label>
                         ) : null}
-                        {separateSignalPreview.active ? (
+                        {legacySignalRows.length > 0 ? (
+                          <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                            <p className="font-semibold">Saldo do sinal em parcelas separadas do lote</p>
+                            <ul className="mt-2 space-y-2">
+                              {legacySignalRows.map((row) => {
+                                const paid = Boolean(row.paid_at) || ['pago', 'paid'].includes(String(row.status || '').toLowerCase());
+                                return (
+                                  <li key={row.id} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                                    <span>
+                                      Parcela {row.installment_number} · {formatCurrencyBRL(Number(row.amount) || 0)} · {paid ? 'paga' : 'em aberto'}
+                                    </span>
+                                    <input
+                                      type="date"
+                                      className={GIS_INPUT_DATE}
+                                      value={legacySignalDueDates[row.id] || ''}
+                                      disabled={paid || submitting || prefillLoading}
+                                      onChange={(event) => setLegacySignalDueDates((current) => ({
+                                        ...current,
+                                        [row.id]: event.target.value,
+                                      }))}
+                                    />
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            <p className="mt-1 text-[11px] text-slate-600">
+                              Salvar grava vencimentos e valores das parcelas em aberto sem cobrança. Parcelas pagas ou com cobrança bancária permanecem. O contrato só muda por regeneração separada.
+                            </p>
+                          </div>
+                        ) : separateSignalPreview.active ? (
                           <SeparateSignalSchedulePanel
                             preview={separateSignalPreview}
                             remainingValue={recantoSignalPlan?.remainingValue ?? 0}
@@ -2279,7 +2339,7 @@ export function CustomerLotFormModal({
                           ) : null}
                           <p>{recantoPreviewLines?.totalLine}</p>
                           <p>{recantoPreviewLines?.dueDatesLine}</p>
-                          {recantoInstallmentPreview && recantoSignalPlan?.hasRemaining && !separateSignalPreview.active ? (
+                          {recantoInstallmentPreview && recantoSignalPlan?.hasRemaining && !separateSignalPreview.active && legacySignalRows.length === 0 ? (
                             <>
                               <p className="pt-1 font-semibold text-amber-900">
                                 Com complemento do sinal
