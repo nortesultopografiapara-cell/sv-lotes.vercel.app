@@ -10,6 +10,14 @@ export { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '@/lib/banking/c6/c6EmitGuard';
 
 export type ChargesEmitProvider = 'ASAAS_COMPANY' | 'INTER';
 
+/** Classificação visual. C6 não entra no fallback de emissão. */
+export type ChargesAccountClassification = ChargesEmitProvider | 'C6';
+
+export const C6_CHARGES_DISPLAY_LABEL = 'C6 Bank';
+
+export const C6_CHARGES_PREPARATION_MESSAGE =
+  'Integração em preparação — emissão indisponível';
+
 export function normalizeChargesEmitProvider(
   provider: string | null | undefined,
 ): ChargesEmitProvider {
@@ -25,6 +33,13 @@ export function isC6ChargesAccount(provider: string | null | undefined): boolean
 
 export function assertChargesAccountMayEmit(provider: string | null | undefined): void {
   throwIfC6EmissionAttempt(provider);
+}
+
+export function classifyChargesAccountProvider(
+  provider: string | null | undefined,
+): ChargesAccountClassification {
+  if (isC6ProviderCode(provider)) return 'C6';
+  return normalizeChargesEmitProvider(provider);
 }
 
 export function resolveChargesEmitProviderForAccount(

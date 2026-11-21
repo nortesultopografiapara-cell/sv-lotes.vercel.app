@@ -42,11 +42,11 @@ import {
   type CompanyFinancialAccountResponse,
 } from '@/lib/finance/companyFinancialAccountTypes';
 import {
-  resolveChargesEmitProviderByAccountId,
+  classifyChargesAccountProvider,
   isConfirmedPersistedProviderCharge,
   isC6ChargesAccount,
   C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
-  type ChargesEmitProvider,
+  type ChargesAccountClassification,
 } from '@/lib/charges/chargeProviderRouting';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
@@ -228,19 +228,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   );
 
   const resolveRowProvider = useCallback(
-    (row: FinanceReceiptRow): ChargesEmitProvider => {
-      const faId = String(
-        row.financial_account_id ||
-          (row.sales as { financial_account_id?: string } | undefined)?.financial_account_id ||
-          '',
-      ).trim();
-      return resolveChargesEmitProviderByAccountId(faId, financialAccountsById);
-    },
-    [financialAccountsById],
+    (row: FinanceReceiptRow): ChargesAccountClassification =>
+      classifyChargesAccountProvider(rawAccountProviderForRow(row)),
+    [rawAccountProviderForRow],
   );
 
   const chargeForInstallment = useCallback(
-    (installmentId: string, provider: ChargesEmitProvider) => {
+    (installmentId: string, provider: ChargesAccountClassification) => {
+      if (provider === 'C6') return null;
       if (provider === 'INTER') {
         return interChargesByInstallment[installmentId] ?? null;
       }
@@ -2117,7 +2112,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                     </td>
                     <td>
                       <span className="text-xs text-[var(--text-secondary)]">
-                        {chargeStatusReady ? view.chargeStatusLabel : 'Não consultado'}
+                        {provider === 'C6' || chargeStatusReady
+                          ? view.chargeStatusLabel
+                          : 'Não consultado'}
                       </span>
                     </td>
                     <td>

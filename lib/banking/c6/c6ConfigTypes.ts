@@ -65,6 +65,31 @@ export const EMPTY_C6_BANK_CONFIG = (companyId: string): C6BankConfigPublic => (
   bolepixIntent: false,
 });
 
+/** Campos exibidos no painel. Segredos permanecem vazios mesmo quando já existem no servidor. */
+export function presentC6ConfigFields(config: C6BankConfigPublic): {
+  title: 'C6 Bank';
+  statusLabel: string;
+  emissionLabel: 'Emissão DESATIVADA';
+  clientId: string;
+  clientSecret: '';
+  certificatePem: '';
+  privateKeyPem: '';
+  secretPlaceholder: string;
+  sessionCompanyId: string;
+} {
+  return {
+    title: 'C6 Bank',
+    statusLabel: `Status ${config.status || 'DRAFT'}`,
+    emissionLabel: 'Emissão DESATIVADA',
+    clientId: String(config.clientId || ''),
+    clientSecret: '',
+    certificatePem: '',
+    privateKeyPem: '',
+    secretPlaceholder: config.hasClientSecret ? 'Deixe em branco para manter' : '',
+    sessionCompanyId: String(config.companyId || ''),
+  };
+}
+
 export function hasMinimumC6AuthConfig(
   config: C6BankConfigPublic | null | undefined,
 ): boolean {

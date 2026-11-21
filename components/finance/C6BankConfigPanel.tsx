@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { C6BankConfigPublic } from '@/lib/banking/c6/c6ConfigTypes';
+import {
+  presentC6ConfigFields,
+  type C6BankConfigPublic,
+} from '@/lib/banking/c6/c6ConfigTypes';
 import type { BankEnvironment } from '@/lib/banking/types';
 
 type LocalFile = { name: string; content: string };
@@ -37,11 +40,12 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar C6 Bank');
       const cfg = data.config as C6BankConfigPublic;
+      const fields = presentC6ConfigFields(cfg);
       setConfig(cfg);
       setPersistBlocked(Boolean(data.persistBlocked));
       setEnvironment(cfg.environment || 'SANDBOX');
-      setClientId(cfg.clientId || '');
-      setClientSecret('');
+      setClientId(fields.clientId);
+      setClientSecret(fields.clientSecret);
       setPassword('');
       setCertFile(null);
       setKeyFile(null);
@@ -113,7 +117,10 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   });
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 space-y-4">
+    <section
+      className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 space-y-4"
+      data-c6-company={config?.companyId || ''}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">C6 Bank</h3>
@@ -182,7 +189,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
               value={clientSecret}
               disabled={readOnlyDemo || persistBlocked}
               onChange={(event) => setClientSecret(event.target.value)}
-              placeholder={config?.hasClientSecret ? 'Deixe em branco para manter' : ''}
+              placeholder={config ? presentC6ConfigFields(config).secretPlaceholder : ''}
               className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
               autoComplete="new-password"
             />

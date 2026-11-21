@@ -1,4 +1,5 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import { C6_CHARGES_PREPARATION_MESSAGE } from '@/lib/charges/chargeProviderRouting';
 import { resolveAsaasStatusDisplayLabel } from '@/lib/charges/chargeOperationsHelpers';
 import { formatInterChargeStatusLabel } from '@/lib/banking/inter/interStatus';
 import { formatChargeParcelLabel } from '@/lib/finance/separateScheduleParcelLabel';
@@ -21,7 +22,7 @@ export type ChargeInstallmentView = {
   chargeStatusLabel: string;
   financialAccountId: string | null;
   financialAccountLabel: string;
-  chargeProvider: 'ASAAS_COMPANY' | 'INTER';
+  chargeProvider: 'ASAAS_COMPANY' | 'INTER' | 'C6';
 };
 
 export type ChargeKpiSummary = {
@@ -72,7 +73,7 @@ export function buildChargeInstallmentView(
     hasChargeHistory?: boolean;
     environmentMismatch?: boolean;
     legacySandbox?: boolean;
-    chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+    chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
     signalFutureCount?: number | null;
     saleHasSignalSchedule?: boolean;
   },
@@ -113,9 +114,16 @@ export function buildChargeInstallmentView(
       '',
   ).trim() || null;
 
-  const chargeProvider = options?.chargeProvider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+  const chargeProvider =
+    options?.chargeProvider === 'INTER'
+      ? 'INTER'
+      : options?.chargeProvider === 'C6'
+        ? 'C6'
+        : 'ASAAS_COMPANY';
   const asaasStatusLabel =
-    chargeProvider === 'INTER'
+    chargeProvider === 'C6'
+      ? C6_CHARGES_PREPARATION_MESSAGE
+      : chargeProvider === 'INTER'
       ? asaasCharge
         ? formatInterChargeStatusLabel({
             situacao: asaasCharge.asaasRemoteStatus,
