@@ -40,10 +40,12 @@ import {
   formatFinancialAccountLabel,
   type CompanyFinancialAccountResponse,
 } from '@/lib/finance/companyFinancialAccountTypes';
+import { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '@/lib/banking/c6/c6EmitGuard';
 import {
-  resolveChargesEmitProviderByAccountId,
+  classifyChargesAccountProvider,
+  isC6ChargesAccount,
   isConfirmedPersistedProviderCharge,
-  type ChargesEmitProvider,
+  type ChargesAccountClassification,
 } from '@/lib/charges/chargeProviderRouting';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
@@ -201,20 +203,29 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     return map;
   }, [financialAccounts]);
 
-  const resolveRowProvider = useCallback(
-    (row: FinanceReceiptRow): ChargesEmitProvider => {
+  const rawAccountProviderForRow = useCallback(
+    (row: FinanceReceiptRow | undefined): string | null => {
+      if (!row) return null;
       const faId = String(
         row.financial_account_id ||
           (row.sales as { financial_account_id?: string } | undefined)?.financial_account_id ||
           '',
       ).trim();
-      return resolveChargesEmitProviderByAccountId(faId, financialAccountsById);
+      if (!faId) return null;
+      return financialAccountsById[faId]?.provider ?? null;
     },
     [financialAccountsById],
   );
 
+  const resolveRowProvider = useCallback(
+    (row: FinanceReceiptRow): ChargesAccountClassification =>
+      classifyChargesAccountProvider(rawAccountProviderForRow(row)),
+    [rawAccountProviderForRow],
+  );
+
   const chargeForInstallment = useCallback(
-    (installmentId: string, provider: ChargesEmitProvider) => {
+    (installmentId: string, provider: ChargesAccountClassification) => {
+      if (provider === 'C6') return null;
       if (provider === 'INTER') {
         return interChargesByInstallment[installmentId] ?? null;
       }
@@ -934,6 +945,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Não é possível gerar cobrança para parcela paga.', true);
       return;
     }
+    if (isC6ChargesAccount(rawAccountProviderForRow(row))) {
+      showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+      return;
+    }
 
     const provider = resolveRowProvider(row);
     if (provider === 'ASAAS_COMPANY' && !integrationReady) {
@@ -1433,6 +1448,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       const row = payments.find((p) => String(p.id) === installmentId);
       if (!row) continue;
       const provider = resolveRowProvider(row);
+      if (provider === 'C6') {
+        skipCount += 1;
+        continue;
+      }
       const isInter = provider === 'INTER';
       if (!isInter && !integrationReady) {
         skipCount += 1;

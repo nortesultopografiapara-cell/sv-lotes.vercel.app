@@ -6,7 +6,7 @@ import {
   isInstallmentPaidForCharges,
 } from '@/lib/charges/chargeOperationsHelpers';
 import type { FinanceReceiptRow } from '@/lib/charges/chargeInstallmentHelpers';
-import type { ChargesEmitProvider } from '@/lib/charges/chargeProviderRouting';
+import type { ChargesAccountClassification } from '@/lib/charges/chargeProviderRouting';
 
 export type AsaasIntegrationLoadResult = {
   integration: AsaasIntegrationConfigResponse | null;
@@ -29,7 +29,9 @@ export function resolveAsaasSyncInstallmentIds(params: {
     { asaasPaymentId?: string | null; financialAccountId?: string | null } | null | undefined
   >;
   financialAccountFilter: string;
-  resolveProvider?: (row: { id: unknown; financial_account_id?: string | null }) => ChargesEmitProvider;
+  resolveProvider?: (
+    row: { id: unknown; financial_account_id?: string | null },
+  ) => ChargesAccountClassification;
 }): string[] {
   const filter = String(params.financialAccountFilter || 'Todas as contas').trim();
   const ids: string[] = [];
@@ -68,13 +70,14 @@ export function countSelectedGeneratableCharges(params: {
   companyAsaasEnabled: boolean;
   ownerReadOnly: boolean;
   installmentsDataReady?: boolean;
-  resolveProvider?: (row: FinanceReceiptRow) => ChargesEmitProvider;
+  resolveProvider?: (row: FinanceReceiptRow) => ChargesAccountClassification;
 }): number {
   let count = 0;
   for (const installmentId of params.selectedIds) {
     const row = params.payments.find((p) => String(p.id) === installmentId);
     if (!row) continue;
     const provider = params.resolveProvider?.(row) ?? 'ASAAS_COMPANY';
+    if (provider === 'C6') continue;
     const isInter = provider === 'INTER';
     if (
       canGenerateAsaasCharge({

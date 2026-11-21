@@ -1,0 +1,141 @@
+/**
+ * Tipos públicos da configuração C6 Bank — Fase 1.
+ * Sem URLs, OAuth, scopes ou webhook. Sem material sensível na resposta.
+ */
+
+import type { BankEnvironment, BankIntegrationStatus } from '@/lib/banking/types';
+
+export type C6BankConfigPublic = {
+  id: string | null;
+  companyId: string;
+  provider: 'C6';
+  environment: BankEnvironment;
+  status: BankIntegrationStatus;
+  /** Client ID pode ser reexibido (não é secret). */
+  clientId: string;
+  clientIdConfigured: boolean;
+  hasClientSecret: boolean;
+  hasCertificate: boolean;
+  hasPrivateKey: boolean;
+  certificateFileName: string | null;
+  privateKeyFileName: string | null;
+  configuredAt: string | null;
+  updatedAt: string | null;
+  message: string;
+  financialAccountId?: string | null;
+  active: boolean;
+  emissionEnabled: boolean;
+  boletoIntent: boolean;
+  bolepixIntent: boolean;
+};
+
+export type C6BankConfigSaveInput = {
+  environment: BankEnvironment;
+  clientId?: string;
+  clientSecret?: string;
+  certificatePem?: string;
+  certificateFileName?: string;
+  privateKeyPem?: string;
+  privateKeyFileName?: string;
+  financialAccountId?: string | null;
+  boletoIntent?: boolean;
+  bolepixIntent?: boolean;
+};
+
+export const EMPTY_C6_BANK_CONFIG = (companyId: string): C6BankConfigPublic => ({
+  id: null,
+  companyId,
+  provider: 'C6',
+  environment: 'SANDBOX',
+  status: 'DRAFT',
+  clientId: '',
+  clientIdConfigured: false,
+  hasClientSecret: false,
+  hasCertificate: false,
+  hasPrivateKey: false,
+  certificateFileName: null,
+  privateKeyFileName: null,
+  configuredAt: null,
+  updatedAt: null,
+  message: 'C6 Bank ainda não configurado.',
+  financialAccountId: null,
+  active: false,
+  emissionEnabled: false,
+  boletoIntent: false,
+  bolepixIntent: false,
+});
+
+/** Corpo do PUT. Conta financeira só entra quando há seleção explícita. */
+export function buildC6ConfigPutBody(input: {
+  environment: string;
+  clientId: string;
+  password: string;
+  boletoIntent: boolean;
+  bolepixIntent: boolean;
+  financialAccountId?: string;
+  clientSecret?: string;
+  certificatePem?: string;
+  certificateFileName?: string;
+  privateKeyPem?: string;
+  privateKeyFileName?: string;
+}): Record<string, string | boolean> {
+  const financialAccountId = String(input.financialAccountId || '').trim();
+  const clientSecret = String(input.clientSecret || '').trim();
+  const certificatePem = String(input.certificatePem || '').trim();
+  const privateKeyPem = String(input.privateKeyPem || '').trim();
+  const body: Record<string, string | boolean> = {
+    environment: input.environment,
+    clientId: input.clientId,
+    password: input.password,
+    boletoIntent: input.boletoIntent === true,
+    bolepixIntent: input.bolepixIntent === true,
+  };
+  if (financialAccountId) body.financialAccountId = financialAccountId;
+  if (clientSecret) body.clientSecret = clientSecret;
+  if (certificatePem && privateKeyPem) {
+    body.certificatePem = certificatePem;
+    body.certificateFileName = String(input.certificateFileName || '');
+    body.privateKeyPem = privateKeyPem;
+    body.privateKeyFileName = String(input.privateKeyFileName || '');
+  } else if (certificatePem || privateKeyPem) {
+    throw new Error('Envie certificado e chave privada juntos.');
+  }
+  return body;
+}
+
+/** Campos exibidos no painel. Segredos permanecem vazios mesmo quando já existem no servidor. */
+export function presentC6ConfigFields(config: C6BankConfigPublic): {
+  title: 'C6 Bank';
+  statusLabel: string;
+  emissionLabel: 'Emissão DESATIVADA';
+  clientId: string;
+  clientSecret: '';
+  certificatePem: '';
+  privateKeyPem: '';
+  secretPlaceholder: string;
+  sessionCompanyId: string;
+} {
+  return {
+    title: 'C6 Bank',
+    statusLabel: `Status ${config.status || 'DRAFT'}`,
+    emissionLabel: 'Emissão DESATIVADA',
+    clientId: String(config.clientId || ''),
+    clientSecret: '',
+    certificatePem: '',
+    privateKeyPem: '',
+    secretPlaceholder: config.hasClientSecret ? 'Deixe em branco para manter' : '',
+    sessionCompanyId: String(config.companyId || ''),
+  };
+}
+
+export function hasMinimumC6AuthConfig(
+  config: C6BankConfigPublic | null | undefined,
+): boolean {
+  if (!config) return false;
+  return (
+    Boolean(config.clientIdConfigured) &&
+    config.hasClientSecret &&
+    config.hasCertificate &&
+    config.hasPrivateKey
+  );
+}

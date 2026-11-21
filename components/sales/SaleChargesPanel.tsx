@@ -26,6 +26,11 @@ import {
 import { normalizeWhatsAppPhone, openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import { ChargeRevenueSplitDistribution, invalidateSaleRevenueSplitView } from '@/components/finance/ChargeRevenueSplitDistribution';
 import { AssistantSaleChargesUiBridge } from '@/components/assistant/AssistantSaleChargesUiBridge';
+import {
+  C6_CHARGES_ROUTE_BLOCKED_CODE,
+  C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
+} from '@/lib/banking/c6/c6EmitGuard';
+import { C6_CHARGES_PREPARATION_MESSAGE } from '@/lib/charges/chargeProviderRouting';
 
 type SaleChargesPanelProps = {
   saleId: string | null | undefined;
@@ -108,7 +113,14 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         `/api/finance/sale-charges/provider?saleId=${encodeURIComponent(saleId)}`,
         { credentials: 'include' },
       );
-      const providerData = await providerRes.json().catch(() => ({}));
+      const providerData = (await providerRes.json().catch(() => ({}))) as {
+        provider?: string;
+        error?: string;
+        code?: string;
+      };
+      if (providerData.code === C6_CHARGES_ROUTE_BLOCKED_CODE) {
+        throw new Error(C6_CHARGES_PREPARATION_MESSAGE);
+      }
       const provider =
         providerRes.ok && providerData.provider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
       setChargeProvider(provider);
@@ -126,7 +138,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         setEmailTo(String(data.summary.customerEmail));
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro ao carregar');
+      const message = e instanceof Error ? e.message : 'Erro ao carregar';
+      setError(
+        message === C6_EMIT_NOT_HOMOLOGATED_MESSAGE
+          ? C6_CHARGES_PREPARATION_MESSAGE
+          : message,
+      );
       setSummary(null);
     } finally {
       setLoading(false);

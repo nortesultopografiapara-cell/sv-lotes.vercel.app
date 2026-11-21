@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import { maskAsaasWalletId } from '@/lib/finance/asaasWalletId';
 import {
   isInterFinancialProvider,
@@ -486,6 +487,7 @@ export async function loadAsaasApiKeyForFinancialAccount(
   if (!account || !account.active) {
     throw new Error('Conta financeira não encontrada ou inativa.');
   }
+  throwIfC6EmissionAttempt(account.provider);
   if (!account.bankIntegrationId) {
     throw new Error('Conta financeira sem integração Asaas configurada.');
   }

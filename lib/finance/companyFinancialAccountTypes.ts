@@ -142,6 +142,7 @@ export function formatFinancialAccountProviderLabel(
   if (!p) return 'Sem provider';
   if (p === 'INTER') return 'Banco Inter';
   if (p === 'ASAAS_COMPANY' || p === 'ASAAS') return 'Asaas';
+  if (p === 'C6') return 'C6 Bank';
   return p;
 }
 

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
+import {
+  C6_CHARGES_ROUTE_BLOCKED_CODE,
+  C6EmissionNotHomologatedError,
+} from '@/lib/banking/c6/c6EmitGuard';
 import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 
 export const runtime = 'nodejs';
@@ -24,6 +28,12 @@ export async function GET(request: Request) {
       bankIntegrationId: resolved.bankIntegrationId,
     });
   } catch (err) {
+    if (err instanceof C6EmissionNotHomologatedError) {
+      return NextResponse.json(
+        { error: err.message, code: C6_CHARGES_ROUTE_BLOCKED_CODE },
+        { status: 409 },
+      );
+    }
     console.error(
       '[finance/sale-charges/provider]',
       err instanceof Error ? err.message : 'error',

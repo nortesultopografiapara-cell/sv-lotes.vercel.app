@@ -32,6 +32,7 @@ import {
   resolveInterIssuedChargeActions,
 } from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
+import { C6ChargesAccountMark } from '@/components/charges/C6ChargesAccountMark';
 
 const btnClass =
   'inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50';
@@ -49,7 +50,7 @@ export type ChargeInstallmentActionsProps = {
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
   /** Provider da conta financeira da parcela. */
-  chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+  chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
@@ -123,6 +124,9 @@ export function ChargeInstallmentActions({
   onDownloadPdf,
   onSendEmail,
 }: ChargeInstallmentActionsProps) {
+  if (chargeProvider === 'C6' || view.chargeProvider === 'C6') {
+    return <C6ChargesAccountMark />;
+  }
   const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
   const st = String(view.installmentStatus || '').toLowerCase();
