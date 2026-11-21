@@ -191,6 +191,10 @@ async function main() {
   assert(!panel.includes('emission_enabled: true'), 'a tela não liga a emissão');
   assert(!/DELETE\s+FROM/i.test(migration), 'a migration não apaga registros');
   assert(migration.includes('uq_bank_integrations_company_c6'), 'há proteção de uma integração C6 por empresa');
+  assert(!migration.includes('uq_bank_credentials_integration_type'), 'não cria índice único global de credenciais');
+  assert(migration.includes("ARRAY[''C6''::text,"), 'acrescenta C6 à lista que já existir');
+  assert(!migration.includes('SANTANDER'), 'não substitui a lista fechada de providers');
+  assert(migration.includes('Nenhum constraint foi alterado.'), 'formato desconhecido interrompe sem alterar o check');
 
   const previousKey = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
