@@ -1,6 +1,7 @@
 /**
- * Idempotência transacional C6 B_01.
- * Espelha supabase/migrations/20261026200000_c6_homolog_idempotency.sql
+ * Idempotência transacional C6.
+ * A máquina em memória é a referência dos testes locais.
+ * No Develop, a tabela e as quatro funções já existem e não são recriadas.
  * UNKNOWN nunca é retry seguro.
  */
 

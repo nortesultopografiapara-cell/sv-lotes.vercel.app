@@ -163,12 +163,20 @@ const c6RouteFiles = fs.existsSync(c6Routes)
       .map((name) => String(name).replace(/\\/g, '/'))
       .filter((name) => name.endsWith('.ts'))
   : [];
+const allowedRoutes = ['config/route.ts', 'homolog/h1/route.ts'];
 assert(
-  c6RouteFiles.length === 1 && c6RouteFiles[0] === 'config/route.ts',
-  'a única rota C6 é o cadastro',
+  c6RouteFiles.length === allowedRoutes.length &&
+    allowedRoutes.every((name) => c6RouteFiles.includes(name)),
+  'as rotas C6 são o cadastro e a homologação H1 desabilitada',
 );
 const c6Route = fs.readFileSync(path.join(c6Routes, 'config', 'route.ts'), 'utf8');
 assert(!/export async function POST/.test(c6Route), 'a rota C6 não emite nem testa conexão');
+const h1Route = fs.readFileSync(path.join(c6Routes, 'homolog', 'h1', 'route.ts'), 'utf8');
+assert(!h1Route.includes('requestC6AccessToken'), 'a homologação H1 não pede token ao banco');
+assert(!h1Route.includes('executeC6BankSlip'), 'a homologação H1 não emite boleto');
+assert(!h1Route.includes('rehearseC6H1IdempotencyInMemory'), 'a rota H1 não grava idempotência');
+assert(h1Route.includes('status: 403'), 'a rota H1 permanece em 403');
+assert(!h1Route.includes('.rpc('), 'a rota H1 não chama RPC');
 
 console.log('C6_PRODUCTION_FOUNDATION_OK');
 }
