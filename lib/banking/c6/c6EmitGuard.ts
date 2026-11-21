@@ -45,7 +45,12 @@ export function isC6BoletoSandboxLiveAuthorized(
   return false;
 }
 
-/** Production, ou o host de Production, não abre chamada nem cadastro C6 nesta fase. */
+/** Gravação de credencial C6. Nesta fase o host de Production recusa o cadastro. */
+export function isC6ConfigPersistBlocked(supabaseUrl?: string): boolean {
+  return isProductionSupabaseRuntime(supabaseUrl);
+}
+
+/** Chamada remota C6. Ambiente Production ou host de Production permanecem fechados. */
 export function isC6RemoteOperationBlocked(
   environment: string | null | undefined,
   supabaseUrl?: string,

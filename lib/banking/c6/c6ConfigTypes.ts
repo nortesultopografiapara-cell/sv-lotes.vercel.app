@@ -23,6 +23,10 @@ export type C6BankConfigPublic = {
   updatedAt: string | null;
   message: string;
   financialAccountId?: string | null;
+  active: boolean;
+  emissionEnabled: boolean;
+  boletoIntent: boolean;
+  bolepixIntent: boolean;
 };
 
 export type C6BankConfigSaveInput = {
@@ -34,6 +38,8 @@ export type C6BankConfigSaveInput = {
   privateKeyPem?: string;
   privateKeyFileName?: string;
   financialAccountId?: string | null;
+  boletoIntent?: boolean;
+  bolepixIntent?: boolean;
 };
 
 export const EMPTY_C6_BANK_CONFIG = (companyId: string): C6BankConfigPublic => ({
@@ -53,6 +59,10 @@ export const EMPTY_C6_BANK_CONFIG = (companyId: string): C6BankConfigPublic => (
   updatedAt: null,
   message: 'C6 Bank ainda não configurado.',
   financialAccountId: null,
+  active: false,
+  emissionEnabled: false,
+  boletoIntent: false,
+  bolepixIntent: false,
 });
 
 export function hasMinimumC6AuthConfig(

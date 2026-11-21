@@ -18,7 +18,7 @@ import {
   type C6BankConfigPublic,
   type C6BankConfigSaveInput,
 } from '@/lib/banking/c6/c6ConfigTypes';
-import { isC6RemoteOperationBlocked } from '@/lib/banking/c6/c6EmitGuard';
+import { isC6ConfigPersistBlocked, isC6RemoteOperationBlocked } from '@/lib/banking/c6/c6EmitGuard';
 import {
   parseC6CertificateCredential,
   serializeC6CertificateCredential,
@@ -37,6 +37,7 @@ type IntegrationRow = {
   configured_at: string | null;
   updated_at: string | null;
   active: boolean;
+  metadata: unknown;
 };
 
 type C6ConfigLookup = {
@@ -46,6 +47,38 @@ type C6ConfigLookup = {
 
 function clean(value: unknown): string {
   return String(value ?? '').trim();
+}
+
+function readIntent(metadata: unknown, key: 'boleto' | 'bolepix'): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const box = (metadata as { c6?: unknown }).c6;
+  if (!box || typeof box !== 'object' || Array.isArray(box)) return false;
+  return (box as Record<string, unknown>)[key] === true;
+}
+
+function c6StoredMetadata(
+  existing: unknown,
+  intents: { boleto: boolean; bolepix: boolean },
+): Record<string, unknown> {
+  const base =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+  const previous =
+    base.c6 && typeof base.c6 === 'object' && !Array.isArray(base.c6)
+      ? { ...(base.c6 as Record<string, unknown>) }
+      : {};
+  return {
+    ...base,
+    c6: {
+      ...previous,
+      boleto: intents.boleto,
+      bolepix: intents.bolepix,
+      emission_enabled: false,
+      webhook_enabled: false,
+      settlement_enabled: false,
+    },
+  };
 }
 
 async function loadCredentialMap(
@@ -61,6 +94,20 @@ async function loadCredentialMap(
   for (const row of data || []) {
     map.set(String(row.credential_type), String(row.encrypted_payload || ''));
   }
+  return map;
+}
+
+async function loadCredentialTypes(
+  admin: SupabaseClient,
+  integrationId: string,
+): Promise<Map<string, string>> {
+  const { data, error } = await admin
+    .from('bank_credentials')
+    .select('credential_type')
+    .eq('integration_id', integrationId);
+  if (error) throw new Error(error.message);
+  const map = new Map<string, string>();
+  for (const row of data || []) map.set(String(row.credential_type), 'present');
   return map;
 }
 
@@ -84,7 +131,8 @@ async function upsertCredential(
     const { error } = await admin
       .from('bank_credentials')
       .update({ encrypted_payload, updated_at: now })
-      .eq('id', existing.id);
+      .eq('id', existing.id)
+      .eq('company_id', companyId);
     if (error) throw new Error(error.message);
     return;
   }
@@ -129,9 +177,13 @@ function buildPublicResponse(
     configuredAt: row.configured_at,
     updatedAt: row.updated_at,
     message: configured
-      ? 'Configuração salva. Emissão C6 ainda não homologada.'
+      ? 'Configuração salva. Emissão, webhook e liquidação permanecem desativados.'
       : 'Configuração incompleta. Preencha Client ID, Secret, certificado e chave.',
     financialAccountId,
+    active: false,
+    emissionEnabled: false,
+    boletoIntent: readIntent(row.metadata, 'boleto'),
+    bolepixIntent: readIntent(row.metadata, 'bolepix'),
   };
 }
 
@@ -188,7 +240,7 @@ export async function getCompanyC6BankConfig(
   const { data, error } = await admin
     .from('bank_integrations')
     .select(
-      'id, company_id, environment, status, client_id, certificate_name, configured_at, updated_at, active',
+      'id, company_id, environment, status, client_id, certificate_name, configured_at, updated_at, active, metadata',
     )
     .eq('id', resolved.integrationId)
     .eq('company_id', companyId)
@@ -197,7 +249,7 @@ export async function getCompanyC6BankConfig(
   if (error) throw new Error(error.message);
   if (!data?.id) return EMPTY_C6_BANK_CONFIG(companyId);
 
-  const map = await loadCredentialMap(admin, String(data.id));
+  const map = await loadCredentialTypes(admin, String(data.id));
   const nameParts = String(data.certificate_name || '').split('||');
   const certMeta = {
     certificateFileName: nameParts[0]?.trim() || null,
@@ -219,8 +271,9 @@ export async function saveCompanyC6BankConfig(
   companyId: string,
   input: C6BankConfigSaveInput,
   lookup?: C6ConfigLookup,
+  options?: { supabaseUrl?: string },
 ): Promise<C6BankConfigPublic> {
-  if (isC6RemoteOperationBlocked(input.environment)) {
+  if (isC6ConfigPersistBlocked(options?.supabaseUrl)) {
     throw new Error('Cadastro C6 permanece bloqueado em Production.');
   }
   if (!isBankingCredentialsEncryptionConfigured()) {
@@ -289,7 +342,11 @@ export async function saveCompanyC6BankConfig(
         client_id: clientId,
         certificate_name: certName,
         is_default: false,
-        active: true,
+        active: false,
+        metadata: c6StoredMetadata(null, {
+          boleto: input.boletoIntent === true,
+          bolepix: input.bolepixIntent === true,
+        }),
         configured_at: now,
         updated_at: now,
       })
@@ -303,8 +360,14 @@ export async function saveCompanyC6BankConfig(
       .from('bank_integrations')
       .update({
         environment,
+        status: 'DRAFT',
+        active: false,
         client_id: clientId || existing.clientId,
         certificate_name: certName,
+        metadata: c6StoredMetadata(null, {
+          boleto: input.boletoIntent === true,
+          bolepix: input.bolepixIntent === true,
+        }),
         updated_at: now,
         configured_at: existing.configuredAt || now,
       })

@@ -156,7 +156,19 @@ const asaas = fs.readFileSync(path.join(root, 'lib', 'finance', 'asaasCompanyCli
 const inter = fs.readFileSync(path.join(root, 'lib', 'banking', 'inter', 'interCobrancaClient.ts'), 'utf8');
 assert(asaas.includes('assertHomologOutboundAllowed') && !asaas.includes('lib/banking/c6'), 'Asaas permanece no fluxo atual');
 assert(inter.includes('assertHomologOutboundAllowed') && !inter.includes('lib/banking/c6'), 'Inter permanece no fluxo atual');
-assert(!fs.existsSync(path.join(root, 'app', 'api', 'banking', 'c6')), 'nenhuma rota C6 foi publicada nesta fase');
+const c6Routes = path.join(root, 'app', 'api', 'banking', 'c6');
+const c6RouteFiles = fs.existsSync(c6Routes)
+  ? fs
+      .readdirSync(c6Routes, { recursive: true })
+      .map((name) => String(name).replace(/\\/g, '/'))
+      .filter((name) => name.endsWith('.ts'))
+  : [];
+assert(
+  c6RouteFiles.length === 1 && c6RouteFiles[0] === 'config/route.ts',
+  'a única rota C6 é o cadastro',
+);
+const c6Route = fs.readFileSync(path.join(c6Routes, 'config', 'route.ts'), 'utf8');
+assert(!/export async function POST/.test(c6Route), 'a rota C6 não emite nem testa conexão');
 
 console.log('C6_PRODUCTION_FOUNDATION_OK');
 }
