@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { assertSuperAdmin } from '@/lib/apiSuperAdmin';
 import { authorizeCompanyAdminRequest, type CompanyAdminAuthDeps } from '@/lib/companyAdminApiAuth';
+import { isCompanyDeletionProtected } from '@/lib/companyDeletionGuard';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 
 const defaultDeps: CompanyAdminAuthDeps = {
@@ -25,14 +26,14 @@ export async function POST(request: Request) {
   return executeCompanyCleanup(request);
 }
 
-async function executeCompanyCleanup(req: Request) {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+export async function executeCompanyCleanup(req: Request, supabaseAdmin?: SupabaseClient) {
+  if (!supabaseAdmin && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: 'Supabase Role Key missing' }, { status: 500 });
   }
 
-  const supabaseAdmin = createClient(
+  const admin = supabaseAdmin ?? createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY as string,
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
 
@@ -41,13 +42,13 @@ async function executeCompanyCleanup(req: Request) {
     let page = 1;
 
     while (true) {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
       if (error || !data.users || data.users.length === 0) break;
       authUsersList.push(...data.users);
       page++;
     }
 
-    const { data: companies } = await supabaseAdmin
+    const { data: companies } = await admin
       .from('companies')
       .select('id, name, is_test, is_test_company');
     const companyIds = new Set(companies?.map((c) => c.id) || []);
@@ -55,15 +56,16 @@ async function executeCompanyCleanup(req: Request) {
     let testCompaniesRemoved = 0;
     if (companies) {
       for (const comp of companies) {
-        if (!isMarkedTestCompany(comp)) continue;
+        if (!isMarkedTestCompany(comp) || isCompanyDeletionProtected(comp.id)) continue;
         console.log(`[CLEANUP] Removendo empresa marcada como teste: ${comp.name || comp.id}`);
-        await supabaseAdmin.from('companies').delete().eq('id', comp.id);
+        if (isCompanyDeletionProtected(comp.id)) continue;
+        await admin.from('companies').delete().eq('id', comp.id);
         companyIds.delete(comp.id);
         testCompaniesRemoved++;
       }
     }
 
-    const { data: publicUsers } = await supabaseAdmin.from('users').select('id, email, tenant_id');
+    const { data: publicUsers } = await admin.from('users').select('id, email, tenant_id');
 
     const cleanedStats = {
       orphanedAuthUsers: 0,
@@ -79,12 +81,12 @@ async function executeCompanyCleanup(req: Request) {
 
       if (!pu.tenant_id || !companyIds.has(pu.tenant_id)) {
         console.log(`[CLEANUP] Removendo registro público órfão: ${pu.email}`);
-        await supabaseAdmin.from('users').delete().eq('id', pu.id);
+        await admin.from('users').delete().eq('id', pu.id);
         cleanedStats.invalidPublicUsers++;
       }
     }
 
-    const { data: refreshedPublicUsers } = await supabaseAdmin.from('users').select('id');
+    const { data: refreshedPublicUsers } = await admin.from('users').select('id');
     const validPublicUserIds = new Set(refreshedPublicUsers?.map((u) => u.id) || []);
 
     for (const au of authUsersList) {
@@ -94,20 +96,21 @@ async function executeCompanyCleanup(req: Request) {
 
       if (!validPublicUserIds.has(au.id)) {
         console.log(`[CLEANUP] Removendo usuário órfão do Auth: ${au.email}`);
-        await supabaseAdmin.auth.admin.deleteUser(au.id);
+        await admin.auth.admin.deleteUser(au.id);
         cleanedStats.orphanedAuthUsers++;
       }
     }
 
-    const { data: usersWithTenants } = await supabaseAdmin.from('users').select('tenant_id');
+    const { data: usersWithTenants } = await admin.from('users').select('tenant_id');
     const usedTenantIds = new Set(usersWithTenants?.map((u) => u.tenant_id).filter(Boolean));
 
     if (companies) {
       for (const comp of companies) {
-        if (!companyIds.has(comp.id)) continue;
+        if (!companyIds.has(comp.id) || isCompanyDeletionProtected(comp.id)) continue;
         if (!usedTenantIds.has(comp.id)) {
+          if (isCompanyDeletionProtected(comp.id)) continue;
           console.log(`[CLEANUP] Removendo empresa vazia: ${comp.id}`);
-          await supabaseAdmin.from('companies').delete().eq('id', comp.id);
+          await admin.from('companies').delete().eq('id', comp.id);
           cleanedStats.emptyCompanies++;
         }
       }
