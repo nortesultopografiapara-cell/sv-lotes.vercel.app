@@ -3,7 +3,10 @@
  * Fonte de verdade: provider da bank_integrations vinculada à conta.
  */
 
+import { isC6ProviderCode, throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import type { CompanyFinancialAccountResponse } from '@/lib/finance/companyFinancialAccountTypes';
+
+export { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '@/lib/banking/c6/c6EmitGuard';
 
 export type ChargesEmitProvider = 'ASAAS_COMPANY' | 'INTER';
 
@@ -13,6 +16,15 @@ export function normalizeChargesEmitProvider(
   const p = String(provider || '').trim().toUpperCase();
   if (p === 'INTER') return 'INTER';
   return 'ASAAS_COMPANY';
+}
+
+/** Provider bruto da conta, antes do fallback Asaas. C6 recusa a emissão. */
+export function isC6ChargesAccount(provider: string | null | undefined): boolean {
+  return isC6ProviderCode(provider);
+}
+
+export function assertChargesAccountMayEmit(provider: string | null | undefined): void {
+  throwIfC6EmissionAttempt(provider);
 }
 
 export function resolveChargesEmitProviderForAccount(

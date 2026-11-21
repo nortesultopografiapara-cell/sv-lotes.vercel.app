@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveChargePayer } from '@/lib/buyerLegalEntity';
 import type { BankEnvironment } from '@/lib/banking/types';
 import {
@@ -179,6 +180,7 @@ async function resolveCompanyAsaasCredentials(
   if (provider === 'INTER') {
     throw new CompanyAsaasWrongProviderError();
   }
+  throwIfC6EmissionAttempt(provider);
 
   if (!account.bankIntegrationId) {
     throw new CompanyAsaasIntegrationInactiveError(

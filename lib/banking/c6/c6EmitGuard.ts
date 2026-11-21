@@ -9,6 +9,9 @@ import { isProductionSupabaseRuntime } from '@/lib/homolog/env';
 export const C6_EMIT_NOT_HOMOLOGATED_MESSAGE =
   'Integração C6 Bank ainda não homologada para emissão.';
 
+/** Resposta da rota de provider quando a venda está ligada ao C6. */
+export const C6_CHARGES_ROUTE_BLOCKED_CODE = 'C6_NOT_HOMOLOGATED';
+
 /** Flag futuro, Sandbox-only. Exige valor exatamente "true". Não habilita Production. */
 export const C6_BOLETO_SANDBOX_LIVE_ENV_KEY = 'C6_BOLETO_SANDBOX_LIVE_ENABLED';
 

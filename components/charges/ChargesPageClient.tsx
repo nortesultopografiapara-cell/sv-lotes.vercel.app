@@ -44,6 +44,8 @@ import {
 import {
   resolveChargesEmitProviderByAccountId,
   isConfirmedPersistedProviderCharge,
+  isC6ChargesAccount,
+  C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
   type ChargesEmitProvider,
 } from '@/lib/charges/chargeProviderRouting';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
@@ -210,6 +212,20 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
     return map;
   }, [financialAccounts]);
+
+  const rawAccountProviderForRow = useCallback(
+    (row: FinanceReceiptRow | undefined): string | null => {
+      if (!row) return null;
+      const faId = String(
+        row.financial_account_id ||
+          (row.sales as { financial_account_id?: string } | undefined)?.financial_account_id ||
+          '',
+      ).trim();
+      if (!faId) return null;
+      return financialAccountsById[faId]?.provider ?? null;
+    },
+    [financialAccountsById],
+  );
 
   const resolveRowProvider = useCallback(
     (row: FinanceReceiptRow): ChargesEmitProvider => {
@@ -973,6 +989,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Não é possível gerar cobrança para parcela paga.', true);
       return;
     }
+    if (isC6ChargesAccount(rawAccountProviderForRow(row))) {
+      showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+      return;
+    }
 
     const provider = resolveRowProvider(row);
     if (
@@ -1164,6 +1184,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const handleRefreshAsaas = async (installmentId: string) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     const row = payments.find((p) => String(p.id) === installmentId);
+    if (isC6ChargesAccount(rawAccountProviderForRow(row))) {
+      showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+      return;
+    }
     const provider = row ? resolveRowProvider(row) : 'ASAAS_COMPANY';
     if (provider === 'INTER') {
       await handleRefreshInter(installmentId);
@@ -1203,6 +1227,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const handleCancelAsaas = async (installmentId: string) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
+    const cancelRow = payments.find((p) => String(p.id) === installmentId);
+    if (isC6ChargesAccount(rawAccountProviderForRow(cancelRow))) {
+      showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+      return;
+    }
     const current = asaasChargesByInstallment[installmentId];
     if (!current) return;
     if (current.status === 'PAID') {
@@ -1233,6 +1262,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     billingType: 'PIX' | 'BOLETO',
   ) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
+    const regenerateRow = payments.find((p) => String(p.id) === installmentId);
+    if (isC6ChargesAccount(rawAccountProviderForRow(regenerateRow))) {
+      showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+      return;
+    }
     if (!window.confirm('Regenerar cobrança Asaas para esta parcela?')) return;
 
     setAsaasActionInstallmentId(installmentId);
@@ -1485,6 +1519,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     for (const installmentId of ids) {
       const row = payments.find((p) => String(p.id) === installmentId);
       if (!row) continue;
+      if (isC6ChargesAccount(rawAccountProviderForRow(row))) {
+        errCount += 1;
+        if (errCount === 1) showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+        continue;
+      }
       const provider = resolveRowProvider(row);
       const isInter = provider === 'INTER';
       if (!isInter && !integrationReady) {
@@ -1538,7 +1577,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
     const asaasIds = ids.filter((id) => {
       const row = payments.find((p) => String(p.id) === id);
-      if (!row) return false;
+      if (!row || isC6ChargesAccount(rawAccountProviderForRow(row))) return false;
       return resolveRowProvider(row) === 'ASAAS_COMPANY' && Boolean(asaasChargesByInstallment[id]);
     });
     const interIds = ids.filter((id) => {
@@ -1575,6 +1614,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       chargesByInstallment: asaasChargesByInstallment,
       financialAccountFilter,
       resolveProvider: (row) => resolveRowProvider(row as FinanceReceiptRow),
+    }).filter((id) => {
+      const row = filteredRows.find((item) => String(item.id) === id);
+      return !isC6ChargesAccount(rawAccountProviderForRow(row as FinanceReceiptRow | undefined));
     });
     const interIds = filteredRows
       .filter((row) => resolveRowProvider(row) === 'INTER')

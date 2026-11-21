@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import {
   isMissingScheduleGroupColumn,
   mergeScheduleGroups,
@@ -229,6 +230,7 @@ export async function getSaleChargesSummary(
   let financialAccountName: string | null = null;
   let financialAccountBlockReason: string | null = null;
   let resolvedAccountId: string | null = context.financialAccountId;
+  let resolvedProvider: string | null = null;
 
   const resolvedSale = await resolveFinancialAccountForSaleOptional(admin, companyId, {
     financialAccountId: context.financialAccountId,
@@ -238,6 +240,7 @@ export async function getSaleChargesSummary(
     hasFinancialAccount = true;
     financialAccountName = resolvedSale.account.name || null;
     resolvedAccountId = resolvedSale.account.id || resolvedAccountId;
+    resolvedProvider = resolvedSale.account.provider || null;
   }
 
   if (!hasFinancialAccount && installments.length > 0) {
@@ -252,6 +255,7 @@ export async function getSaleChargesSummary(
       hasFinancialAccount = true;
       financialAccountName = resolved.account.name || null;
       resolvedAccountId = resolved.account.id || resolvedAccountId;
+      resolvedProvider = resolved.account.provider || resolvedProvider;
     } catch (err) {
       financialAccountBlockReason =
         err instanceof Error
@@ -264,6 +268,8 @@ export async function getSaleChargesSummary(
     financialAccountBlockReason =
       'Esta venda não possui conta financeira configurada. Defina a conta recebedora na aba Dados (ou conta padrão da empresa) antes de gerar cobranças.';
   }
+
+  throwIfC6EmissionAttempt(resolvedProvider);
 
   const beneficiary = resolvedAccountId
     ? await resolveSaleCarneBeneficiary(admin, companyId, resolvedAccountId)

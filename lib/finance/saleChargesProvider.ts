@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
 import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 
@@ -54,6 +55,7 @@ export async function resolveSaleChargesProvider(
 
   const account = resolved?.account || null;
   if (!account?.bankIntegrationId) {
+    throwIfC6EmissionAttempt(account?.provider);
     return {
       provider: 'ASAAS_COMPANY',
       financialAccountId: account?.id || null,
@@ -73,6 +75,8 @@ export async function resolveSaleChargesProvider(
   if (error) throw new Error(error.message);
 
   const providerRaw = String(data?.provider || '').toUpperCase();
+  throwIfC6EmissionAttempt(providerRaw);
+  throwIfC6EmissionAttempt(account.provider);
   const labeled = formatFinancialAccountLabel({
     ...account,
     provider: providerRaw || account.provider || null,
