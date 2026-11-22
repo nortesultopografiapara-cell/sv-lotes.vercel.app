@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 
 const CHARGE_COLUMNS =
-  'id, company_id, customer_id, sale_id, finance_receipt_id, financial_account_id, external_id, amount, due_date, status, barcode, digitable_line, paid_at, created_at, updated_at';
+  'id, company_id, customer_id, sale_id, finance_receipt_id, financial_account_id, external_id, amount, due_date, status, barcode, digitable_line, our_number, paid_at, created_at, updated_at';
 
 export function c6BankChargeToResponse(
   row: Record<string, unknown>,
@@ -37,6 +37,7 @@ export function c6BankChargeToResponse(
     bankSlipIdentification: row.digitable_line ? String(row.digitable_line) : null,
     pixQrCode: null,
     pixCopyPaste: null,
+    nossoNumero: row.our_number ? String(row.our_number) : null,
     financialAccountId: row.financial_account_id ? String(row.financial_account_id) : null,
     paymentLink: null,
     paidAt: row.paid_at ? String(row.paid_at) : null,

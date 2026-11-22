@@ -13,6 +13,7 @@ import {
 } from '../lib/banking/c6/c6InstallmentCharge';
 import { probeC6Connection, runC6ConnectionTest } from '../lib/banking/c6/c6ConnectionTest';
 import { buildC6CarnePdfBytes } from '../lib/banking/c6/c6CarnePdf';
+import { c6BankChargeToResponse } from '../lib/banking/c6/c6ChargeList';
 import { resolveC6ChargeActions } from '../lib/charges/c6ChargeActions';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import { applyC6SettlementTransaction } from '../lib/banking/c6/c6SettlementTransaction';
@@ -274,6 +275,7 @@ function boletoFetch(
         due_date: '2026-12-20',
         digitable_line: LINE,
         bar_code: '33690000000000000000000000000000000000000000',
+        our_number: '998877',
         pix_qr: 'nao-documentado',
       }),
     };
@@ -301,6 +303,8 @@ async function main() {
   });
   assert(first.emitted && first.bankSlipId === 'slip-1', 'boleto individual simulado registra o id');
   assert(first.pixCopyPaste === null && first.bolepixSpecInRepo === false, 'Pix não é inventado');
+  assert(emitted.tables.bank_charges[0].our_number === '998877', 'nosso número oficial é gravado quando o C6 envia');
+  assert(emitted.tables.bank_charges[0].pix_copy_paste == null, 'campo Pix do retorno não vira Pix copia e cola');
   assert(!emittedCalls.body.includes('pix') && !emittedCalls.body.includes('chave'), 'o POST oficial não leva Pix');
   const sent = JSON.parse(emittedCalls.body) as {
     amount: number;
@@ -579,6 +583,10 @@ async function main() {
   });
   assert(pending.showGenerate && !pending.showDownload, 'parcela sem boleto oferece gerar');
   assert(registered.showDownload && registered.showView && !registered.showGenerate, 'boleto registrado não gera outro');
+  assert(
+    Boolean(registered.notice && registered.notice.includes('não informa')),
+    'emissão confirmada não afirma que a rede bancária já aceita o boleto',
+  );
   assert(paidActions.showPaid && !paidActions.showGenerate, 'parcela paga não gera outro boleto');
   assert(!uncertain.showGenerate && Boolean(uncertain.notice), 'resultado incerto bloqueia nova emissão');
 
@@ -648,6 +656,41 @@ async function main() {
     },
   });
   assert(carne.included === 1, 'carnê C6 usa a linha oficial da parcela');
+  let lineWithoutIdRejected = false;
+  try {
+    await buildC6CarnePdfBytes({
+      items: [{
+        charge: {
+          asaasPaymentId: '',
+          bankSlipIdentification: LINE,
+        } as CompanyAsaasChargeResponse,
+        parcelLabel: 'Entrada',
+        totalParcels: 1,
+      }],
+      totalParcels: 1,
+      summary: {} as never,
+    });
+  } catch (error) {
+    lineWithoutIdRejected = error instanceof Error && error.message.includes('oficiais');
+  }
+  assert(lineWithoutIdRejected, 'linha sem identificador oficial não vira carnê');
+  const mapped = c6BankChargeToResponse(
+    {
+      id: 'charge-1',
+      external_id: 'slip-1',
+      finance_receipt_id: INSTALLMENT,
+      amount: 10,
+      due_date: '2026-11-22',
+      status: 'REGISTERED',
+      our_number: '998877',
+      digitable_line: LINE,
+    },
+    COMPANY_A,
+  );
+  assert(
+    mapped.nossoNumero === '998877' && mapped.pixCopyPaste == null && mapped.pixQrCode == null,
+    'o retorno C6 preenche nosso número e não fabrica Pix',
+  );
 
   let bankCalls = 0;
   const production = await probeC6Connection(

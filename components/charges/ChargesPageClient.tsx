@@ -137,6 +137,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [loading, setLoading] = useState(true);
   const [totalsReady, setTotalsReady] = useState(false);
   const [chargeStatusReady, setChargeStatusReady] = useState(false);
+  const [c6ChargesLoaded, setC6ChargesLoaded] = useState(false);
   const [payments, setPayments] = useState<FinanceReceiptRow[]>([]);
   const chargeLoadAbortRef = useRef<AbortController | null>(null);
   const [projectsList, setProjectsList] = useState<string[]>([]);
@@ -395,7 +396,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ installmentIds: chunk }),
         });
-        if (!chargesRes.ok) return c6ChargesByInstallmentRef.current;
+        if (!chargesRes.ok) return null;
         const chargesJson = await chargesRes.json().catch(() => ({}));
         const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
         map = mergeFetchedChargesIntoMap(map, chunk, charges);
@@ -404,7 +405,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       return map;
     } catch (err) {
       console.error('CHARGES_C6_LOAD', err);
-      return c6ChargesByInstallmentRef.current;
+      return null;
     }
   }, []);
 
@@ -529,7 +530,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
     setLoading(true);
     setTotalsReady(false);
-    if (options?.resetChargeStatus) setChargeStatusReady(false);
+    if (options?.resetChargeStatus) {
+      setChargeStatusReady(false);
+      setC6ChargesLoaded(false);
+    }
     setLoadError(null);
     const loadStartedAt = Date.now();
     try {
@@ -626,6 +630,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       });
 
       const installmentIds = scoped.map((row) => String(row.id));
+      const c6Ready = installmentIds.length === 0 ? {} : await loadC6ChargeMap(installmentIds);
+      if (!owned.signal.aborted) setC6ChargesLoaded(Boolean(c6Ready));
       const shouldSyncAsaas =
         Boolean(options?.syncAsaasStatuses) &&
         !ownerReadOnly &&
@@ -639,7 +645,6 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         ownerCtx,
       });
       await loadInterChargeMap(installmentIds);
-      await loadC6ChargeMap(installmentIds);
       if (owned.signal.aborted) return;
       setChargeStatusReady(true);
 
@@ -1059,11 +1064,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             delete next[installmentId];
             return next;
           });
-          await loadC6ChargeMap([installmentId]);
+          const reloaded = await loadC6ChargeMap([installmentId]);
+          if (reloaded) setC6ChargesLoaded(true);
           showToast(
             json.reused
               ? 'Boleto C6 já vinculado a esta parcela.'
-              : 'Boleto C6 registrado para a parcela.',
+              : 'Boleto C6 emitido para a parcela.',
           );
           return;
         }
@@ -1546,7 +1552,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       installmentId,
       customerPhone: resolveChargeCustomerPhone(row),
       charge,
-      preferInterMessage: view.chargeProvider === 'INTER',
+      preferInterMessage: view.chargeProvider === 'INTER' || view.chargeProvider === 'C6',
       messageInput: {
         clientName: view.clientName,
         parcelLabel: view.parcelLabel,
@@ -2191,7 +2197,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                     </td>
                     <td>
                       <span className="text-xs text-[var(--text-secondary)]">
-                        {chargeStatusReady ? view.chargeStatusLabel : 'Não consultado'}
+                        {provider === 'C6'
+                          ? c6ChargesLoaded
+                            ? view.chargeStatusLabel
+                            : 'Não consultado'
+                          : chargeStatusReady
+                            ? view.chargeStatusLabel
+                            : 'Não consultado'}
                       </span>
                     </td>
                     <td>
@@ -2207,6 +2219,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         busy={rowBusy}
                         installmentsDataReady={installmentsDataReady}
                         bankStatusConsulted={chargeStatusReady}
+                        c6ChargesLoaded={c6ChargesLoaded}
                         customerPhone={customerPhone}
                         customerEmail={customerEmail}
                         whatsappShareUrl={whatsappShareUrl}

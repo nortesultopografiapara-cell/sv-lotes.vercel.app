@@ -376,6 +376,7 @@ export async function emitC6InstallmentBoleto(
 
   const digitableLine = slipField(result.evidence, 'digitable_line');
   const barCode = slipField(result.evidence, 'bar_code');
+  const ourNumber = slipField(result.evidence, 'our_number');
   const { error: insertError } = await admin.from('bank_charges').insert({
     company_id: companyId,
     integration_id: integration.id,
@@ -392,6 +393,7 @@ export async function emitC6InstallmentBoleto(
     status: 'REGISTERED',
     barcode: barCode,
     digitable_line: digitableLine,
+    our_number: ourNumber,
     pix_copy_paste: null,
     idempotency_key: `C6:${companyId}:${installmentId}`,
     metadata: {
@@ -415,7 +417,7 @@ export async function emitC6InstallmentBoleto(
     dueDate,
     installmentId,
     companyId,
-    message: 'Boleto C6 registrado para a parcela.',
+    message: 'Boleto C6 emitido para a parcela.',
   };
 }
 

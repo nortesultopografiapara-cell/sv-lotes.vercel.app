@@ -59,6 +59,8 @@ export type ChargeInstallmentActionsProps = {
   installmentsDataReady?: boolean;
   /** Falso enquanto Asaas/Inter ainda não foram lidos por Atualizar lista. */
   bankStatusConsulted?: boolean;
+  /** Falso até a leitura local das cobranças C6. Enquanto isso, Gerar fica oculto. */
+  c6ChargesLoaded?: boolean;
   customerPhone?: string | null;
   customerEmail?: string | null;
   whatsappShareUrl?: string | null;
@@ -118,6 +120,7 @@ export function ChargeInstallmentActions({
   busy,
   installmentsDataReady = true,
   bankStatusConsulted = true,
+  c6ChargesLoaded = false,
   customerPhone,
   customerEmail,
   whatsappShareUrl,
@@ -198,6 +201,13 @@ export function ChargeInstallmentActions({
     (isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix);
 
   if (isC6 && !installmentCanceled && !isLocallyCancelledChargeStatus(charge?.status)) {
+    if (!c6ChargesLoaded) {
+      return (
+        <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
+          <span className="text-[10px] text-[var(--text-muted)]">Consultando cobrança C6…</span>
+        </div>
+      );
+    }
     const c6 = resolveC6ChargeActions({
       externalId: charge?.asaasPaymentId,
       status: installmentPaid ? 'PAID' : charge?.status,
@@ -251,6 +261,18 @@ export function ChargeInstallmentActions({
             <button type="button" className={btnClass} onClick={onCopyBarcodeLine} title="Copiar linha digitável">
               <Copy className="h-3.5 w-3.5" />
               Copiar linha digitável
+            </button>
+          ) : null}
+          {c6.showView && !c6.showPaid && c6.showCopyLine ? (
+            <button
+              type="button"
+              className={btnClass}
+              disabled={busy}
+              onClick={onWhatsApp}
+              title="Enviar a linha digitável pelo WhatsApp"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              WhatsApp
             </button>
           ) : null}
           {c6.showPaid ? <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span> : null}

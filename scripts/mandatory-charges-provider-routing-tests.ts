@@ -101,6 +101,10 @@ function testCentralRoutesByProvider() {
   assert.match(page, /\/api\/finance\/inter\/pdf/);
   assert.match(page, /\/api\/finance\/asaas\/create-charge/);
   assert.match(page, /\/api\/finance\/inter\/charges/);
+  const c6LoadAt = page.indexOf('await loadC6ChargeMap(installmentIds)');
+  const syncReturnAt = page.indexOf('if (!shouldSyncAsaas) return;');
+  assert.ok(c6LoadAt > 0 && syncReturnAt > c6LoadAt, 'Cobranças lê o C6 antes de decidir se consulta o Asaas');
+  assert.match(page, /c6ChargesLoaded/);
   assert.match(page, /\/api\/finance\/c6\/charges/);
   assert.match(page, /\/api\/banking\/c6\/charges/);
   assert.match(page, /resolveRowProvider/);
@@ -118,6 +122,15 @@ function testCentralRoutesByProvider() {
   assert.match(actions, /Banco Inter \(Cobrança V3/);
   assert.match(actions, /chargeProvider/);
   assert.match(actions, /Gerar boleto C6/);
+  assert.match(actions, /Consultando cobrança C6/);
+  assert.match(actions, /WhatsApp/);
+  const whatsappStart = page.indexOf('const handleWhatsApp =');
+  const whatsappBody = page.slice(whatsappStart, page.indexOf('const runBulkGenerate', whatsappStart));
+  assert.doesNotMatch(whatsappBody, /\/api\/banking\/c6\/charges/);
+  assert.match(whatsappBody, /executeChargeWhatsAppShare/);
+  const consultAt = actions.indexOf('Consultando cobrança C6');
+  const generateAt = actions.indexOf('Gerar boleto C6');
+  assert.ok(consultAt > 0 && consultAt < generateAt, 'Gerar C6 só aparece depois da leitura local');
 
   const interCreate = read('app/api/finance/inter/create-charge/route.ts');
   assert.match(interCreate, /createInterInstallmentCharge/);

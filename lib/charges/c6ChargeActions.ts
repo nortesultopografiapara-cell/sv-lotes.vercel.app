@@ -27,7 +27,9 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
   const barcode = String(input.barCode || '').replace(/\D/g, '');
   const notice = input.uncertain
     ? 'Resultado bancário incerto. Nova emissão bloqueada até a consulta.'
-    : input.rejectionMessage?.trim() || null;
+    : registered && !paid
+      ? 'O C6 confirmou a emissão. A consulta oficial não informa se o boleto já pode ser pago na rede bancária.'
+      : input.rejectionMessage?.trim() || null;
 
   return {
     showGenerate: !input.ownerReadOnly && !paid && !registered && !input.uncertain,
@@ -35,6 +37,6 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
     showDownload: registered,
     showCopyLine: Boolean(line || barcode.length >= 44) && !paid,
     showPaid: paid,
-    notice: registered || paid ? null : notice,
+    notice: paid ? null : notice,
   };
 }

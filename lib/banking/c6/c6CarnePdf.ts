@@ -49,7 +49,11 @@ export async function buildC6CarnePdfBytes(params: {
   payer?: SaleCarnePayerInfo | null;
   agencyCedente?: string | null;
 }): Promise<C6CarnePdfResult> {
-  const printable = params.items.filter((item) => chargeHasOfficialBoletoLine(item.charge));
+  const printable = params.items.filter(
+    (item) =>
+      chargeHasOfficialBoletoLine(item.charge) &&
+      String(item.charge.asaasPaymentId || '').trim().length > 0,
+  );
   const skippedWithoutOfficialLine = params.items.length - printable.length;
   if (printable.length === 0) {
     throw new Error('Nenhum boleto C6 com linha digitável ou código de barras oficiais.');

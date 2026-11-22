@@ -37,7 +37,10 @@ export async function POST(request: Request) {
       auth.tenantId,
       installments.map((row) => String(row.id)),
     );
-    const printable = charges.filter(chargeHasOfficialBoletoLine);
+    const printable = charges.filter(
+      (charge) =>
+        chargeHasOfficialBoletoLine(charge) && String(charge.asaasPaymentId || '').trim().length > 0,
+    );
     if (!printable.length) {
       return NextResponse.json(
         { error: 'Nenhum boleto C6 com linha digitável ou código de barras confirmados.' },

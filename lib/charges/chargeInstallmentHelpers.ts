@@ -122,7 +122,7 @@ export function buildChargeInstallmentView(
       ? asaasCharge?.status === 'PAID'
         ? 'Pago'
         : asaasCharge?.asaasPaymentId
-          ? 'Boleto C6 registrado'
+          ? 'Boleto emitido no C6'
           : 'Sem boleto'
       : chargeProvider === 'INTER'
       ? asaasCharge
