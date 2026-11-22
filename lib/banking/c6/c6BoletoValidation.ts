@@ -3,6 +3,7 @@
  */
 
 import { onlyDigits } from '@/lib/inputMasks';
+import { C6_ADDRESS_NUMBER_REQUIRED_MESSAGE } from '@/lib/banking/c6/c6PublicMessage';
 import {
   C6_BOLETO_ADDRESS_REQUIRED_FIELDS,
   C6_BOLETO_CHARGE_TYPES,
@@ -419,9 +420,12 @@ export function buildC6BankSlipCreateBody(
   for (const field of C6_BOLETO_ADDRESS_REQUIRED_FIELDS) {
     const addr = input.payer?.address as Record<string, unknown> | undefined;
     if (!addr || addr[field] == null || addr[field] === '') {
-      throw new C6BoletoValidationError(`Campo obrigatório ausente: payer.address.${field}.`, [
-        `payer.address.${field}`,
-      ]);
+      throw new C6BoletoValidationError(
+        field === 'number'
+          ? C6_ADDRESS_NUMBER_REQUIRED_MESSAGE
+          : `Campo obrigatório ausente: payer.address.${field}.`,
+        [`payer.address.${field}`],
+      );
     }
   }
 

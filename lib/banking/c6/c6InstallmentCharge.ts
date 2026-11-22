@@ -27,6 +27,8 @@ import {
 import { readOfficialC6BankSlip, settleC6PaidSlip, type C6SettlementResult } from '@/lib/banking/c6/c6PaymentSettlement';
 import type { C6BoletoEvidencePublic } from '@/lib/banking/c6/c6BoletoEvidence';
 import { buildC6BankSlipCreateBody } from '@/lib/banking/c6/c6BoletoValidation';
+import { c6BankRejectionMessage } from '@/lib/banking/c6/c6PublicMessage';
+import { classifyC6CreateResponse } from '@/lib/banking/c6/c6CreateOutcome';
 import type { BankEnvironment } from '@/lib/banking/types';
 
 export type C6InstallmentEmitResult = {
@@ -80,6 +82,35 @@ export function c6BoletoRequestFingerprint(input: {
 
 function dueDateOf(value: unknown): string {
   return clean(value).slice(0, 10);
+}
+
+function missingRetryRpc(error: { code?: string; message?: string } | null): boolean {
+  const message = String(error?.message || '');
+  return (
+    error?.code === 'PGRST202' ||
+    error?.code === '42883' ||
+    /could not find the function/i.test(message) ||
+    /p_retry_allowed/i.test(message)
+  );
+}
+
+async function completeReservation(
+  admin: SupabaseClient,
+  args: {
+    p_company_id: string;
+    p_integration_id: string;
+    p_external_reference_id: string;
+    p_status: 'SUCCEEDED' | 'FAILED' | 'UNKNOWN';
+    p_http_status: number | null;
+    p_c6_bank_slip_id: string | null;
+  },
+  retryAllowed: boolean,
+) {
+  if (retryAllowed) {
+    const marked = await admin.rpc('complete_c6_boleto', { ...args, p_retry_allowed: true });
+    if (!marked.error || !missingRetryRpc(marked.error)) return marked;
+  }
+  return admin.rpc('complete_c6_boleto', args);
 }
 
 function slipField(evidence: C6BoletoEvidencePublic, key: string): string | null {
@@ -279,30 +310,43 @@ export async function emitC6InstallmentBoleto(
   try {
     result = await executeC6BankSlipCreate(creds, createInput, executeOptions);
   } catch (error) {
-    await admin.rpc('complete_c6_boleto', {
-      p_company_id: companyId,
-      p_integration_id: integration.id,
-      p_external_reference_id: reference,
-      p_status: 'UNKNOWN',
-      p_http_status: null,
-      p_c6_bank_slip_id: null,
-    });
+    await completeReservation(
+      admin,
+      {
+        p_company_id: companyId,
+        p_integration_id: integration.id,
+        p_external_reference_id: reference,
+        p_status: 'UNKNOWN',
+        p_http_status: null,
+        p_c6_bank_slip_id: null,
+      },
+      false,
+    );
     throw error;
   }
 
   const httpStatus = result.httpStatus;
-  const bankSlipId = httpStatus === 201 ? slipField(result.evidence, 'id') : null;
-  const ambiguous = httpStatus == null || (httpStatus === 201 && !bankSlipId);
-  const failed = httpStatus != null && httpStatus >= 400 && httpStatus < 500;
-  const status = bankSlipId ? 'SUCCEEDED' : ambiguous ? 'UNKNOWN' : failed ? 'FAILED' : 'UNKNOWN';
-  await admin.rpc('complete_c6_boleto', {
-    p_company_id: companyId,
-    p_integration_id: integration.id,
-    p_external_reference_id: reference,
-    p_status: status,
-    p_http_status: httpStatus,
-    p_c6_bank_slip_id: bankSlipId,
-  });
+  const outcome = classifyC6CreateResponse(httpStatus, result.evidence.responseBody);
+  const bankSlipId = outcome.disposition === 'succeeded' ? outcome.bankSlipId : null;
+  const status =
+    outcome.disposition === 'succeeded'
+      ? 'SUCCEEDED'
+      : outcome.disposition === 'definitive_rejection'
+        ? 'FAILED'
+        : 'UNKNOWN';
+  const completed = await completeReservation(
+    admin,
+    {
+      p_company_id: companyId,
+      p_integration_id: integration.id,
+      p_external_reference_id: reference,
+      p_status: status,
+      p_http_status: httpStatus,
+      p_c6_bank_slip_id: outcome.bankSlipId,
+    },
+    outcome.disposition === 'definitive_rejection',
+  );
+  if (completed.error) throw new Error(completed.error.message);
 
   if (receipt.amount !== original.amount || receipt.due_date !== original.dueDate) {
     throw new Error('A emissão C6 alteraria valor ou vencimento da parcela.');
@@ -313,7 +357,7 @@ export async function emitC6InstallmentBoleto(
       emitted: false,
       reused: false,
       duplicate: false,
-      needsReconciliation: status === 'UNKNOWN',
+      needsReconciliation: outcome.disposition === 'uncertain',
       bankSlipId: null,
       digitableLine: null,
       barCode: null,
@@ -323,9 +367,10 @@ export async function emitC6InstallmentBoleto(
       dueDate,
       installmentId,
       companyId,
-      message: ambiguous
-        ? 'Resposta ambígua do C6. Nenhuma segunda emissão será feita.'
-        : 'C6 não confirmou o boleto.',
+      message:
+        outcome.disposition === 'uncertain'
+          ? 'Resposta ambígua do C6. Nenhuma segunda emissão será feita.'
+          : c6BankRejectionMessage(result.evidence.responseBody, httpStatus),
     };
   }
 
@@ -427,7 +472,7 @@ export async function fetchC6InstallmentPdf(
   companyId: string,
   installmentId: string,
   options?: C6InstallmentChargeOptions,
-): Promise<{ ok: boolean; httpStatus: number | null }> {
+): Promise<{ ok: boolean; httpStatus: number | null; bytes: Buffer | null }> {
   const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
   if (!emissionActivated) {
     throw new C6EmissionNotHomologatedError();
@@ -459,5 +504,9 @@ export async function fetchC6InstallmentPdf(
       emissionActivated,
     },
   );
-  return { ok: result.ok, httpStatus: result.httpStatus };
+  return {
+    ok: result.ok && Boolean(result.pdfBuffer?.length),
+    httpStatus: result.httpStatus,
+    bytes: result.ok ? result.pdfBuffer || null : null,
+  };
 }

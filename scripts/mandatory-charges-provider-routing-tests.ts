@@ -23,6 +23,7 @@ function testRoutingHelpers() {
 
   assert.equal(normalizeChargesEmitProvider('INTER'), 'INTER');
   assert.equal(normalizeChargesEmitProvider('inter'), 'INTER');
+  assert.equal(normalizeChargesEmitProvider('C6'), 'C6');
   assert.equal(normalizeChargesEmitProvider('ASAAS'), 'ASAAS_COMPANY');
   assert.equal(normalizeChargesEmitProvider(null), 'ASAAS_COMPANY');
 
@@ -100,6 +101,8 @@ function testCentralRoutesByProvider() {
   assert.match(page, /\/api\/finance\/inter\/pdf/);
   assert.match(page, /\/api\/finance\/asaas\/create-charge/);
   assert.match(page, /\/api\/finance\/inter\/charges/);
+  assert.match(page, /\/api\/finance\/c6\/charges/);
+  assert.match(page, /\/api\/banking\/c6\/charges/);
   assert.match(page, /resolveRowProvider/);
   assert.match(page, /createInterChargeRequest/);
   assert.match(page, /handleCreateCharge/);
@@ -114,6 +117,7 @@ function testCentralRoutesByProvider() {
   const actions = read('components/charges/ChargeInstallmentActions.tsx');
   assert.match(actions, /Banco Inter \(Cobrança V3/);
   assert.match(actions, /chargeProvider/);
+  assert.match(actions, /Gerar boleto C6/);
 
   const interCreate = read('app/api/finance/inter/create-charge/route.ts');
   assert.match(interCreate, /createInterInstallmentCharge/);

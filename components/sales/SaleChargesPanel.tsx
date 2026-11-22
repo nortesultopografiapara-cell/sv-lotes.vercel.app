@@ -94,7 +94,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [emailBusy, setEmailBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [info, setInfo] = useState('');
-  const [chargeProvider, setChargeProvider] = useState<'ASAAS_COMPANY' | 'INTER'>('ASAAS_COMPANY');
+  const [chargeProvider, setChargeProvider] = useState<'ASAAS_COMPANY' | 'INTER' | 'C6'>('ASAAS_COMPANY');
   const [splitTick, setSplitTick] = useState(0);
   const [resumeJob, setResumeJob] = useState<InterResumeJobView | null>(null);
   const [resumeBusy, setResumeBusy] = useState(false);
@@ -110,7 +110,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       );
       const providerData = await providerRes.json().catch(() => ({}));
       const provider =
-        providerRes.ok && providerData.provider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+        providerRes.ok && providerData.provider === 'INTER'
+          ? 'INTER'
+          : providerRes.ok && providerData.provider === 'C6'
+            ? 'C6'
+            : 'ASAAS_COMPANY';
       setChargeProvider(provider);
 
       const summaryPath =
@@ -353,6 +357,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     setError('');
     setInfo('');
     try {
+      if (chargeProvider === 'C6') {
+        await loadSummary();
+        setInfo('Situação C6 atualizada a partir dos boletos já registrados. Nenhuma cobrança nova foi emitida.');
+        return;
+      }
       if (chargeProvider === 'INTER') {
         const res = await fetch('/api/finance/inter/sale-charges/sync', {
           method: 'POST',
@@ -397,7 +406,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     const path =
       chargeProvider === 'INTER'
         ? '/api/finance/inter/sale-charges/carne-pdf'
-        : '/api/finance/asaas/sale-charges/carne-pdf';
+        : chargeProvider === 'C6'
+          ? '/api/finance/c6/sale-charges/carne-pdf'
+          : '/api/finance/asaas/sale-charges/carne-pdf';
     const res = await fetch(path, {
       method: 'POST',
       credentials: 'include',
@@ -502,6 +513,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     setEmailBusy(true);
     setError('');
     try {
+      if (chargeProvider === 'C6') {
+        throw new Error('O envio do carnê C6 por e-mail ainda não está disponível. Baixe o PDF.');
+      }
       const path =
         chargeProvider === 'INTER'
           ? '/api/finance/inter/sale-charges/carne-email'
@@ -546,7 +560,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           <h4 className="text-sm font-bold text-gray-900">Cobranças da venda</h4>
           <p className="text-xs text-gray-500">
             Somente parcelas desta venda ·{' '}
-            {chargeProvider === 'INTER' ? 'Banco Inter' : 'Asaas Company'}
+            {chargeProvider === 'INTER' ? 'Banco Inter' : chargeProvider === 'C6' ? 'Banco C6' : 'Asaas Company'}
           </p>
         </div>
         <button
@@ -644,10 +658,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
                   className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                     chargeProvider === 'INTER'
                       ? 'bg-orange-100 text-orange-900'
-                      : 'bg-sky-100 text-sky-900'
+                      : chargeProvider === 'C6'
+                        ? 'bg-violet-100 text-violet-900'
+                        : 'bg-sky-100 text-sky-900'
                   }`}
                 >
-                  {chargeProvider === 'INTER' ? 'Banco Inter' : 'Asaas'}
+                  {chargeProvider === 'INTER' ? 'Banco Inter' : chargeProvider === 'C6' ? 'Banco C6' : 'Asaas'}
                 </span>
               </div>
             </div>
@@ -694,18 +710,16 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           ) : null}
 
           {lastErrors.length > 0 ? (
-            <details className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
-              <summary className="cursor-pointer font-semibold">
-                {lastErrors.length} parcela(s) com erro
-              </summary>
-              <ul className="mt-2 max-h-32 space-y-1 overflow-auto">
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+              <p className="font-semibold">{lastErrors.length} parcela(s) com erro</p>
+              <ul className="mt-2 max-h-40 space-y-1 overflow-auto">
                 {lastErrors.slice(0, 30).map((e) => (
                   <li key={e.installmentId}>
                     {e.installmentId.slice(0, 8)}… — {e.message}
                   </li>
                 ))}
               </ul>
-            </details>
+            </div>
           ) : null}
 
           <div className="flex flex-wrap gap-2">

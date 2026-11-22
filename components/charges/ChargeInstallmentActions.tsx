@@ -34,6 +34,7 @@ import {
   resolveInterIssuedChargeActions,
 } from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
+import { resolveC6ChargeActions } from '@/lib/charges/c6ChargeActions';
 
 const btnClass =
   'inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50';
@@ -51,7 +52,8 @@ export type ChargeInstallmentActionsProps = {
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
   /** Provider da conta financeira da parcela. */
-  chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+  chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
+  c6Notice?: { uncertain: boolean; message: string } | null;
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
@@ -130,6 +132,7 @@ export function ChargeInstallmentActions({
   onDownloadPdf,
   onSendEmail,
   outboundBlocked = false,
+  c6Notice = null,
 }: ChargeInstallmentActionsProps) {
   if (outboundBlocked) {
     return (
@@ -138,7 +141,8 @@ export function ChargeInstallmentActions({
       </span>
     );
   }
-  const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
+  const isC6 = chargeProvider === 'C6' || view.chargeProvider === 'C6';
+  const isInter = !isC6 && (chargeProvider === 'INTER' || view.chargeProvider === 'INTER');
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
   const st = String(view.installmentStatus || '').toLowerCase();
   const installmentCanceled =
@@ -192,6 +196,71 @@ export function ChargeInstallmentActions({
   const showCopyPix =
     !installmentCanceled &&
     (isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix);
+
+  if (isC6 && !installmentCanceled && !isLocallyCancelledChargeStatus(charge?.status)) {
+    const c6 = resolveC6ChargeActions({
+      externalId: charge?.asaasPaymentId,
+      status: installmentPaid ? 'PAID' : charge?.status,
+      digitableLine: charge?.bankSlipIdentification,
+      barCode: charge?.barCode,
+      installmentPaid,
+      ownerReadOnly,
+      uncertain: Boolean(c6Notice?.uncertain),
+      rejectionMessage: c6Notice?.message,
+    });
+    return (
+      <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {c6.showGenerate ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onGenerate('BOLETO')}
+              className={btnPrimaryClass}
+              title="Emitir o boleto desta parcela no Banco C6"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
+              Gerar boleto C6
+            </button>
+          ) : null}
+          {c6.showView ? (
+            <a
+              href={`/api/banking/c6/charges/pdf?installmentId=${encodeURIComponent(view.id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={btnClass}
+              title="Abrir o PDF oficial do boleto C6"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Visualizar boleto
+            </a>
+          ) : null}
+          {c6.showDownload && onDownloadPdf ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onDownloadPdf}
+              className={btnClass}
+              title="Baixar o PDF oficial do boleto C6"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Baixar PDF
+            </button>
+          ) : null}
+          {c6.showCopyLine ? (
+            <button type="button" className={btnClass} onClick={onCopyBarcodeLine} title="Copiar linha digitável">
+              <Copy className="h-3.5 w-3.5" />
+              Copiar linha digitável
+            </button>
+          ) : null}
+          {c6.showPaid ? <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span> : null}
+        </div>
+        {c6.notice ? (
+          <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">{c6.notice}</p>
+        ) : null}
+      </div>
+    );
+  }
 
   if (installmentCanceled || isLocallyCancelledChargeStatus(charge?.status)) {
     const confirmed = formatCancelledChargeHistoryLabel({

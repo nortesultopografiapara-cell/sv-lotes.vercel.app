@@ -68,7 +68,13 @@ export type C6BoletoFetchFn = (
     body?: string;
     agent: https.Agent;
   },
-) => Promise<{ status: number; bodyText: string; contentType?: string; pdfMagic?: boolean }>;
+) => Promise<{
+  status: number;
+  bodyText: string;
+  contentType?: string;
+  pdfMagic?: boolean;
+  pdfBuffer?: Buffer;
+}>;
 
 export type C6BoletoExecuteOptions = {
   /** Somente testes com resposta simulada. Não autoriza C6 real. */
@@ -377,11 +383,12 @@ function assertExecuteGate(
 }
 
 const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
-  const { statusCode, body, contentType, pdfMagic } = await new Promise<{
+  const { statusCode, body, contentType, pdfMagic, pdfBuffer } = await new Promise<{
     statusCode: number;
     body: string;
     contentType: string;
     pdfMagic: boolean;
+    pdfBuffer?: Buffer;
   }>((resolve, reject) => {
     const req = https.request(
       url,
@@ -408,6 +415,7 @@ const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
                 : buf.toString('utf8'),
             contentType: type,
             pdfMagic,
+            pdfBuffer: looksPdf ? buf : undefined,
           });
         });
       },
@@ -420,7 +428,7 @@ const defaultBoletoFetch: C6BoletoFetchFn = async (url, init) => {
     if (init.body) req.write(init.body);
     req.end();
   });
-  return { status: statusCode, bodyText: body, contentType, pdfMagic };
+  return { status: statusCode, bodyText: body, contentType, pdfMagic, pdfBuffer };
 };
 
 async function resolveAccessToken(
@@ -446,6 +454,7 @@ export type C6BoletoExecuteResult = {
   evidence: C6BoletoEvidencePublic;
   httpStatus: number | null;
   prepared: C6BoletoPreparedHttp;
+  pdfBuffer?: Buffer | null;
 };
 
 async function executePrepared(
@@ -531,7 +540,15 @@ async function executePrepared(
       },
     );
 
-    return { ok, evidence, httpStatus: res.status, prepared };
+    const pdfBuffer =
+      prepared.operation === 'pdf'
+        ? res.pdfBuffer && res.pdfBuffer.length
+          ? res.pdfBuffer
+          : res.bodyText.startsWith('%PDF')
+            ? Buffer.from(res.bodyText, 'latin1')
+            : null
+        : null;
+    return { ok, evidence, httpStatus: res.status, prepared, pdfBuffer };
   } catch (err) {
     const timeout = err instanceof C6BoletoTransportError && err.code === 'TIMEOUT';
     const evidence = evidenceFromPreparedC6Boleto(prepared, {

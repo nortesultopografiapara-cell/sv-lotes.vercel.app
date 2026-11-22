@@ -28,13 +28,14 @@ export function classifyChargesAccountProvider(
   return normalizeChargesEmitProvider(provider);
 }
 
-export type ChargesEmitProvider = 'ASAAS_COMPANY' | 'INTER';
+export type ChargesEmitProvider = 'ASAAS_COMPANY' | 'INTER' | 'C6';
 
 export function normalizeChargesEmitProvider(
   provider: string | null | undefined,
 ): ChargesEmitProvider {
   const p = String(provider || '').trim().toUpperCase();
   if (p === 'INTER') return 'INTER';
+  if (p === 'C6') return 'C6';
   return 'ASAAS_COMPANY';
 }
 

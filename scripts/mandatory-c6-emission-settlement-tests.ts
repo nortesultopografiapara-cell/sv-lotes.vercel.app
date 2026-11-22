@@ -13,6 +13,7 @@ import {
 } from '../lib/banking/c6/c6InstallmentCharge';
 import { probeC6Connection, runC6ConnectionTest } from '../lib/banking/c6/c6ConnectionTest';
 import { buildC6CarnePdfBytes } from '../lib/banking/c6/c6CarnePdf';
+import { resolveC6ChargeActions } from '../lib/charges/c6ChargeActions';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import { applyC6SettlementTransaction } from '../lib/banking/c6/c6SettlementTransaction';
 
@@ -82,7 +83,14 @@ function memory(seed: {
     cash_movements: [],
     audit_logs: [],
   };
-  const reservations: Array<{ key: string; fingerprint: string; status: string; slip: string | null }> = [];
+  const reservations: Array<{
+    key: string;
+    fingerprint: string;
+    status: string;
+    slip: string | null;
+    httpStatus: number | null;
+    retryAllowed: boolean;
+  }> = [];
 
   function from(table: string) {
     const state = {
@@ -155,11 +163,25 @@ function memory(seed: {
             fingerprint: String(args.p_request_fingerprint),
             status: 'RESERVED',
             slip: null,
+            httpStatus: null,
+            retryAllowed: false,
           });
           return { data: { accepted: true, reason: 'reserved' }, error: null };
         }
-        if (found.fingerprint !== args.p_request_fingerprint) {
-          return { data: { accepted: false, reason: 'blocked' }, error: null };
+        const definitive =
+          found.status === 'FAILED' &&
+          found.retryAllowed &&
+          !found.slip &&
+          [400, 401, 403, 404, 422].includes(Number(found.httpStatus));
+        if (definitive) {
+          found.status = 'RESERVED';
+          found.fingerprint = String(args.p_request_fingerprint);
+          found.retryAllowed = false;
+          found.httpStatus = null;
+          return { data: { accepted: true, reason: 'retry' }, error: null };
+        }
+        if (found.status === 'UNKNOWN') {
+          return { data: { accepted: false, reason: 'needs_reconciliation' }, error: null };
         }
         return { data: { accepted: false, reason: 'blocked' }, error: null };
       }
@@ -172,10 +194,16 @@ function memory(seed: {
       let slip = args.p_c6_bank_slip_id ? String(args.p_c6_bank_slip_id) : null;
       if (status === 'SUCCEEDED' && (args.p_http_status !== 201 || !slip)) {
         status = 'UNKNOWN';
-        slip = null;
       }
+      if (status === 'FAILED') slip = null;
       found.status = status;
-      found.slip = slip;
+      found.slip = status === 'FAILED' ? null : slip;
+      found.httpStatus = args.p_http_status == null ? null : Number(args.p_http_status);
+      found.retryAllowed =
+        args.p_retry_allowed === true &&
+        status === 'FAILED' &&
+        !found.slip &&
+        [400, 401, 403, 404, 422].includes(Number(found.httpStatus));
       return { data: { accepted: true, reason: status }, error: null };
     },
   };
@@ -203,11 +231,24 @@ function authFetch() {
   });
 }
 
-function boletoFetch(mode: 'ok' | 'timeout' | 'ambiguous' | 'paid' | 'divergent' | 'pdf', calls: { n: number; body: string }) {
+function boletoFetch(
+  mode: 'ok' | 'timeout' | 'ambiguous' | 'paid' | 'divergent' | 'pdf' | 'rejected' | 'conflict' | 'rejected-with-id',
+  calls: { n: number; body: string },
+) {
   return async (url: string, init: { body?: string }) => {
     calls.n += 1;
     calls.body = init.body || '';
     if (mode === 'timeout') throw new C6BoletoTransportError('TIMEOUT', 'Timeout ao contatar o C6 Bank (boleto).');
+    if (mode === 'rejected' || mode === 'conflict' || mode === 'rejected-with-id') {
+      return {
+        status: mode === 'conflict' ? 409 : 400,
+        bodyText: JSON.stringify({
+          title: 'Invalid request',
+          detail: 'campo recusado access_token segredo-que-nao-pode-sair',
+          ...(mode === 'rejected-with-id' ? { id: 'slip-oculto' } : {}),
+        }),
+      };
+    }
     if (url.includes('/pdf')) {
       return { status: 200, bodyText: '%PDF-1.4', contentType: 'application/pdf', pdfMagic: true };
     }
@@ -367,7 +408,151 @@ async function main() {
     authFetchFn: authFetch() as never,
     credentials: creds,
   });
-  assert(pdf.ok && pdf.httpStatus === 200, 'consulta de PDF simulada');
+  assert(pdf.ok && pdf.httpStatus === 200 && pdf.bytes?.subarray(0, 4).toString() === '%PDF', 'consulta de PDF simulada devolve os bytes');
+
+  const tenCalls = { n: 0, body: '' };
+  const ten = memory({ amount: 10, due: '2026-11-23' });
+  const tenResult = await emitC6InstallmentBoleto(ten.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('ok', tenCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  assert(tenResult.emitted && JSON.parse(tenCalls.body).amount === 10, 'R$ 10,00 passa na validação e no payload');
+
+  const missingCalls = { n: 0, body: '' };
+  const missingNumber = memory({});
+  missingNumber.tables.customers[0].address_number = '';
+  let missingMessage = '';
+  try {
+    await emitC6InstallmentBoleto(missingNumber.admin as never, COMPANY_A, INSTALLMENT, {
+      allowSimulatedHttp: true,
+      fetchFn: boletoFetch('ok', missingCalls) as never,
+      authFetchFn: authFetch() as never,
+      credentials: creds,
+      now: NOW,
+    });
+  } catch (error) {
+    missingMessage = error instanceof Error ? error.message : '';
+  }
+  assert(
+    missingMessage ===
+      'O Banco C6 exige o número do endereço do comprador. Atualize o cadastro do cliente antes de gerar o boleto.' &&
+      missingCalls.n === 0 &&
+      missingNumber.reservations.length === 0,
+    'número ausente falha antes do banco e da reserva',
+  );
+
+  const rejectedCalls = { n: 0, body: '' };
+  const rejected = memory({});
+  const rejectedResult = await emitC6InstallmentBoleto(rejected.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('rejected', rejectedCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  assert(
+    !rejectedResult.emitted &&
+      rejectedResult.message.includes('HTTP 400') &&
+      !rejectedResult.message.includes('segredo') &&
+      !rejectedResult.needsReconciliation &&
+      rejected.reservations[0]?.status === 'FAILED' &&
+      rejected.tables.bank_charges.length === 0,
+    'HTTP 400 não registra boleto e não devolve segredo',
+  );
+  const retried = await emitC6InstallmentBoleto(rejected.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('rejected', rejectedCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  assert(
+    rejectedCalls.n === 2 &&
+      !retried.emitted &&
+      rejected.reservations[0]?.retryAllowed === true &&
+      rejected.tables.bank_charges.length === 0,
+    'HTTP 400 sem id permite uma nova tentativa controlada',
+  );
+
+  const conflictCalls = { n: 0, body: '' };
+  const conflict = memory({});
+  const conflictResult = await emitC6InstallmentBoleto(conflict.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('conflict', conflictCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  await emitC6InstallmentBoleto(conflict.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('conflict', conflictCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  assert(
+    conflictResult.needsReconciliation &&
+      conflict.reservations[0]?.status === 'UNKNOWN' &&
+      conflictCalls.n === 1,
+    'HTTP 409 não é tratado como ausência de boleto',
+  );
+
+  const identifiedCalls = { n: 0, body: '' };
+  const identified = memory({});
+  const identifiedResult = await emitC6InstallmentBoleto(identified.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('rejected-with-id', identifiedCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  await emitC6InstallmentBoleto(identified.admin as never, COMPANY_A, INSTALLMENT, {
+    allowSimulatedHttp: true,
+    fetchFn: boletoFetch('rejected-with-id', identifiedCalls) as never,
+    authFetchFn: authFetch() as never,
+    credentials: creds,
+    now: NOW,
+  });
+  assert(
+    identifiedResult.needsReconciliation &&
+      identified.tables.bank_charges.length === 0 &&
+      identifiedCalls.n === 1,
+    'HTTP 400 com identificador bloqueia nova emissão',
+  );
+
+  const pending = resolveC6ChargeActions({
+    installmentPaid: false,
+    ownerReadOnly: false,
+    uncertain: false,
+  });
+  const registered = resolveC6ChargeActions({
+    externalId: 'slip-1',
+    status: 'REGISTERED',
+    digitableLine: LINE,
+    installmentPaid: false,
+    ownerReadOnly: false,
+    uncertain: false,
+  });
+  const paidActions = resolveC6ChargeActions({
+    externalId: 'slip-1',
+    status: 'PAID',
+    installmentPaid: true,
+    ownerReadOnly: false,
+    uncertain: false,
+  });
+  const uncertain = resolveC6ChargeActions({
+    installmentPaid: false,
+    ownerReadOnly: false,
+    uncertain: true,
+    rejectionMessage: 'Resposta ambígua do C6.',
+  });
+  assert(pending.showGenerate && !pending.showDownload, 'parcela sem boleto oferece gerar');
+  assert(registered.showDownload && registered.showView && !registered.showGenerate, 'boleto registrado não gera outro');
+  assert(paidActions.showPaid && !paidActions.showGenerate, 'parcela paga não gera outro boleto');
+  assert(!uncertain.showGenerate && Boolean(uncertain.notice), 'resultado incerto bloqueia nova emissão');
 
   const carne = await buildC6CarnePdfBytes({
     items: [{
@@ -487,6 +672,14 @@ async function main() {
   assert(asaas.includes('A conta C6 não usa o fluxo do Asaas.'), 'Asaas continua recusando C6');
   assert(!webhook.includes('finance_receipts') && webhook.includes('inboundSchema'), 'webhook não baixa parcela');
   assert(charges.indexOf('isC6EmissionActivated') < charges.indexOf('emitC6InstallmentBoleto'), 'a rota só emite depois da ativação da empresa');
+  const migration = read('supabase/migrations/20261122180000_c6_boleto_definitive_rejection_retry.sql');
+  assert(migration.includes('retry_allowed'), 'a migration registra a rejeição reabrível');
+  assert(migration.includes('last_http_status IN (400, 401, 403, 404, 422)'), 'só rejeição definitiva reabre');
+  assert(migration.includes("status = 'FAILED'"), 'resposta incerta não entra na reabertura');
+  assert(migration.includes('c6_bank_slip_id IS NULL'), 'boleto identificado não reabre');
+  assert(migration.includes('bank_charges'), 'cobrança já registrada impede a reabertura');
+  assert(!/update\s+public\.finance_receipts/i.test(migration), 'a migration não altera recebíveis');
+  assert(!/update\s+public\.sales/i.test(migration), 'a migration não altera vendas');
   console.log('C6_EMISSION_SETTLEMENT_OK');
   console.log('SIMULADO: emissão, Pix ausente, idempotência, timeout, consulta, baixa e conexão. Nenhum HTTP real.');
 }

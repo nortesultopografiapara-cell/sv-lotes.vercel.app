@@ -21,7 +21,7 @@ export type ChargeInstallmentView = {
   chargeStatusLabel: string;
   financialAccountId: string | null;
   financialAccountLabel: string;
-  chargeProvider: 'ASAAS_COMPANY' | 'INTER';
+  chargeProvider: 'ASAAS_COMPANY' | 'INTER' | 'C6';
 };
 
 export type ChargeKpiSummary = {
@@ -72,7 +72,7 @@ export function buildChargeInstallmentView(
     hasChargeHistory?: boolean;
     environmentMismatch?: boolean;
     legacySandbox?: boolean;
-    chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+    chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
     signalFutureCount?: number | null;
     saleHasSignalSchedule?: boolean;
   },
@@ -113,9 +113,18 @@ export function buildChargeInstallmentView(
       '',
   ).trim() || null;
 
-  const chargeProvider = options?.chargeProvider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+  const chargeProvider =
+    options?.chargeProvider === 'INTER' || options?.chargeProvider === 'C6'
+      ? options.chargeProvider
+      : 'ASAAS_COMPANY';
   const asaasStatusLabel =
-    chargeProvider === 'INTER'
+    chargeProvider === 'C6'
+      ? asaasCharge?.status === 'PAID'
+        ? 'Pago'
+        : asaasCharge?.asaasPaymentId
+          ? 'Boleto C6 registrado'
+          : 'Sem boleto'
+      : chargeProvider === 'INTER'
       ? asaasCharge
         ? formatInterChargeStatusLabel({
             situacao: asaasCharge.asaasRemoteStatus,

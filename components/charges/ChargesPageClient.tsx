@@ -150,6 +150,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
     Record<string, CompanyAsaasChargeResponse>
   >({});
+  const [c6ChargesByInstallment, setC6ChargesByInstallment] = useState<
+    Record<string, CompanyAsaasChargeResponse>
+  >({});
+  const [c6NoticeByInstallment, setC6NoticeByInstallment] = useState<
+    Record<string, { uncertain: boolean; message: string }>
+  >({});
+  const c6ChargesByInstallmentRef = useRef(c6ChargesByInstallment);
+  c6ChargesByInstallmentRef.current = c6ChargesByInstallment;
   const [interChargesByInstallment, setInterChargesByInstallment] = useState<
     Record<string, CompanyAsaasChargeResponse>
   >({});
@@ -228,9 +236,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       if (provider === 'INTER') {
         return interChargesByInstallment[installmentId] ?? null;
       }
+      if (provider === 'C6') {
+        return c6ChargesByInstallment[installmentId] ?? null;
+      }
       return asaasChargesByInstallment[installmentId] ?? null;
     },
-    [asaasChargesByInstallment, interChargesByInstallment],
+    [asaasChargesByInstallment, c6ChargesByInstallment, interChargesByInstallment],
   );
 
   const showToast = useCallback((message: string, isError = false) => {
@@ -367,6 +378,35 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       return asaasChargesByInstallmentRef.current;
     }
   }, [showToast]);
+
+  const loadC6ChargeMap = useCallback(async (installmentIds: string[]) => {
+    if (installmentIds.length === 0) {
+      setC6ChargesByInstallment({});
+      return {} as Record<string, CompanyAsaasChargeResponse>;
+    }
+    try {
+      let map = { ...c6ChargesByInstallmentRef.current };
+      const chunks = chunkInstallmentIdsForChargeFetch(installmentIds);
+      for (const chunk of chunks) {
+        const chargesRes = await fetch('/api/finance/c6/charges', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ installmentIds: chunk }),
+        });
+        if (!chargesRes.ok) return c6ChargesByInstallmentRef.current;
+        const chargesJson = await chargesRes.json().catch(() => ({}));
+        const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+        map = mergeFetchedChargesIntoMap(map, chunk, charges);
+      }
+      setC6ChargesByInstallment(map);
+      return map;
+    } catch (err) {
+      console.error('CHARGES_C6_LOAD', err);
+      return c6ChargesByInstallmentRef.current;
+    }
+  }, []);
 
   const loadInterChargeMap = useCallback(async (installmentIds: string[]) => {
     if (installmentIds.length === 0) {
@@ -599,6 +639,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         ownerCtx,
       });
       await loadInterChargeMap(installmentIds);
+      await loadC6ChargeMap(installmentIds);
       if (owned.signal.aborted) return;
       setChargeStatusReady(true);
 
@@ -659,6 +700,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     user,
     ownerReadOnly,
     loadAsaasChargesContext,
+    loadC6ChargeMap,
     loadInterChargeMap,
     refreshInstallmentRows,
     resolveRowProvider,
@@ -993,6 +1035,49 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     const previousCharge = chargeForInstallment(installmentId, provider);
     setAsaasActionInstallmentId(installmentId);
     try {
+      if (provider === 'C6') {
+        const res = await fetch('/api/banking/c6/charges', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ installmentId }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+          emitted?: boolean;
+          reused?: boolean;
+          needsReconciliation?: boolean;
+        };
+        if (!res.ok) throw new Error(json.error || 'Falha ao emitir o boleto C6.');
+        const uncertain =
+          Boolean(json.needsReconciliation) ||
+          /bloqueada|ambígua|segunda emissão/i.test(String(json.message || ''));
+        if (json.emitted || json.reused) {
+          setC6NoticeByInstallment((prev) => {
+            const next = { ...prev };
+            delete next[installmentId];
+            return next;
+          });
+          await loadC6ChargeMap([installmentId]);
+          showToast(
+            json.reused
+              ? 'Boleto C6 já vinculado a esta parcela.'
+              : 'Boleto C6 registrado para a parcela.',
+          );
+          return;
+        }
+        setC6NoticeByInstallment((prev) => ({
+          ...prev,
+          [installmentId]: {
+            uncertain,
+            message: String(json.message || 'C6 não confirmou o boleto.'),
+          },
+        }));
+        showToast(String(json.message || 'C6 não confirmou o boleto.'), true);
+        return;
+      }
+
       if (provider === 'INTER') {
         const charge = await createInterChargeRequest(installmentId);
         applyInterChargeUpdate(installmentId, charge);
@@ -1088,6 +1173,37 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       return false;
     } finally {
       if (!options?.silent) setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleDownloadC6Pdf = async (installmentId: string, openInline = false) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch(
+        `/api/banking/c6/charges/pdf?installmentId=${encodeURIComponent(installmentId)}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Erro ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (openInline) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `boleto-c6-${installmentId.slice(0, 8)}.pdf`;
+        a.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      showToast(openInline ? 'PDF do boleto C6 aberto.' : 'PDF do boleto C6 baixado.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao obter o PDF C6.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
     }
   };
 
@@ -2095,11 +2211,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         customerEmail={customerEmail}
                         whatsappShareUrl={whatsappShareUrl}
                         hasPaidChargeHistory={
-                          provider === 'INTER'
+                          provider === 'INTER' || provider === 'C6'
                             ? Boolean(charge?.asaasPaymentId)
                             : asaasChargeHistoryIds.has(installmentId) ||
                               Boolean(charge?.asaasPaymentId)
                         }
+                        c6Notice={provider === 'C6' ? c6NoticeByInstallment[installmentId] || null : null}
                         onGenerate={(billingType) =>
                           void handleCreateCharge(installmentId, billingType)
                         }
@@ -2110,7 +2227,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         }
                         onCopyPix={() => charge && void handleCopyPix(charge)}
                         onCopyBarcodeLine={() => charge && void handleCopyBarcodeLine(charge)}
-                        onDownloadPdf={() => void handleDownloadInterPdf(installmentId)}
+                        onDownloadPdf={() =>
+                          void (provider === 'C6'
+                            ? handleDownloadC6Pdf(installmentId, false)
+                            : handleDownloadInterPdf(installmentId))
+                        }
                         onSendEmail={() => void handleSendInterEmail(installmentId, row, view)}
                         onWhatsApp={() => {
                           if (!charge) {

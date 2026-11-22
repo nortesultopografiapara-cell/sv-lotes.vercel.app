@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
 import { emitC6InstallmentBoleto } from '@/lib/banking/c6/c6InstallmentCharge';
+import { listC6ChargesForInstallments } from '@/lib/banking/c6/c6ChargeList';
 import { C6EmissionNotHomologatedError, isC6ProviderCode } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 import {
@@ -223,7 +224,7 @@ export async function getSaleChargesSummary(
   const context = await loadSaleContext(admin, companyId, saleId);
   const installments = await loadSaleScopedInstallments(admin, companyId, saleId);
   const installmentIds = installments.map((r) => String(r.id));
-  const charges = await listCompanyAsaasChargesForInstallments(
+  let charges = await listCompanyAsaasChargesForInstallments(
     admin,
     companyId,
     installmentIds,
@@ -274,6 +275,9 @@ export async function getSaleChargesSummary(
 
   if (isC6ProviderCode(resolvedProvider) && !(await isC6EmissionActivated(admin, companyId))) {
     throw new C6EmissionNotHomologatedError();
+  }
+  if (isC6ProviderCode(resolvedProvider)) {
+    charges = await listC6ChargesForInstallments(admin, companyId, installmentIds);
   }
 
   const beneficiary = resolvedAccountId
@@ -340,7 +344,7 @@ export async function resolveSaleCarneBeneficiary(
         beneficiaryName: account.beneficiaryName,
         name: account.name,
       };
-      try {
+      if (!isC6ProviderCode(account.provider)) try {
         const { apiKey, environment } = await loadAsaasApiKeyForFinancialAccount(
           admin,
           financialAccountId,
@@ -432,7 +436,7 @@ export async function generateMissingSaleChargesBatch(
         const emitted = await emitC6InstallmentBoleto(admin, params.companyId, installmentId);
         if (emitted.reused) reused += 1;
         else if (emitted.emitted) created += 1;
-        else skipped += 1;
+        else errors.push({ installmentId, message: emitted.message });
         continue;
       }
       const before = await listCompanyAsaasChargesForInstallments(admin, params.companyId, [
