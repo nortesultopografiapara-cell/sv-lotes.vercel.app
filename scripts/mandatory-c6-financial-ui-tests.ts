@@ -35,5 +35,12 @@ assert(panel.includes('Cadastrar conta C6'), 'a tela oferece o cadastro de uma c
 assert(panel.includes('Contas do Asaas e do Banco Inter não entram nesta lista.'), 'Asaas e Inter não são oferecidos ao C6');
 assert(panel.includes('A conexão OAuth não substitui esse vínculo.'), 'autenticação e vínculo ficam separados');
 assert(panel.includes('financialAccountId'), 'a ativação continua exigindo a conta vinculada');
+assert(panel.includes('!password.trim()'), 'a ativação não dispara com a senha vazia');
+assert(panel.includes('não vem do Banco C6'), 'a recusa da senha não é apresentada como resposta do banco');
+const emission = fs.readFileSync(path.join(root, 'app/api/banking/c6/emission/route.ts'), 'utf8');
+const verifyAt = emission.indexOf('await verifyPrimaryAdminPassword');
+const writeAt = emission.indexOf('await setC6CompanyEmissionEnabled');
+assert(verifyAt > 0 && writeAt > verifyAt, 'a senha é conferida antes de gravar a emissão');
+assert(emission.includes('Autorização não concedida.'), 'senha recusada continua genérica');
 
 console.log('C6_FINANCIAL_UI_OK');

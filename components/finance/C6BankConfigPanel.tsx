@@ -92,6 +92,12 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
 
   async function toggleEmission(enabled: boolean) {
     if (readOnlyDemo || persistBlocked || togglingEmission) return;
+    if (!password.trim()) {
+      setError(
+        'Informe a senha do administrador principal. Ela é conferida de novo nesta ação e não vem do Banco C6.',
+      );
+      return;
+    }
     setTogglingEmission(true);
     setError('');
     setInfo('');
@@ -293,6 +299,9 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
               className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
               autoComplete="current-password"
             />
+            <span className="mt-1 block font-normal text-[var(--text-muted)]">
+              O salvamento apaga este campo. Digite a senha outra vez para ativar a emissão.
+            </span>
           </label>
           <label className="text-xs font-semibold text-[var(--text-secondary)]">
             Certificado PEM
@@ -377,7 +386,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
           <button
             type="button"
             onClick={() => void toggleEmission(false)}
-            disabled={readOnlyDemo || persistBlocked || togglingEmission || loading}
+            disabled={readOnlyDemo || persistBlocked || togglingEmission || loading || !password.trim()}
             className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-100 disabled:opacity-50"
           >
             {togglingEmission ? 'Atualizando' : 'Desativar emissão'}
@@ -391,6 +400,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
               persistBlocked ||
               togglingEmission ||
               loading ||
+              !password.trim() ||
               !config?.clientIdConfigured ||
               !config.hasClientSecret ||
               !config.hasCertificate ||
