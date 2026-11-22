@@ -1,14 +1,29 @@
 /**
- * Baixa da parcela a partir do GET /v1/bank_slips/{id} (OpenAPI 1.7.2).
- * Status oficial: CREATED, PAID, CANCELLED. Pagamento em payments[].
- * Não baixa parcela de outra empresa e não cria segunda movimentação.
+ * Baixa da parcela a partir do GET /v1/bank_slips/{id} (OpenAPI 1.7.3).
+ * Status oficial: CREATED, PAID, CANCELLED.
+ * O valor liquidado vem de payments[] ou de payment_amount. O valor de face não quita.
+ * Não baixa parcela de outra empresa, cancelada, estornada ou já quitada por outro meio.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildCashMovementEntradaPayload } from '@/lib/finance/cashMovementsSchema';
 import type { C6BankSlipResponse } from '@/lib/banking/c6/c6BoletoTypes';
+import {
+  SETTLE_COMPANY_C6_BANK_SLIP_RPC,
+  type C6SettlementTxnCode,
+} from '@/lib/banking/c6/c6SettlementTransaction';
 
-const PAID = 'pago';
+const TXN_MESSAGES: Record<C6SettlementTxnCode, string> = {
+  settled: 'Parcela baixada pelo boleto C6.',
+  duplicate: 'Pagamento C6 já conciliado.',
+  cancelled: 'Parcela cancelada. A baixa não foi feita.',
+  reversed: 'Parcela estornada. A baixa não foi feita.',
+  already_paid: 'Parcela já quitada. A baixa não foi feita.',
+  divergent: 'Valor pago diverge da parcela. A baixa não foi feita.',
+  foreign_company: 'Parcela de outra empresa.',
+  mismatch: 'Conta financeira não confere com a cobrança C6.',
+  ineligible: 'Parcela inelegível para baixa C6.',
+  not_found: 'Parcela não encontrada.',
+};
 
 export type C6SettlementResult = {
   paid: boolean;
@@ -47,9 +62,37 @@ export function readOfficialC6BankSlip(body: unknown): C6BankSlipResponse | null
     due_date: row.due_date != null ? String(row.due_date) : undefined,
     status,
     payments,
+    payment_amount: row.payment_amount != null ? Number(row.payment_amount) : undefined,
+    payment_date: row.payment_date != null ? String(row.payment_date) : undefined,
     digitable_line: row.digitable_line != null ? String(row.digitable_line) : undefined,
     bar_code: row.bar_code != null ? String(row.bar_code) : undefined,
   };
+}
+
+export type C6ConfirmedPayment = { amount: number; paidAt: string };
+
+/** PAID com valor e data confirmados. payments[] e payment_amount divergentes não confirmam. */
+export function readConfirmedC6Payment(slip: C6BankSlipResponse): C6ConfirmedPayment | null {
+  if (String(slip.status || '').toUpperCase() !== 'PAID') return null;
+  const payments = Array.isArray(slip.payments) ? slip.payments : [];
+  let listedAmount: number | null = null;
+  let listedDate: string | null = null;
+  if (payments.length > 0) {
+    const amounts = payments.map((item) => money(item.amount));
+    const dates = payments.map((item) => String(item.date || '').trim().slice(0, 10));
+    if (amounts.some((item) => item == null) || dates.some((item) => !item)) return null;
+    if (new Set(dates).size !== 1) return null;
+    listedAmount = money(amounts.reduce((sum, item) => sum + (item as number), 0));
+    listedDate = dates[0];
+  }
+  const headerAmount = slip.payment_amount == null ? null : money(slip.payment_amount);
+  const headerDate = String(slip.payment_date || '').trim().slice(0, 10) || null;
+  if (listedAmount != null && headerAmount != null && !sameMoney(listedAmount, headerAmount)) return null;
+  if (listedDate && headerDate && listedDate !== headerDate) return null;
+  const amount = listedAmount ?? headerAmount;
+  const paidAt = listedDate || headerDate;
+  if (amount == null || !paidAt) return null;
+  return { amount, paidAt };
 }
 
 function money(value: unknown): number | null {
@@ -91,106 +134,40 @@ export async function settleC6PaidSlip(
   if (String(slip.status || '').toUpperCase() !== 'PAID') {
     return empty('Boleto C6 ainda não está pago.');
   }
+  const confirmed = readConfirmedC6Payment(slip);
+  if (!confirmed) return empty('O valor pago do boleto C6 não está confirmado.');
 
   const financeReceiptId = String(charge.finance_receipt_id || '').trim();
   if (!financeReceiptId) return empty('Cobrança C6 sem parcela.');
-
-  const { data: receipt, error } = await admin
-    .from('finance_receipts')
-    .select('id, status, tenant_id, company_id, sale_id, customer_id, project_id, amount, paid_amount, paid_at, installment_number')
-    .eq('id', financeReceiptId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!receipt?.id) return empty('Parcela não encontrada.');
-  const owner = String(receipt.company_id || receipt.tenant_id || '').trim();
-  if (owner !== companyId) return empty('Parcela de outra empresa.');
-
-  const expected = money(receipt.amount);
-  const paid = money(slip.payments?.[0]?.amount ?? slip.amount);
-  if (expected == null || paid == null || !sameMoney(expected, paid)) {
-    return empty('Valor pago diverge da parcela. A baixa não foi feita.', { divergent: true });
+  const chargeId = String(charge.id || '').trim();
+  const slipId = String(slip.id || '').trim();
+  const externalId = String(charge.external_id || '').trim();
+  if (!chargeId || !slipId || (externalId && externalId !== slipId)) {
+    return empty('Boleto C6 não confere com a cobrança.');
   }
 
-  const paidAt = String(slip.payments?.[0]?.date || new Date().toISOString());
-  const alreadyPaid = ['pago', 'paid'].includes(String(receipt.status || '').toLowerCase());
-  let receiptUpdated = false;
-  if (!alreadyPaid) {
-    const { error: updateError } = await admin
-      .from('finance_receipts')
-      .update({ status: PAID, paid_amount: paid, paid_at: paidAt })
-      .eq('id', financeReceiptId);
-    if (updateError) throw new Error(updateError.message);
-    receiptUpdated = true;
-  }
-
-  const chargeId = String(charge.id || '');
-  const { data: existingMv } = await admin
-    .from('cash_movements')
-    .select('id, metadata')
-    .eq('company_id', companyId)
-    .eq('type', 'entrada')
-    .eq('status', 'ativo')
-    .filter('metadata->>bank_charge_id', 'eq', chargeId)
-    .filter('metadata->>provider', 'eq', 'C6');
-  const found = (existingMv || []).find((row: { id?: string; metadata?: unknown }) => {
-    const meta = asRecord(row.metadata);
-    return meta?.bank_charge_id === chargeId && meta?.provider === 'C6';
+  const { data, error } = await admin.rpc(SETTLE_COMPANY_C6_BANK_SLIP_RPC, {
+    p_company_id: companyId,
+    p_charge_id: chargeId,
+    p_receipt_id: financeReceiptId,
+    p_integration_id: String(charge.integration_id || ''),
+    p_financial_account_id: String(charge.financial_account_id || '') || null,
+    p_bank_slip_id: slipId,
+    p_paid_amount: confirmed.amount,
+    p_paid_on: confirmed.paidAt,
   });
-  let cashMovementId = found?.id ? String(found.id) : null;
-  if (!cashMovementId) {
-    const payload = buildCashMovementEntradaPayload({
-      tenant_id: companyId,
-      company_id: companyId,
-      project_id: receipt.project_id || null,
-      type: 'entrada',
-      category: 'recebimento_parcela',
-      description: `Recebimento C6 Bank — parcela ${receipt.installment_number ?? ''}`.trim(),
-      amount: paid,
-      customer_id: receipt.customer_id || charge.customer_id || null,
-      sale_id: receipt.sale_id || charge.sale_id || null,
-      movement_date: paidAt.slice(0, 10),
-      status: 'ativo',
-      metadata: {
-        provider: 'C6',
-        bank_charge_id: chargeId,
-        installment_id: financeReceiptId,
-        bank_slip_id: bankSlipId,
-      },
-    });
-    const { data: created, error: mvError } = await admin
-      .from('cash_movements')
-      .insert(payload)
-      .select('id')
-      .single();
-    if (mvError) throw new Error(mvError.message);
-    cashMovementId = created?.id ? String(created.id) : null;
-  }
-
-  await admin.from('bank_charges').update({ status: 'PAID', updated_at: new Date().toISOString() }).eq('id', chargeId).eq('company_id', companyId).eq('provider', 'C6');
-  try {
-    await admin.from('audit_logs').insert({
-      company_id: companyId,
-      action: 'c6_boleto_settlement',
-      metadata: {
-        finance_receipt_id: financeReceiptId,
-        bank_slip_id: bankSlipId,
-        amount: paid,
-        paid_at: paidAt,
-        duplicate: alreadyPaid && Boolean(found?.id),
-      },
-    });
-  } catch {
-    /* auditoria não desfaz a baixa */
-  }
-
+  if (error) throw new Error(error.message || 'Não foi possível baixar o boleto C6.');
+  const body = asRecord(data);
+  const code = String(body?.code || '') as C6SettlementTxnCode;
+  if (!TXN_MESSAGES[code]) return empty('Não foi possível baixar o boleto C6.');
   return {
-    paid: true,
-    duplicate: alreadyPaid && Boolean(found?.id),
-    divergent: false,
-    receiptUpdated,
+    paid: code === 'settled' || code === 'duplicate',
+    duplicate: code === 'duplicate',
+    divergent: code === 'divergent',
+    receiptUpdated: body?.receiptUpdated === true,
     financeReceiptId,
-    cashMovementId,
+    cashMovementId: body?.cashMovementId ? String(body.cashMovementId) : null,
     bankSlipId,
-    message: alreadyPaid && found?.id ? 'Pagamento C6 já conciliado.' : 'Parcela baixada pelo boleto C6.',
+    message: TXN_MESSAGES[code],
   };
 }

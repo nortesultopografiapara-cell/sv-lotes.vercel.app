@@ -1,10 +1,10 @@
 /**
- * Constantes extraídas do OpenAPI oficial C6 Boleto bancário 1.7.2.
- * Fonte: docs/c6/boleto-bancario.json (openapi 3.1.1).
- * Não inventar campos fora deste contrato.
+ * Constantes do boleto C6. A consulta vigente é o OpenAPI 1.7.3.
+ * Respostas 1.7.2 com payments[] continuam válidas.
+ * Não inventar campos fora desse contrato.
  */
 
-export const C6_BOLETO_OPENAPI_VERSION = '1.7.2' as const;
+export const C6_BOLETO_OPENAPI_VERSION = '1.7.3' as const;
 export const C6_BOLETO_OPENAPI_SPEC = '3.1.1' as const;
 export const C6_BOLETO_OPENAPI_TITLE = 'Boleto bancário' as const;
 

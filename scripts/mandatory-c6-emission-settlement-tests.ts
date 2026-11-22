@@ -14,6 +14,7 @@ import {
 import { probeC6Connection, runC6ConnectionTest } from '../lib/banking/c6/c6ConnectionTest';
 import { buildC6CarnePdfBytes } from '../lib/banking/c6/c6CarnePdf';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
+import { applyC6SettlementTransaction } from '../lib/banking/c6/c6SettlementTransaction';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -87,12 +88,17 @@ function memory(seed: {
     const state = {
       op: 'select' as 'select' | 'insert' | 'update',
       filters: [] as Array<[string, unknown]>,
+      inFilters: [] as Array<[string, unknown[]]>,
       payload: null as Row | null,
       one: false,
     };
     const exec = () => {
       const rows = tables[table] || (tables[table] = []);
-      const matches = rows.filter((row) => state.filters.every(([key, value]) => row[key] === value));
+      const matches = rows.filter(
+        (row) =>
+          state.filters.every(([key, value]) => row[key] === value) &&
+          state.inFilters.every(([key, values]) => values.includes(row[key])),
+      );
       if (state.op === 'insert' && state.payload) {
         const row = { id: `${table}-${rows.length + 1}`, ...state.payload };
         rows.push(row);
@@ -111,6 +117,7 @@ function memory(seed: {
     const api = {
       select() { return api; },
       eq(key: string, value: unknown) { state.filters.push([key, value]); return api; },
+      in(key: string, values: unknown[]) { state.inFilters.push([key, values]); return api; },
       filter() { return api; },
       insert(payload: Row) { state.op = 'insert'; state.payload = payload; return api; },
       update(payload: Row) { state.op = 'update'; state.payload = payload; return api; },
@@ -125,7 +132,20 @@ function memory(seed: {
 
   const admin = {
     from,
-    rpc(name: string, args: Record<string, unknown>) {
+    async rpc(name: string, args: Record<string, unknown>) {
+      if (name === 'settle_company_c6_bank_slip') {
+        const result = await applyC6SettlementTransaction(tables, {
+          companyId: String(args.p_company_id || ''),
+          chargeId: String(args.p_charge_id || ''),
+          receiptId: String(args.p_receipt_id || ''),
+          integrationId: String(args.p_integration_id || ''),
+          financialAccountId: String(args.p_financial_account_id || ''),
+          bankSlipId: String(args.p_bank_slip_id || ''),
+          paidAmount: Number(args.p_paid_amount),
+          paidOn: String(args.p_paid_on || ''),
+        });
+        return { data: result, error: null };
+      }
       const key = `${args.p_company_id}|${args.p_integration_id}|${args.p_external_reference_id}`;
       if (name === 'reserve_c6_boleto') {
         const found = reservations.find((item) => item.key === key);

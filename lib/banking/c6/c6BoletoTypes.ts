@@ -90,6 +90,9 @@ export type C6BankSlipResponse = C6BankSlipCreateResponse & {
   emission_date?: string;
   instructions?: string[];
   payments?: C6BankSlipPayment[];
+  /** OpenAPI 1.7.3. Ausente em respostas 1.7.2. */
+  payment_amount?: number;
+  payment_date?: string;
   internal_id?: string;
   discount?: C6BoletoDiscount;
   interest?: C6BoletoInterest;
