@@ -31,8 +31,8 @@ export type C6BankConfigPublic = {
 };
 
 export type C6WebhookPublicStatus = {
-  registeredAtBank: false;
-  registrationLabel: 'Não cadastrado no Banco C6';
+  registeredAtBank: boolean;
+  registrationLabel: 'Não cadastrado no Banco C6' | 'Webhook cadastrado no Banco C6';
   automaticReconciliation: 'Desligada';
   receiptPath: string | null;
   lastReceivedAt: string | null;

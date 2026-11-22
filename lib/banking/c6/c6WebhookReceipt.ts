@@ -14,8 +14,29 @@ export function isC6WebhookReceiptToken(value: string): boolean {
   return TOKEN_PATTERN.test(value);
 }
 
+export const C6_WEBHOOK_PUBLIC_ORIGIN = 'https://www.svlotes.com.br';
+
 export function c6WebhookReceiptPath(token: string): string {
   return `/api/banking/c6/webhook/${token}`;
+}
+
+export function c6WebhookPublicUrl(token: string): string {
+  return `${C6_WEBHOOK_PUBLIC_ORIGIN}${c6WebhookReceiptPath(token)}`;
+}
+
+export function c6WebhookRegistrationLabel(
+  confirmed: boolean,
+): C6WebhookPublicStatus['registrationLabel'] {
+  return confirmed ? 'Webhook cadastrado no Banco C6' : 'Não cadastrado no Banco C6';
+}
+
+export function readC6WebhookBankConfirmation(metadata: unknown): boolean {
+  const c6 = asRecord(asRecord(metadata).c6);
+  return (
+    c6.webhook_bank_service === 'BANK_SLIP' &&
+    typeof c6.webhook_bank_confirmed_at === 'string' &&
+    Boolean(readToken(metadata))
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -100,7 +121,7 @@ export async function readC6WebhookPanel(
 ): Promise<C6WebhookPublicStatus> {
   const empty: C6WebhookPublicStatus = {
     registeredAtBank: false,
-    registrationLabel: 'Não cadastrado no Banco C6',
+    registrationLabel: c6WebhookRegistrationLabel(false),
     automaticReconciliation: 'Desligada',
     receiptPath: null,
     lastReceivedAt: null,
@@ -132,8 +153,11 @@ export async function readC6WebhookPanel(
     ['PROCESSED', 'DUPLICATE', 'IGNORED'].includes(String(event.processing_status)),
   );
   const failed = rows.find((event) => String(event.processing_status) === 'FAILED');
+  const confirmed = readC6WebhookBankConfirmation(row.metadata);
   return {
     ...empty,
+    registeredAtBank: confirmed,
+    registrationLabel: c6WebhookRegistrationLabel(confirmed),
     receiptPath: token ? c6WebhookReceiptPath(token) : null,
     lastReceivedAt: latest?.created_at ? String(latest.created_at) : null,
     lastProcessedAt: processed?.processed_at ? String(processed.processed_at) : null,

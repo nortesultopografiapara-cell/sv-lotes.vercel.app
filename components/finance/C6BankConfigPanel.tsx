@@ -38,6 +38,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   const [togglingEmission, setTogglingEmission] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [preparingWebhook, setPreparingWebhook] = useState(false);
+  const [registeringWebhook, setRegisteringWebhook] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +110,38 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       setError(cause instanceof Error ? cause.message : 'Não foi possível preparar a URL');
     } finally {
       setPreparingWebhook(false);
+    }
+  }
+
+  async function registerWebhook(action: 'register' | 'consult') {
+    if (readOnlyDemo || registeringWebhook || !config?.webhook?.receiptPath) return;
+    if (!password.trim()) {
+      setError(
+        'Informe a senha do administrador principal. Ela é conferida de novo nesta ação e não vem do Banco C6.',
+      );
+      return;
+    }
+    setRegisteringWebhook(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/c6/webhook/register', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.webhook) {
+        setConfig((current) => (current ? { ...current, webhook: data.webhook } : current));
+      }
+      if (!res.ok) throw new Error(data.error || 'Não foi possível cadastrar o webhook');
+      setPassword('');
+      setInfo(data.message || 'Webhook cadastrado no Banco C6.');
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível cadastrar o webhook');
+    } finally {
+      setRegisteringWebhook(false);
     }
   }
 
@@ -244,19 +277,45 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       <div className="rounded-lg border border-[var(--border-color)] p-3 text-xs text-[var(--text-secondary)] space-y-1">
         <p className="font-semibold text-[var(--text-primary)]">Notificações BANK_SLIP</p>
         <p>URL: {config?.webhook?.receiptPath || 'URL ainda não preparada'}</p>
-        <p>Não cadastrado no Banco C6</p>
+        <p>
+          {config?.webhook?.registeredAtBank
+            ? 'Webhook cadastrado no Banco C6'
+            : 'Não cadastrado no Banco C6'}
+        </p>
         <p>Última recebida: {config?.webhook?.lastReceivedAt || 'Nenhuma'}</p>
         <p>Última processada: {config?.webhook?.lastProcessedAt || 'Nenhuma'}</p>
         <p>Último erro: {config?.webhook?.lastError || 'Nenhum'}</p>
         <p>Conciliação automática desligada</p>
-        <button
-          type="button"
-          onClick={() => void prepareWebhook()}
-          disabled={readOnlyDemo || preparingWebhook || loading || Boolean(config?.webhook?.receiptPath)}
-          className="mt-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
-        >
-          {preparingWebhook ? 'Preparando' : 'Preparar URL'}
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void prepareWebhook()}
+            disabled={readOnlyDemo || preparingWebhook || loading || Boolean(config?.webhook?.receiptPath)}
+            className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+          >
+            {preparingWebhook ? 'Preparando' : 'Preparar URL'}
+          </button>
+          {config?.webhook?.receiptPath ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void registerWebhook('register')}
+                disabled={readOnlyDemo || registeringWebhook || loading || !password.trim()}
+                className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+              >
+                {registeringWebhook ? 'Consultando o C6' : 'Cadastrar webhook no C6'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void registerWebhook('consult')}
+                disabled={readOnlyDemo || registeringWebhook || loading || !password.trim()}
+                className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+              >
+                Consultar cadastro
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {loading ? (

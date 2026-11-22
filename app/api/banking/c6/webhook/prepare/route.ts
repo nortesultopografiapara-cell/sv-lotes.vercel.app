@@ -21,9 +21,7 @@ export async function POST(request: Request) {
       webhook: {
         ...webhook,
         receiptPath: c6WebhookReceiptPath(token),
-        registeredAtBank: false,
-        registrationLabel: 'Não cadastrado no Banco C6',
-        automaticReconciliation: 'Desligada',
+        automaticReconciliation: 'Desligada' as const,
       },
     });
   } catch (error) {
