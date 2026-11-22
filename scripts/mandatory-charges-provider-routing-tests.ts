@@ -123,6 +123,8 @@ function testCentralRoutesByProvider() {
   assert.match(actions, /chargeProvider/);
   assert.match(actions, /Gerar boleto C6/);
   assert.match(actions, /Consultando cobrança C6/);
+  assert.match(actions, /não confirma que o boleto já pode ser pago na rede bancária/);
+  assert.doesNotMatch(actions, /href=\{`\/api\/banking\/c6\/charges\/pdf/);
   assert.match(actions, /WhatsApp/);
   const whatsappStart = page.indexOf('const handleWhatsApp =');
   const whatsappBody = page.slice(whatsappStart, page.indexOf('const runBulkGenerate', whatsappStart));

@@ -1183,7 +1183,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   };
 
   const handleDownloadC6Pdf = async (installmentId: string, openInline = false) => {
-    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (!openInline && blockOwnerWriteOnClient(user?.role)) return;
     setAsaasActionInstallmentId(installmentId);
     try {
       const res = await fetch(
@@ -1205,7 +1205,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         a.click();
       }
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      showToast(openInline ? 'PDF do boleto C6 aberto.' : 'PDF do boleto C6 baixado.');
+      showToast(
+        openInline
+          ? 'PDF devolvido pelo C6 aberto. Isso não confirma pagamento na rede bancária.'
+          : 'PDF devolvido pelo C6 baixado. Isso não confirma pagamento na rede bancária.',
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao obter o PDF C6.', true);
     } finally {
@@ -2244,6 +2248,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                           void (provider === 'C6'
                             ? handleDownloadC6Pdf(installmentId, false)
                             : handleDownloadInterPdf(installmentId))
+                        }
+                        onViewPdf={
+                          provider === 'C6'
+                            ? () => void handleDownloadC6Pdf(installmentId, true)
+                            : undefined
                         }
                         onSendEmail={() => void handleSendInterEmail(installmentId, row, view)}
                         onWhatsApp={() => {

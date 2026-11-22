@@ -73,6 +73,7 @@ export type ChargeInstallmentActionsProps = {
   onCopyBarcodeLine: () => void;
   onWhatsApp: () => void;
   onDownloadPdf?: () => void;
+  onViewPdf?: () => void;
   onSendEmail?: () => void;
   /** Homologação Develop: não oferece emissão, cancelamento nem envio. */
   outboundBlocked?: boolean;
@@ -133,6 +134,7 @@ export function ChargeInstallmentActions({
   onCopyBarcodeLine,
   onWhatsApp,
   onDownloadPdf,
+  onViewPdf,
   onSendEmail,
   outboundBlocked = false,
   c6Notice = null,
@@ -233,17 +235,17 @@ export function ChargeInstallmentActions({
               Gerar boleto C6
             </button>
           ) : null}
-          {c6.showView ? (
-            <a
-              href={`/api/banking/c6/charges/pdf?installmentId=${encodeURIComponent(view.id)}`}
-              target="_blank"
-              rel="noopener noreferrer"
+          {c6.showView && onViewPdf ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onViewPdf}
               className={btnClass}
-              title="Abrir o PDF oficial do boleto C6"
+              title="Abrir o PDF devolvido pelo C6. Este arquivo não confirma que o boleto já pode ser pago na rede bancária."
             >
               <ExternalLink className="h-3.5 w-3.5" />
               Visualizar boleto
-            </a>
+            </button>
           ) : null}
           {c6.showDownload && onDownloadPdf ? (
             <button
@@ -251,7 +253,7 @@ export function ChargeInstallmentActions({
               disabled={busy}
               onClick={onDownloadPdf}
               className={btnClass}
-              title="Baixar o PDF oficial do boleto C6"
+              title="Baixar o PDF devolvido pelo C6. Este arquivo não confirma que o boleto já pode ser pago na rede bancária."
             >
               <FileText className="h-3.5 w-3.5" />
               Baixar PDF
