@@ -611,6 +611,9 @@ export function customerPatchFromForm(
     patch.cep = zip;
     patch.zip_code = zip;
   }
+  if (!isEmptyCustomerField(form.address_number)) {
+    patch.address_number = form.address_number?.trim() || null;
+  }
 
   const pj = isBuyerLegalEntity(form.cpf_cnpj);
   patch.person_type = pj ? 'PJ' : normalizeDocument(form.cpf_cnpj).length === 11 ? 'PF' : null;
@@ -618,9 +621,6 @@ export function customerPatchFromForm(
     if (!isEmptyCustomerField(form.trade_name)) patch.trade_name = form.trade_name?.trim() || null;
     if (!isEmptyCustomerField(form.registration_status)) {
       patch.registration_status = form.registration_status?.trim() || null;
-    }
-    if (!isEmptyCustomerField(form.address_number)) {
-      patch.address_number = form.address_number?.trim() || null;
     }
     if (!isEmptyCustomerField(form.address_complement)) {
       patch.address_complement = form.address_complement?.trim() || null;

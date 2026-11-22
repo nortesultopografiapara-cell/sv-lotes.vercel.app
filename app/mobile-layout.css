@@ -401,6 +401,11 @@
       display: block;
     }
 
+    .sv-sale-ws-row--number {
+      display: grid;
+      grid-template-columns: minmax(8rem, 12rem);
+    }
+
     .sv-sale-ws-row--docs {
       display: grid;
       grid-template-columns: minmax(10.5rem, 1.3fr) minmax(8rem, 1fr) minmax(6.5rem, 0.9fr) 4.5rem;

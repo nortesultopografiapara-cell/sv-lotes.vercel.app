@@ -196,6 +196,72 @@ function testEditSaleClearsEmailWhenFormEmpty() {
   console.log('OK testEditSaleClearsEmailWhenFormEmpty');
 }
 
+function testPfAddressNumberPersistsWithoutExtractingStreet() {
+  const created = buildCustomerPayload(
+    {
+      ...emptyCustomerFormValues(),
+      name: 'MARIA SOUZA',
+      cpf_cnpj: '12345678901',
+      address: 'RUA 27 DE MARCO',
+      address_number: '42',
+      city: 'PARAUAPEBAS',
+      state_uf: 'PA',
+    },
+    { tenantId: 'tenant-a', projectId: 'project-a' },
+  );
+  assert(created.address === 'RUA 27 DE MARCO', 'a rua permanece sem o número extraído');
+  assert(created.address_number === '42', 'nova venda grava o número informado');
+  assert(created.company_id === 'tenant-a', 'o número fica no cliente da empresa da venda');
+
+  const otherCompany = buildCustomerPayload(
+    {
+      ...emptyCustomerFormValues(),
+      name: 'OUTRA EMPRESA',
+      cpf_cnpj: '12345678901',
+      address: 'RUA 27 DE MARCO',
+      address_number: '99',
+    },
+    { tenantId: 'tenant-b', projectId: 'project-b' },
+  );
+  assert(otherCompany.address_number === '99', 'empresa B guarda o próprio número');
+  assert(otherCompany.company_id === 'tenant-b' && otherCompany.company_id !== created.company_id, 'números não cruzam empresas');
+
+  const reopened = customerToFormValues({
+    ...FULL_CUSTOMER,
+    address_number: '42',
+  });
+  assert(reopened.address_number === '42', 'reabertura carrega o número salvo');
+
+  const edited = mergeCustomerPatchFromForm(
+    { ...FULL_CUSTOMER, address_number: '42', company_id: 'tenant-a' },
+    { ...reopened, city: 'CANAA DOS CARAJAS', address_number: '42' },
+  );
+  assert(edited.address_number === '42', 'editar outro campo preserva o número');
+  assert(edited.city === 'CANAA DOS CARAJAS', 'a edição do restante do endereço segue');
+
+  const blank = mergeCustomerPatchFromForm(
+    { ...FULL_CUSTOMER, address: 'RUA 27 DE MARCO', address_number: '42' },
+    {
+      ...customerToFormValues({ ...FULL_CUSTOMER, address: 'RUA 27 DE MARCO', address_number: '42' }),
+      address_number: '',
+    },
+  );
+  assert(blank.address === 'RUA 27 DE MARCO', 'rua antiga permanece');
+  assert(blank.address_number === '42', 'campo vazio não apaga número já salvo');
+
+  const legacy = mergeCustomerPatchFromForm(
+    { ...FULL_CUSTOMER, address: 'RUA 27 DE MARCO', address_number: null },
+    {
+      ...customerToFormValues(FULL_CUSTOMER),
+      address: 'RUA 27 DE MARCO',
+      address_number: '',
+    },
+  );
+  assert(legacy.address_number == null, 'cadastro antigo sem número não é preenchido');
+  assert(!String(legacy.address_number || '').includes('27'), 'dígito da rua não vira número');
+  console.log('OK testPfAddressNumberPersistsWithoutExtractingStreet');
+}
+
 function testRegenerateMergeFromLayers() {
   const wipedDb = {
     id: 'cust-1',
@@ -232,5 +298,6 @@ testSaleFormOverlayDoesNotWipeDbCustomer();
 testContractHtmlWithFullCustomer();
 testEditSalePatchPreservesFields();
 testEditSaleClearsEmailWhenFormEmpty();
+testPfAddressNumberPersistsWithoutExtractingStreet();
 testRegenerateMergeFromLayers();
 console.log('mandatory-customer-data-preservation-tests: all passed');

@@ -233,7 +233,7 @@ export default function CustomersPage() {
         person_type: personType,
         trade_name: personType === 'PJ' ? formData.trade_name?.trim() || null : null,
         registration_status: personType === 'PJ' ? formData.registration_status?.trim() || null : null,
-        address_number: personType === 'PJ' ? formData.address_number?.trim() || null : null,
+        address_number: formData.address_number?.trim() || null,
         address_complement: personType === 'PJ' ? formData.address_complement?.trim() || null : null,
         legal_representatives_json: personType === 'PJ' ? formData.legal_representatives || [] : null,
         buyer_signature_mode: personType === 'PJ'
@@ -313,7 +313,7 @@ export default function CustomersPage() {
       }
 
       setIsModalOpen(false);
-      setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' });
+      setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', address_number: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' });
       await loadCustomers();
       alert('Cliente salvo com sucesso');
     } catch (err: any) {
@@ -547,7 +547,7 @@ export default function CustomersPage() {
           <div className="sv-modal-shell sv-modal-shell--wide bg-[var(--color-surface)] border border-[var(--color-border)] animate-in fade-in zoom-in duration-200">
             <div className="sv-modal-header p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
               <h3 className="font-bold text-lg text-[var(--text-primary)]">{formData.id ? 'Editar Cliente' : 'Novo Cliente'}</h3>
-              <button disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
+              <button disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', address_number: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -603,10 +603,14 @@ export default function CustomersPage() {
                    </select>
                 </div>}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Endereço</label>
+                   <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Rua Exemplo" />
+                </div>
                 <div>
-                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Endereço (Rua, Número)</label>
-                   <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Rua Exemplo, 123" />
+                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Número do imóvel</label>
+                   <input type="text" inputMode="numeric" autoComplete="off" value={formData.address_number || ''} onChange={e => setFormData({...formData, address_number: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="123" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Bairro</label>
@@ -646,6 +650,7 @@ export default function CustomersPage() {
                   addressComplement={formData.address_complement || ''}
                   signatureMode={formData.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL'}
                   representatives={formData.legal_representatives || []}
+                  hideAddressNumber
                   disabled={submitting}
                   onChange={(patch) => setFormData((prev: any) => ({ ...prev, ...patch }))}
                 />
@@ -661,7 +666,7 @@ export default function CustomersPage() {
               )}
               </div>
               <div className="sv-modal-footer border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 flex gap-3">
-                 <button type="button" disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-[var(--text-primary)] hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
+                 <button type="button" disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', address_number: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-[var(--text-primary)] hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
                    Cancelar
                  </button>
                  <button type="submit" disabled={submitting} className={`flex-1 px-4 py-2 bg-[var(--color-primary)] text-[var(--text-primary)] hover:bg-[var(--color-primary-hover)] font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2`}>

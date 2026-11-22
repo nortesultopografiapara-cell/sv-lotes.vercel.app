@@ -16,6 +16,7 @@ type Props = {
   signatureMode: BuyerSignatureMode;
   representatives: BuyerRepresentativeInput[];
   disabled?: boolean;
+  hideAddressNumber?: boolean;
   onChange: (patch: {
     trade_name?: string;
     registration_status?: string;
@@ -37,6 +38,7 @@ export function BuyerLegalEntityFields({
   signatureMode,
   representatives,
   disabled,
+  hideAddressNumber,
   onChange,
 }: Props) {
   const reps = representatives.length > 0 ? representatives : [emptyBuyerRepresentative()];
@@ -68,15 +70,17 @@ export function BuyerLegalEntityFields({
             onChange={(e) => onChange({ registration_status: e.target.value })}
           />
         </label>
-        <label className="block text-xs font-semibold text-slate-700">
-          Número
-          <input
-            className={inputClass}
-            disabled={disabled}
-            value={addressNumber}
-            onChange={(e) => onChange({ address_number: e.target.value })}
-          />
-        </label>
+        {!hideAddressNumber && (
+          <label className="block text-xs font-semibold text-slate-700">
+            Número do imóvel
+            <input
+              className={inputClass}
+              disabled={disabled}
+              value={addressNumber}
+              onChange={(e) => onChange({ address_number: e.target.value })}
+            />
+          </label>
+        )}
         <label className="block text-xs font-semibold text-slate-700">
           Complemento
           <input

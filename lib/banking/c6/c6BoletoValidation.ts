@@ -167,11 +167,22 @@ function assertExternalReferenceId(raw: unknown): string {
 }
 
 function assertAddressNumber(raw: unknown): number {
-  const n = typeof raw === 'number' ? raw : Number(String(raw || '').trim());
-  if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-    throw new C6BoletoValidationError('address.number deve ser um inteiro maior ou igual a zero.', [
-      'payer.address.number',
-    ]);
+  const text = typeof raw === 'number' ? String(raw) : String(raw ?? '').trim();
+  if (!text) {
+    throw new C6BoletoValidationError(C6_ADDRESS_NUMBER_REQUIRED_MESSAGE, ['payer.address.number']);
+  }
+  if (!/^\d+$/.test(text)) {
+    throw new C6BoletoValidationError(
+      'O número do imóvel precisa ser um inteiro maior ou igual a zero. O Banco C6 não aceita texto nem S/N.',
+      ['payer.address.number'],
+    );
+  }
+  const n = Number(text);
+  if (!Number.isSafeInteger(n)) {
+    throw new C6BoletoValidationError(
+      'O número do imóvel precisa ser um inteiro maior ou igual a zero. O Banco C6 não aceita texto nem S/N.',
+      ['payer.address.number'],
+    );
   }
   return n;
 }

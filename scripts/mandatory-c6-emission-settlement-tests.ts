@@ -302,9 +302,14 @@ async function main() {
   assert(first.emitted && first.bankSlipId === 'slip-1', 'boleto individual simulado registra o id');
   assert(first.pixCopyPaste === null && first.bolepixSpecInRepo === false, 'Pix não é inventado');
   assert(!emittedCalls.body.includes('pix') && !emittedCalls.body.includes('chave'), 'o POST oficial não leva Pix');
-  const sent = JSON.parse(emittedCalls.body) as { amount: number; due_date: string; payer: { tax_id: string } };
+  const sent = JSON.parse(emittedCalls.body) as {
+    amount: number;
+    due_date: string;
+    payer: { tax_id: string; address: { number: number; street: string } };
+  };
   assert(sent.amount === 10.5 && sent.due_date === '2026-12-20', 'valor e vencimento originais são enviados');
   assert(sent.payer.tax_id === '52998224725', 'o pagador da parcela é enviado');
+  assert(sent.payer.address.number === 10 && sent.payer.address.street === 'Rua A', 'payer.address.number recebe o número informado');
   const receipt = emitted.tables.finance_receipts[0];
   assert(receipt.amount === 10.5 && receipt.due_date === '2026-12-20' && receipt.status === 'pendente', 'a parcela não muda na emissão');
   const second = await emitC6InstallmentBoleto(emitted.admin as never, COMPANY_A, INSTALLMENT, {
@@ -423,6 +428,7 @@ async function main() {
 
   const missingCalls = { n: 0, body: '' };
   const missingNumber = memory({});
+  missingNumber.tables.customers[0].address = 'RUA 27 DE MARCO';
   missingNumber.tables.customers[0].address_number = '';
   let missingMessage = '';
   try {
@@ -442,6 +448,28 @@ async function main() {
       missingCalls.n === 0 &&
       missingNumber.reservations.length === 0,
     'número ausente falha antes do banco e da reserva',
+  );
+
+  const withoutNumberCalls = { n: 0, body: '' };
+  const withoutNumber = memory({});
+  withoutNumber.tables.customers[0].address_number = 'S/N';
+  let withoutNumberMessage = '';
+  try {
+    await emitC6InstallmentBoleto(withoutNumber.admin as never, COMPANY_A, INSTALLMENT, {
+      allowSimulatedHttp: true,
+      fetchFn: boletoFetch('ok', withoutNumberCalls) as never,
+      authFetchFn: authFetch() as never,
+      credentials: creds,
+      now: NOW,
+    });
+  } catch (error) {
+    withoutNumberMessage = error instanceof Error ? error.message : '';
+  }
+  assert(
+    withoutNumberMessage.includes('não aceita texto nem S/N') &&
+      withoutNumberCalls.n === 0 &&
+      withoutNumber.reservations.length === 0,
+    'S/N não vira zero e não reserva boleto',
   );
 
   const rejectedCalls = { n: 0, body: '' };

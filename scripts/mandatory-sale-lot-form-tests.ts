@@ -10,6 +10,8 @@ import {
   mergeCustomerPatchFromForm,
   type CustomerRecord,
 } from '../lib/customerIdentity';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   validateOptionalCustomerEmail,
   validateSaleLotFormBasics,
@@ -112,6 +114,24 @@ function testSaleFormAllowsMissingEmail() {
   console.log('OK testSaleFormAllowsMissingEmail');
 }
 
+function testSaleFormShowsAddressNumberWithoutRequiringIt() {
+  const modal = readFileSync(join(process.cwd(), 'components/map/CustomerLotFormModal.tsx'), 'utf8');
+  const customers = readFileSync(join(process.cwd(), 'app/customers/page.tsx'), 'utf8');
+  assert(modal.includes('Número do imóvel'), 'nova venda e edição mostram o número do imóvel');
+  assert(modal.includes("setField({ address_number: e.target.value })"), 'o campo da venda grava o valor digitado');
+  assert(customers.includes('Número do imóvel'), 'o cadastro do cliente mostra o mesmo campo');
+  assert(customers.includes('address_number: formData.address_number?.trim() || null'), 'pessoa física também persiste o número');
+  const result = validateSaleLotFormSubmission({
+    form: {
+      ...customerToFormValues(FULL_CUSTOMER),
+      address_number: '',
+    },
+    finalValue: 50000,
+  });
+  assert(result.valid, 'venda de outros bancos segue sem o número');
+  console.log('OK testSaleFormShowsAddressNumberWithoutRequiringIt');
+}
+
 function testSaleFormBlocksMissingContractFields() {
   const result = validateSaleLotFormSubmission({
     form: {
@@ -140,6 +160,7 @@ function main() {
   testSaleFormBlocksMissingNameAndCpf();
   testSaleFormBlocksInvalidEmailBeforeContractChecks();
   testSaleFormAllowsMissingEmail();
+  testSaleFormShowsAddressNumberWithoutRequiringIt();
   testSaleFormBlocksMissingContractFields();
   console.log('OK — mandatory-sale-lot-form-tests passed');
 }

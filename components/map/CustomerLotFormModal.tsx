@@ -1531,6 +1531,21 @@ export function CustomerLotFormModal({
                   className={GIS_INPUT}
                 />
               </div>
+              <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--number" : undefined}>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Número do imóvel</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={formData.address_number || ''}
+                  onChange={(e) => setField({ address_number: e.target.value })}
+                  placeholder="Ex.: 123"
+                  className={GIS_INPUT}
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Opcional para concluir a venda. O Banco C6 só emite boleto com um número inteiro neste campo. Imóvel sem número não é aceito pelo C6.
+                </p>
+              </div>
               <div className={isWorkspaceDesktop ? "sv-sale-ws-row sv-sale-ws-row--city" : "grid grid-cols-2 md:grid-cols-4 gap-4"}>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Bairro</label>
@@ -1584,6 +1599,7 @@ export function CustomerLotFormModal({
                   addressComplement={formData.address_complement || ''}
                   signatureMode={formData.buyer_signature_mode === 'JOINT' ? 'JOINT' : 'INDIVIDUAL'}
                   representatives={formData.legal_representatives || []}
+                  hideAddressNumber
                   disabled={submitting || prefillLoading}
                   onChange={(patch) => setField(patch)}
                 />
