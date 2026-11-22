@@ -31,5 +31,9 @@ assert(!banks.includes('C6BankConfigPanel'), 'o C6 não fica só na aba de desen
 assert(!asaas.includes('c6') && !inter.includes('lib/banking/c6'), 'Asaas e Inter não passam a depender do C6');
 assert(connection.includes('connection') && !connection.includes('requestC6AccessToken'), 'o teste não chama o banco sem autorização');
 assert(connection.includes('authorizeTenantBilling'), 'o teste usa a empresa da sessão');
+assert(panel.includes('Cadastrar conta C6'), 'a tela oferece o cadastro de uma conta C6');
+assert(panel.includes('Contas do Asaas e do Banco Inter não entram nesta lista.'), 'Asaas e Inter não são oferecidos ao C6');
+assert(panel.includes('A conexão OAuth não substitui esse vínculo.'), 'autenticação e vínculo ficam separados');
+assert(panel.includes('financialAccountId'), 'a ativação continua exigindo a conta vinculada');
 
 console.log('C6_FINANCIAL_UI_OK');

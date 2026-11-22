@@ -280,10 +280,25 @@ async function resolveC6IntegrationId(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return {
-    integrationId: data?.id ? String(data.id) : null,
-    financialAccountId: null,
-  };
+  const integrationId = data?.id ? String(data.id) : null;
+  if (!integrationId) return { integrationId: null, financialAccountId: null };
+
+  const { data: linked, error: linkedError } = await admin
+    .from('company_financial_accounts')
+    .select('id, company_id, bank_integration_id')
+    .eq('company_id', companyId)
+    .eq('bank_integration_id', integrationId)
+    .eq('active', true)
+    .limit(1)
+    .maybeSingle();
+  if (linkedError) throw new Error(linkedError.message);
+  const financialAccountId =
+    linked?.id &&
+    String(linked.company_id) === companyId &&
+    String(linked.bank_integration_id) === integrationId
+      ? String(linked.id)
+      : null;
+  return { integrationId, financialAccountId };
 }
 
 export async function getCompanyC6BankConfig(

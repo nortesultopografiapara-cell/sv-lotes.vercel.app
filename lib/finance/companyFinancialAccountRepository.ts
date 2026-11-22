@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
 import { isC6ProviderCode, throwIfC6EmissionAttempt, C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
+import { isPendingC6FinancialAccount } from '@/lib/banking/c6/c6FinancialAccount';
 import { maskAsaasWalletId } from '@/lib/finance/asaasWalletId';
 import {
   isInterFinancialProvider,
@@ -451,7 +452,11 @@ export async function updateCompanyFinancialAccount(
   if (error) throw new Error(error.message);
   const row = data as CompanyFinancialAccountRow;
 
-  if (isInterFinancialProvider(existing.provider)) {
+  if (
+    isInterFinancialProvider(existing.provider) ||
+    isPendingC6FinancialAccount(existing) ||
+    String(existing.provider || '').toUpperCase() === 'C6'
+  ) {
     return (await getCompanyFinancialAccountById(admin, companyId, accountId))!;
   }
 

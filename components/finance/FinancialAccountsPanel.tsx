@@ -19,6 +19,7 @@ import {
 } from '@/lib/finance/companyFinancialAccountBankIdentity';
 import { buildDefaultAsaasWebhookUrl } from '@/lib/finance/asaasIntegrationConfig';
 import { InterBankConfigPanel } from '@/components/finance/InterBankConfigPanel';
+import { isPendingC6FinancialAccount } from '@/lib/banking/c6/c6FinancialAccount';
 
 type Props = {
   tenantId: string;
@@ -124,8 +125,14 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     [accounts, selectedId],
   );
   const selectedIsInter = isInterFinancialProvider(selectedAccount?.provider);
-  const showAsaasEnvironment = creatingProvider === 'ASAAS' || (!creating && selectedAccount && !selectedIsInter);
-  const showAsaasCredentials = creatingProvider === 'ASAAS' || (!creating && selectedAccount && !selectedIsInter);
+  const selectedIsPendingC6 = isPendingC6FinancialAccount(selectedAccount);
+  const selectedIsC6 = String(selectedAccount?.provider || '').toUpperCase() === 'C6';
+  const showAsaasEnvironment =
+    creatingProvider === 'ASAAS' ||
+    (!creating && selectedAccount && !selectedIsInter && !selectedIsPendingC6 && !selectedIsC6);
+  const showAsaasCredentials =
+    creatingProvider === 'ASAAS' ||
+    (!creating && selectedAccount && !selectedIsInter && !selectedIsPendingC6 && !selectedIsC6);
   const showInterCredentials = !creating && selectedIsInter && Boolean(selectedAccount?.id);
 
   const loadAccounts = useCallback(async () => {
@@ -175,6 +182,33 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     });
     setSuccess(null);
     setError(null);
+  }
+
+  async function createC6Account() {
+    if (readOnlyDemo || saving) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch('/api/banking/c6/financial-account', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ environment: 'SANDBOX' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      const accountId = String(json.account?.id || '');
+      setSuccess(
+        'Conta C6 cadastrada sem vínculo com Asaas ou Inter. Abra a aba C6 Bank, selecione essa conta e salve a configuração.',
+      );
+      await loadAccounts();
+      if (accountId) setSelectedId(accountId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao cadastrar a conta C6.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function startCreateInter() {
@@ -350,6 +384,15 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
               <Plus className="h-4 w-4" />
               Nova conta Inter
             </button>
+            <button
+              type="button"
+              onClick={() => void createC6Account()}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Nova conta C6
+            </button>
           </div>
         ) : null}
       </div>
@@ -378,12 +421,14 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
             </p>
           ) : (
             <div className="space-y-3">
-              {(['INTER', 'ASAAS_COMPANY', 'NONE'] as const).map((group) => {
+              {(['INTER', 'ASAAS_COMPANY', 'C6', 'NONE'] as const).map((group) => {
                 const items = accounts.filter((account) => {
                   if (group === 'INTER') return account.provider === 'INTER';
                   if (group === 'ASAAS_COMPANY')
                     return account.provider === 'ASAAS_COMPANY' || account.provider === 'ASAAS';
-                  return !account.provider;
+                  if (group === 'C6')
+                    return isPendingC6FinancialAccount(account) || String(account.provider || '').toUpperCase() === 'C6';
+                  return !account.provider && !isPendingC6FinancialAccount(account);
                 });
                 const showDraft =
                   (group === 'INTER' && creatingProvider === 'INTER') ||
@@ -394,7 +439,9 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     ? 'Banco Inter'
                     : group === 'ASAAS_COMPANY'
                       ? 'Asaas'
-                      : 'Sem provider';
+                      : group === 'C6'
+                        ? 'C6 Bank'
+                        : 'Sem provider';
                 const draftName =
                   creatingProvider === 'INTER'
                     ? form.name.trim() || NEW_INTER_FINANCIAL_ACCOUNT_NAME
@@ -786,6 +833,12 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
                 />
               </div>
+
+              {selectedIsPendingC6 || selectedIsC6 ? (
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Credenciais e vínculo desta conta ficam na aba C6 Bank. Salvar aqui não associa Asaas nem Banco Inter.
+                </p>
+              ) : null}
 
               {!readOnlyDemo ? (
                 <button

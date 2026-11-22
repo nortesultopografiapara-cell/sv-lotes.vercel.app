@@ -36,6 +36,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   const [bolepixIntent, setBolepixIntent] = useState(false);
   const [testing, setTesting] = useState(false);
   const [togglingEmission, setTogglingEmission] = useState(false);
+  const [creatingAccount, setCreatingAccount] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -153,6 +154,38 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
     }
   }
 
+  async function createAccount() {
+    if (readOnlyDemo || persistBlocked || creatingAccount) return;
+    setCreatingAccount(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/c6/financial-account', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ environment }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível cadastrar a conta C6');
+      const created = data.account as { id?: string; name?: string } | undefined;
+      if (!created?.id) throw new Error('Não foi possível cadastrar a conta C6');
+      setAccounts((current) =>
+        current.some((account) => account.id === created.id)
+          ? current
+          : [...current, { id: created.id!, name: created.name || 'Conta C6', provider: null }],
+      );
+      setFinancialAccountId(created.id);
+      setInfo(
+        'Conta C6 cadastrada. Selecione-a e salve a configuração para vincular. A conexão verificada não faz esse vínculo. Client ID, segredo e certificado já gravados não precisam ser enviados de novo.',
+      );
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível cadastrar a conta C6');
+    } finally {
+      setCreatingAccount(false);
+    }
+  }
+
   const linkable = accounts.filter((account) => {
     const provider = String(account.provider || '').toUpperCase();
     return !provider || provider === 'C6';
@@ -216,6 +249,17 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
                 </option>
               ))}
             </select>
+            <span className="mt-1 block font-normal text-[var(--text-muted)]">
+              Contas do Asaas e do Banco Inter não entram nesta lista.
+            </span>
+            <button
+              type="button"
+              onClick={() => void createAccount()}
+              disabled={readOnlyDemo || persistBlocked || creatingAccount || loading}
+              className="mt-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {creatingAccount ? 'Cadastrando' : 'Cadastrar conta C6'}
+            </button>
           </label>
           <label className="text-xs font-semibold text-[var(--text-secondary)] md:col-span-2">
             Client ID
@@ -357,6 +401,11 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
             {togglingEmission ? 'Atualizando' : 'Ativar emissão desta empresa'}
           </button>
         )}
+        {!config?.financialAccountId ? (
+          <p className="w-full text-xs text-[var(--text-muted)]">
+            A emissão continua desabilitada até existir uma conta C6 vinculada. Cadastre a conta, selecione-a e salve com a senha do administrador. A conexão OAuth não substitui esse vínculo.
+          </p>
+        ) : null}
       </div>
     </section>
   );
