@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Landmark, Loader2, Plus, Save, ShieldCheck, Star, Wallet } from 'lucide-react';
+import { Building2, Landmark, Loader2, Plus, Save, ShieldCheck, Star, Trash2, Wallet } from 'lucide-react';
 import {
   COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS,
   COMPANY_FINANCIAL_ACCOUNT_TYPES,
@@ -20,6 +20,16 @@ import {
 import { buildDefaultAsaasWebhookUrl } from '@/lib/finance/asaasIntegrationConfig';
 import { InterBankConfigPanel } from '@/components/finance/InterBankConfigPanel';
 import { isPendingC6FinancialAccount } from '@/lib/banking/c6/c6FinancialAccount';
+
+type LifecycleDecision = {
+  canDelete: boolean;
+  canDeactivate: boolean;
+  canReactivate: boolean;
+  canEditBankIdentity: boolean;
+  blockers: string[];
+  deactivationBlockers: string[];
+  bankIdentityBlockers: string[];
+};
 
 type Props = {
   tenantId: string;
@@ -113,6 +123,11 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [creatingProvider, setCreatingProvider] = useState<'ASAAS' | 'INTER' | null>(null);
+  const [lifecycle, setLifecycle] = useState<LifecycleDecision | null>(null);
+  const [lifecycleUpdatedAt, setLifecycleUpdatedAt] = useState('');
+  const [acting, setActing] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const creating = creatingProvider !== null;
 
   const suggestedWebhookUrl = useMemo(() => {
@@ -134,6 +149,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     creatingProvider === 'ASAAS' ||
     (!creating && selectedAccount && !selectedIsInter && !selectedIsPendingC6 && !selectedIsC6);
   const showInterCredentials = !creating && selectedIsInter && Boolean(selectedAccount?.id);
+  const bankIdentityLocked = !creating && Boolean(lifecycle && !lifecycle.canEditBankIdentity);
 
   const loadAccounts = useCallback(async () => {
     setLoading(true);
@@ -157,6 +173,58 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     void loadAccounts();
   }, [loadAccounts]);
 
+  const loadLifecycle = useCallback(async (accountId: string) => {
+    setLifecycle(null);
+    setLifecycleUpdatedAt('');
+    const res = await fetch(`/api/finance/financial-accounts/${accountId}/lifecycle`, {
+      credentials: 'include',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    setLifecycle((json.decision as LifecycleDecision) || null);
+    setLifecycleUpdatedAt(String(json.updatedAt || ''));
+  }, []);
+
+  async function runLifecycle(action: 'deactivate' | 'reactivate' | 'delete') {
+    if (readOnlyDemo || !selectedId || !lifecycleUpdatedAt) return;
+    setActing(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/finance/financial-accounts/${selectedId}/lifecycle`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          expectedUpdatedAt: lifecycleUpdatedAt,
+          ...(action === 'delete'
+            ? { password: deletePassword, confirmation: deleteConfirmation }
+            : {}),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (json.decision) setLifecycle(json.decision as LifecycleDecision);
+        throw new Error(json.error || `Erro ${res.status}`);
+      }
+      setDeletePassword('');
+      setDeleteConfirmation('');
+      if (action === 'delete') {
+        setSelectedId(null);
+        setSuccess('Conta excluída. A integração bancária e as credenciais não foram alteradas.');
+      } else {
+        setSuccess(action === 'deactivate' ? 'Conta desativada.' : 'Conta reativada.');
+      }
+      await loadAccounts();
+      if (action !== 'delete') await loadLifecycle(selectedId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao alterar a conta.');
+    } finally {
+      setActing(false);
+    }
+  }
+
   useEffect(() => {
     if (creatingProvider) return;
     if (selectedId) return;
@@ -169,7 +237,18 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     if (creatingProvider) return;
     if (!selectedAccount) return;
     setForm(accountToForm(selectedAccount));
-  }, [selectedAccount?.id, creatingProvider]);
+    setDeletePassword('');
+    setDeleteConfirmation('');
+  }, [selectedAccount?.id, selectedAccount?.active, selectedAccount?.updatedAt, creatingProvider]);
+
+  useEffect(() => {
+    if (creatingProvider || !selectedAccount) {
+      setLifecycle(null);
+      setLifecycleUpdatedAt('');
+      return;
+    }
+    void loadLifecycle(selectedAccount.id);
+  }, [selectedAccount?.id, creatingProvider, loadLifecycle]);
 
   function startCreateAsaas() {
     setCreatingProvider('ASAAS');
@@ -308,6 +387,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
       setCreatingProvider(null);
       setSelectedId(account.id);
       await loadAccounts();
+      if (!isNewAsaas) await loadLifecycle(account.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao salvar conta financeira.');
     } finally {
@@ -476,6 +556,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                       {account.name}
                     </span>
                     {account.isDefault ? <Star className="h-3.5 w-3.5 text-amber-400" /> : null}
+                    <span className="ml-auto text-[10px] font-semibold uppercase text-[var(--text-muted)]">Editar</span>
                   </div>
                   <p className="text-xs text-[var(--text-secondary)]">
                     {COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS[account.accountType]}
@@ -597,10 +678,10 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     <input
                       type="checkbox"
                       checked={form.active}
-                      disabled={readOnlyDemo}
-                      onChange={(e) => setForm((prev) => ({ ...prev, active: e.target.checked }))}
+                      disabled
+                      readOnly
                     />
-                    Ativa
+                    {form.active ? 'Ativa' : 'Inativa'}
                   </label>
                 </div>
               </div>
@@ -734,6 +815,11 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     Dados cadastrais da conta para conciliação. Não são credenciais de acesso.
                   </p>
                 )}
+                {bankIdentityLocked ? (
+                  <p className="text-xs text-amber-700">
+                    {lifecycle?.bankIdentityBlockers.join(' ')}
+                  </p>
+                ) : null}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">
@@ -753,7 +839,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Banco</label>
                     <input
                       value={form.bankName}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || bankIdentityLocked}
                       onChange={(e) => setForm((prev) => ({ ...prev, bankName: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
                     />
@@ -764,7 +850,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     </label>
                     <input
                       value={form.bankCode}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || bankIdentityLocked}
                       inputMode="numeric"
                       onChange={(e) => setForm((prev) => ({ ...prev, bankCode: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
@@ -774,7 +860,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Agência</label>
                     <input
                       value={form.agency}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || bankIdentityLocked}
                       onChange={(e) => setForm((prev) => ({ ...prev, agency: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
                     />
@@ -783,7 +869,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Conta</label>
                     <input
                       value={form.accountNumber}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || bankIdentityLocked}
                       onChange={(e) => setForm((prev) => ({ ...prev, accountNumber: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
                     />
@@ -792,7 +878,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Dígito</label>
                     <input
                       value={form.accountDigit}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || bankIdentityLocked}
                       onChange={(e) => setForm((prev) => ({ ...prev, accountDigit: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
                     />
@@ -803,7 +889,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     </label>
                     <select
                       value={form.bankAccountKind}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || bankIdentityLocked}
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
@@ -840,7 +926,83 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                 </p>
               ) : null}
 
-              {!readOnlyDemo ? (
+              {!creating && selectedAccount && !readOnlyDemo ? (
+                <div className="space-y-3 rounded-lg border border-[var(--border-color)] p-4">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Situação da conta</p>
+                  {lifecycle?.blockers.map((message) => (
+                    <p key={message} className="text-sm text-[var(--text-secondary)]">{message}</p>
+                  ))}
+                  {lifecycle?.deactivationBlockers.map((message) => (
+                    <p key={message} className="text-sm text-amber-800">{message}</p>
+                  ))}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleSave()}
+                      disabled={saving || acting || !form.name.trim()}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Editar conta
+                    </button>
+                    {selectedAccount.active ? (
+                      <button
+                        type="button"
+                        onClick={() => void runLifecycle('deactivate')}
+                        disabled={acting || !lifecycle?.canDeactivate}
+                        className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                      >
+                        Desativar conta
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void runLifecycle('reactivate')}
+                        disabled={acting || !lifecycle?.canReactivate}
+                        className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                      >
+                        Reativar conta
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2 border-t border-[var(--border-color)] pt-3">
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      A exclusão definitiva pede a senha do administrador principal e o nome exato da conta.
+                      Ela não remove credenciais, webhook nem registros de outra empresa.
+                    </p>
+                    <input
+                      type="password"
+                      value={deletePassword}
+                      autoComplete="new-password"
+                      placeholder="Senha do administrador principal"
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
+                    />
+                    <input
+                      value={deleteConfirmation}
+                      placeholder="Digite o nome exato da conta"
+                      onChange={(e) => setDeleteConfirmation(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void runLifecycle('delete')}
+                      disabled={
+                        acting ||
+                        !lifecycle?.canDelete ||
+                        !deletePassword.trim() ||
+                        deleteConfirmation.trim() !== selectedAccount.name.trim()
+                      }
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-60"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Excluir conta
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {!readOnlyDemo && creating ? (
                 <button
                   type="button"
                   onClick={() => void handleSave()}
@@ -848,7 +1010,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {creating ? 'Criar conta' : 'Salvar alterações'}
+                  Criar conta
                 </button>
               ) : null}
             </>

@@ -414,7 +414,9 @@ export async function updateCompanyFinancialAccount(
   if (input.phone !== undefined) patch.phone = cleanText(input.phone) || null;
   if (input.environment !== undefined) patch.environment = input.environment;
   if (input.isDefault !== undefined) patch.is_default = Boolean(input.isDefault);
-  if (input.active !== undefined) patch.active = Boolean(input.active);
+  if (input.active !== undefined && Boolean(input.active) !== existing.active) {
+    throw new Error('A situação da conta só muda por Desativar ou Reativar.');
+  }
   if (input.notes !== undefined) patch.notes = cleanText(input.notes) || null;
   if (
     input.bankName !== undefined ||
@@ -439,6 +441,12 @@ export async function updateCompanyFinancialAccount(
     if (input.accountNumber !== undefined) patch.account_number = identity.accountNumber;
     if (input.accountDigit !== undefined) patch.account_digit = identity.accountDigit;
     if (input.bankAccountKind !== undefined) patch.bank_account_kind = identity.bankAccountKind;
+    const { bankIdentityInputChanged, assertFinancialAccountBankIdentityChange } = await import(
+      './companyFinancialAccountLifecycle'
+    );
+    if (bankIdentityInputChanged(existing, input)) {
+      await assertFinancialAccountBankIdentityChange(admin, companyId, accountId);
+    }
   }
 
   const { data, error } = await admin
