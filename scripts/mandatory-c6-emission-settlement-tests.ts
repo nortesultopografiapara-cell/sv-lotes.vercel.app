@@ -427,7 +427,7 @@ async function main() {
       },
     },
   );
-  assert(production.ok === false && bankCalls === 0, 'Production não testa conexão sem concessão');
+  assert(production.ok === true && bankCalls === 1 && !JSON.stringify(production).includes('nao'), 'o teste explícito de Production não devolve o token');
   const sandbox = await probeC6Connection(creds, {
     fetchFn: async () => ({
       status: 200,
@@ -435,14 +435,27 @@ async function main() {
     }),
   });
   assert(sandbox.ok === true && !JSON.stringify(sandbox).includes('token-que-nao-pode-sair'), 'o teste simulado não devolve o token');
-  let readSecrets = false;
-  await runC6ConnectionTest({
+  const incomplete = await runC6ConnectionTest({
     from() {
-      readSecrets = true;
-      throw new Error('não deveria ler');
+      const query = {
+        select() {
+          return query;
+        },
+        eq() {
+          return query;
+        },
+        order() {
+          return query;
+        },
+        limit() {
+          return query;
+        },
+        maybeSingle: async () => ({ data: null, error: null }),
+      };
+      return query;
     },
   } as never, COMPANY_B);
-  assert(readSecrets === false, 'sem concessão o teste não lê credencial');
+  assert(incomplete.executed === false && incomplete.ok === false, 'sem credencial o teste não chama o banco');
 
   const root = path.resolve(__dirname, '..');
   const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -453,7 +466,7 @@ async function main() {
   assert(!asaas.includes('emitC6InstallmentBoleto') && !inter.includes('emitC6InstallmentBoleto'), 'Asaas e Inter não emitem pelo C6');
   assert(asaas.includes('A conta C6 não usa o fluxo do Asaas.'), 'Asaas continua recusando C6');
   assert(!webhook.includes('finance_receipts') && webhook.includes('inboundSchema'), 'webhook não baixa parcela');
-  assert(charges.indexOf('isC6CompanyOperationEnabled') < charges.indexOf('emitC6InstallmentBoleto'), 'a rota só emite depois da concessão');
+  assert(charges.indexOf('isC6EmissionActivated') < charges.indexOf('emitC6InstallmentBoleto'), 'a rota só emite depois da ativação da empresa');
   console.log('C6_EMISSION_SETTLEMENT_OK');
   console.log('SIMULADO: emissão, Pix ausente, idempotência, timeout, consulta, baixa e conexão. Nenhum HTTP real.');
 }

@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveChargePayer } from '@/lib/buyerLegalEntity';
-import { isC6CompanyOperationEnabled } from '@/lib/banking/c6/c6CompanyAccess';
+import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
 import {
   executeC6BankSlipCreate,
   executeC6BankSlipGet,
@@ -125,7 +125,8 @@ export async function emitC6InstallmentBoleto(
   options?: C6InstallmentChargeOptions,
 ): Promise<C6InstallmentEmitResult> {
   const live = !simulated(options);
-  if (live && !isC6CompanyOperationEnabled(companyId, 'emission')) {
+  const emissionActivated = live && (await isC6EmissionActivated(admin, companyId));
+  if (live && !emissionActivated) {
     throw new C6EmissionNotHomologatedError();
   }
 
@@ -271,6 +272,7 @@ export async function emitC6InstallmentBoleto(
     fetchFn: options?.fetchFn,
     authFetchFn: options?.authFetchFn,
     now: options?.now,
+    emissionActivated,
   };
 
   let result: Awaited<ReturnType<typeof executeC6BankSlipCreate>>;
@@ -378,7 +380,8 @@ export async function queryC6InstallmentBoleto(
   installmentId: string,
   options?: C6InstallmentChargeOptions,
 ): Promise<{ slip: ReturnType<typeof readOfficialC6BankSlip>; settlement: C6SettlementResult | null }> {
-  if (!simulated(options) && !isC6CompanyOperationEnabled(companyId, 'emission')) {
+  const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
+  if (!emissionActivated) {
     throw new C6EmissionNotHomologatedError();
   }
   await loadReceipt(admin, companyId, installmentId);
@@ -407,6 +410,7 @@ export async function queryC6InstallmentBoleto(
       allowSimulatedHttp: options?.allowSimulatedHttp,
       fetchFn: options?.fetchFn,
       authFetchFn: options?.authFetchFn,
+      emissionActivated,
     },
   );
   const slip = readOfficialC6BankSlip(result.evidence.responseBody);
@@ -424,7 +428,8 @@ export async function fetchC6InstallmentPdf(
   installmentId: string,
   options?: C6InstallmentChargeOptions,
 ): Promise<{ ok: boolean; httpStatus: number | null }> {
-  if (!simulated(options) && !isC6CompanyOperationEnabled(companyId, 'emission')) {
+  const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
+  if (!emissionActivated) {
     throw new C6EmissionNotHomologatedError();
   }
   const charge = await existingCharge(admin, companyId, installmentId);
@@ -451,6 +456,7 @@ export async function fetchC6InstallmentPdf(
       allowSimulatedHttp: options?.allowSimulatedHttp,
       fetchFn: options?.fetchFn,
       authFetchFn: options?.authFetchFn,
+      emissionActivated,
     },
   );
   return { ok: result.ok, httpStatus: result.httpStatus };

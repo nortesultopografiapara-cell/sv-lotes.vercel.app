@@ -37,7 +37,6 @@ import {
   isC6BoletoPdfPayloadValid,
   type C6BoletoEvidencePublic,
 } from '@/lib/banking/c6/c6BoletoEvidence';
-import { isC6CompanyOperationEnabled } from '@/lib/banking/c6/c6CompanyAccess';
 import {
   C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
   C6EmissionNotHomologatedError,
@@ -85,6 +84,8 @@ export type C6BoletoExecuteOptions = {
    */
   allowSandboxLive?: boolean;
   companyId?: string | null;
+  /** Definido só depois da leitura da flag persistida da própria empresa. */
+  emissionActivated?: boolean;
 };
 
 const JSON_CONTENT_TYPE = 'application/json';
@@ -366,11 +367,12 @@ function assertExecuteGate(
   environment: BankEnvironment,
   options?: C6BoletoExecuteOptions,
 ): void {
+  const simulated = options?.allowSimulatedHttp === true && typeof options.fetchFn === 'function';
+  if (simulated) return;
+  if (options?.emissionActivated === true) return;
   if (isC6RemoteOperationBlocked(environment, undefined, options?.companyId, 'emission')) {
     throw new C6EmissionNotHomologatedError();
   }
-  const simulated = options?.allowSimulatedHttp === true && typeof options.fetchFn === 'function';
-  if (simulated) return;
   throwIfC6EmissionAttempt('C6', options?.companyId);
 }
 
@@ -428,9 +430,7 @@ async function resolveAccessToken(
   const provided = String(options?.accessToken || '').trim();
   if (provided) return provided;
   const liveProduction =
-    creds.environment === 'PRODUCTION' &&
-    isC6CompanyOperationEnabled(creds.companyId, 'emission') &&
-    isC6CompanyOperationEnabled(creds.companyId, 'connection');
+    creds.environment === 'PRODUCTION' && options?.emissionActivated === true;
   const oauth = await requestC6AccessToken(creds, {
     fetchFn: options?.authFetchFn,
     allowProduction: liveProduction,
@@ -469,10 +469,9 @@ async function executePrepared(
   const fetchFn = options?.fetchFn || defaultBoletoFetch;
 
   if (!options?.fetchFn) {
-    const granted = isC6CompanyOperationEnabled(options?.companyId, 'emission');
     const sandboxLive =
       isC6BoletoSandboxLiveAuthorized(creds.environment) && options?.allowSandboxLive === true;
-    if (!granted && !sandboxLive) {
+    if (options?.emissionActivated !== true && !sandboxLive) {
       throw new C6EmissionNotHomologatedError();
     }
   }

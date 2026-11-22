@@ -23,6 +23,7 @@ import {
   isC6CompanyOperationEnabled,
   type C6CompanyOperation,
 } from '@/lib/banking/c6/c6CompanyAccess';
+import { isC6EmissionActivated, readC6EmissionEnabled } from '@/lib/banking/c6/c6EmissionAuthorization';
 import { isC6ConfigPersistBlocked, isC6RemoteOperationBlocked } from '@/lib/banking/c6/c6EmitGuard';
 import {
   parseC6CertificateCredential,
@@ -235,7 +236,7 @@ function buildPublicResponse(
       : 'Configuração incompleta. Preencha Client ID, Secret, certificado e chave.',
     financialAccountId,
     active: false,
-    emissionEnabled: false,
+    emissionEnabled: readC6EmissionEnabled(row.metadata),
     boletoIntent: readIntent(row.metadata, 'boleto'),
     bolepixIntent: readIntent(row.metadata, 'bolepix'),
   };
@@ -583,12 +584,12 @@ export async function loadC6SecretsForGrantedOperation(
   integrationId: string;
   financialAccountId: string | null;
 } | null> {
-  if (!isC6CompanyOperationEnabled(companyId, operation)) {
-    throw new Error(
-      operation === 'connection'
-        ? 'Teste de conexão C6 ainda não autorizado para esta empresa.'
-        : 'Emissão C6 ainda não autorizada para esta empresa.',
-    );
+  if (operation === 'connection') {
+    if (!isC6CompanyOperationEnabled(companyId, 'connection')) {
+      throw new Error('Teste de conexão C6 ainda não autorizado para esta empresa.');
+    }
+  } else if (!(await isC6EmissionActivated(admin, companyId))) {
+    throw new Error('Emissão C6 ainda não autorizada para esta empresa.');
   }
   const resolved = await resolveC6IntegrationId(admin, companyId);
   if (!resolved.integrationId) return null;

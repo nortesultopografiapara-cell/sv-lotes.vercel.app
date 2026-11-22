@@ -3,7 +3,10 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
+import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
+import { emitC6InstallmentBoleto } from '@/lib/banking/c6/c6InstallmentCharge';
+import { C6EmissionNotHomologatedError, isC6ProviderCode } from '@/lib/banking/c6/c6EmitGuard';
+import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 import {
   isMissingScheduleGroupColumn,
   mergeScheduleGroups,
@@ -269,7 +272,9 @@ export async function getSaleChargesSummary(
       'Esta venda não possui conta financeira configurada. Defina a conta recebedora na aba Dados (ou conta padrão da empresa) antes de gerar cobranças.';
   }
 
-  throwIfC6EmissionAttempt(resolvedProvider, companyId);
+  if (isC6ProviderCode(resolvedProvider) && !(await isC6EmissionActivated(admin, companyId))) {
+    throw new C6EmissionNotHomologatedError();
+  }
 
   const beneficiary = resolvedAccountId
     ? await resolveSaleCarneBeneficiary(admin, companyId, resolvedAccountId)
@@ -412,6 +417,7 @@ export async function generateMissingSaleChargesBatch(
     );
   }
 
+  const providerInfo = await resolveSaleChargesProvider(admin, params.companyId, params.saleId);
   const missing = summary.missingInstallmentIds;
   const batch = missing.slice(0, limit);
   const progressTotal = summary.chargesMissing + summary.chargesGenerated;
@@ -422,6 +428,13 @@ export async function generateMissingSaleChargesBatch(
 
   for (const installmentId of batch) {
     try {
+      if (providerInfo.provider === 'C6') {
+        const emitted = await emitC6InstallmentBoleto(admin, params.companyId, installmentId);
+        if (emitted.reused) reused += 1;
+        else if (emitted.emitted) created += 1;
+        else skipped += 1;
+        continue;
+      }
       const before = await listCompanyAsaasChargesForInstallments(admin, params.companyId, [
         installmentId,
       ]);

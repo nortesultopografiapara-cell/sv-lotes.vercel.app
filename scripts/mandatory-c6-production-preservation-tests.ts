@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isC6CompanyOperationEnabled } from '../lib/banking/c6/c6CompanyAccess';
+import { readC6EmissionEnabled } from '../lib/banking/c6/c6EmissionAuthorization';
 import { throwIfC6EmissionAttempt } from '../lib/banking/c6/c6EmitGuard';
 
 function assert(condition: boolean, message: string) {
@@ -25,8 +26,11 @@ assert(asaas.includes('Parcela não pertence ao empreendimento da venda.'), 'o e
 assert(asaas.includes('A conta C6 não usa o fluxo do Asaas.'), 'o C6 não entra no fluxo Asaas');
 assert(sales.includes('isRecantoSeparateSignalAllowed'), 'o resumo da venda preserva o sinal separado');
 assert(!inter.includes('emitC6InstallmentBoleto') && !inter.includes('lib/banking/c6'), 'o Inter não passa a depender do C6');
-assert(grants.includes('C6_COMPANY_OPERATION_GRANTS: Readonly<Record<string, C6CompanyGrant>> = {}'), 'nenhuma empresa recebe emissão automática');
-assert(isC6CompanyOperationEnabled('f26f2331-1885-4ac6-8d0e-4131cc8a8014', 'emission') === false, 'a emissão individual permanece desligada');
+assert(!grants.includes('C6_COMPANY_OPERATION_GRANTS'), 'a autorização não usa lista fixa de empresas');
+assert(isC6CompanyOperationEnabled('f26f2331-1885-4ac6-8d0e-4131cc8a8014', 'config') === true, 'o administrador da empresa configura o C6');
+assert(isC6CompanyOperationEnabled('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'connection') === true, 'o teste de conexão vale para qualquer empresa');
+assert(isC6CompanyOperationEnabled('f26f2331-1885-4ac6-8d0e-4131cc8a8014', 'emission') === false, 'nenhuma empresa recebe emissão pelo código');
+assert(readC6EmissionEnabled({}) === false, 'a emissão persistida nasce desligada');
 let blocked = false;
 try {
   throwIfC6EmissionAttempt('C6', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');

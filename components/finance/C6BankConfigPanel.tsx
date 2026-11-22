@@ -35,6 +35,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   const [boletoIntent, setBoletoIntent] = useState(false);
   const [bolepixIntent, setBolepixIntent] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [togglingEmission, setTogglingEmission] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +86,30 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       setError(cause instanceof Error ? cause.message : 'Teste de conexão indisponível');
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function toggleEmission(enabled: boolean) {
+    if (readOnlyDemo || persistBlocked || togglingEmission) return;
+    setTogglingEmission(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/c6/emission', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível atualizar a emissão');
+      setConfig(data.config as C6BankConfigPublic);
+      setPassword('');
+      setInfo(enabled ? 'Emissão ativada somente para esta empresa.' : 'Emissão desativada para esta empresa.');
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a emissão');
+    } finally {
+      setTogglingEmission(false);
     }
   }
 
@@ -150,7 +175,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
             Status {config?.status || 'DRAFT'}
           </span>
           <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-200">
-            Emissão DESATIVADA
+            {config?.emissionEnabled ? 'Emissão ATIVADA' : 'Emissão DESATIVADA'}
           </span>
         </div>
       </div>
@@ -304,6 +329,34 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
         >
           {testing ? 'Testando' : 'Testar conexão'}
         </button>
+        {config?.emissionEnabled ? (
+          <button
+            type="button"
+            onClick={() => void toggleEmission(false)}
+            disabled={readOnlyDemo || persistBlocked || togglingEmission || loading}
+            className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-100 disabled:opacity-50"
+          >
+            {togglingEmission ? 'Atualizando' : 'Desativar emissão'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void toggleEmission(true)}
+            disabled={
+              readOnlyDemo ||
+              persistBlocked ||
+              togglingEmission ||
+              loading ||
+              !config?.clientIdConfigured ||
+              !config.hasClientSecret ||
+              !config.hasCertificate ||
+              !config.financialAccountId
+            }
+            className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+          >
+            {togglingEmission ? 'Atualizando' : 'Ativar emissão desta empresa'}
+          </button>
+        )}
       </div>
     </section>
   );

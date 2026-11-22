@@ -1,28 +1,18 @@
 /**
- * Ativação C6 por empresa. Configuração, teste de conexão e emissão são independentes.
- * O mapa nasce vazio: nenhuma empresa opera em Production até autorização expressa.
+ * Autorização C6 por empresa da sessão.
+ * Configuração e teste de conexão não dependem de UUID fixo.
+ * A emissão não é concedida aqui: ela só existe quando a própria integração
+ * grava metadata.c6.emission_enabled, por ação explícita do administrador.
  */
 
 export type C6CompanyOperation = 'config' | 'connection' | 'emission';
-
-export type C6CompanyGrant = {
-  config: boolean;
-  connection: boolean;
-  emission: boolean;
-};
-
-export const C6_COMPANY_OPERATION_GRANTS: Readonly<Record<string, C6CompanyGrant>> = {};
-
-export function c6CompanyGrant(companyId: string | null | undefined): C6CompanyGrant | null {
-  const key = String(companyId || '').trim().toLowerCase();
-  if (!key) return null;
-  return C6_COMPANY_OPERATION_GRANTS[key] || null;
-}
 
 export function isC6CompanyOperationEnabled(
   companyId: string | null | undefined,
   operation: C6CompanyOperation,
 ): boolean {
-  const grant = c6CompanyGrant(companyId);
-  return grant?.[operation] === true;
+  const id = String(companyId || '').trim();
+  if (!id) return false;
+  if (operation === 'config' || operation === 'connection') return true;
+  return false;
 }
