@@ -11,9 +11,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * O OpenAPI de notificações não descreve o corpo que o banco enviaria.
- * Esta rota não lê pagamento, não baixa parcela e não grava financeiro.
- * A baixa implementada consulta GET /v1/bank_slips/{id}.
+ * URL sem identificador. Não lê pagamento e não baixa parcela.
+ * O receptor fica em /api/banking/c6/webhook/[receiptToken].
  */
 export async function POST() {
   return NextResponse.json(

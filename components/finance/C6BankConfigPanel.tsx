@@ -37,6 +37,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   const [testing, setTesting] = useState(false);
   const [togglingEmission, setTogglingEmission] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
+  const [preparingWebhook, setPreparingWebhook] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +88,27 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       setError(cause instanceof Error ? cause.message : 'Teste de conexão indisponível');
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function prepareWebhook() {
+    if (readOnlyDemo || preparingWebhook) return;
+    setPreparingWebhook(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/c6/webhook/prepare', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível preparar a URL');
+      setConfig((current) => (current ? { ...current, webhook: data.webhook } : current));
+      setInfo('URL preparada. Ela ainda não está cadastrada no Banco C6.');
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível preparar a URL');
+    } finally {
+      setPreparingWebhook(false);
     }
   }
 
@@ -217,6 +239,24 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
             {config?.emissionEnabled ? 'Emissão ATIVADA' : 'Emissão DESATIVADA'}
           </span>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-[var(--border-color)] p-3 text-xs text-[var(--text-secondary)] space-y-1">
+        <p className="font-semibold text-[var(--text-primary)]">Notificações BANK_SLIP</p>
+        <p>URL: {config?.webhook?.receiptPath || 'URL ainda não preparada'}</p>
+        <p>Não cadastrado no Banco C6</p>
+        <p>Última recebida: {config?.webhook?.lastReceivedAt || 'Nenhuma'}</p>
+        <p>Última processada: {config?.webhook?.lastProcessedAt || 'Nenhuma'}</p>
+        <p>Último erro: {config?.webhook?.lastError || 'Nenhum'}</p>
+        <p>Conciliação automática desligada</p>
+        <button
+          type="button"
+          onClick={() => void prepareWebhook()}
+          disabled={readOnlyDemo || preparingWebhook || loading || Boolean(config?.webhook?.receiptPath)}
+          className="mt-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+        >
+          {preparingWebhook ? 'Preparando' : 'Preparar URL'}
+        </button>
       </div>
 
       {loading ? (

@@ -7,6 +7,7 @@ import {
   redactC6ErrorMessage,
 } from '@/lib/banking/c6/c6ConfigRepository';
 import { executeC6ConfigPut } from '@/lib/banking/c6/c6ConfigPut';
+import { readC6WebhookPanel } from '@/lib/banking/c6/c6WebhookReceipt';
 import { createPrimaryAdminReauthDeps } from '@/lib/primaryAdminReauthServer';
 
 export const runtime = 'nodejs';
@@ -23,7 +24,9 @@ export async function GET(request: Request) {
     const config = await getCompanyC6BankConfig(auth.admin, auth.tenantId, {
       financialAccountId,
     });
-    assertC6ConfigResponseSafe(config);
+    const webhook = await readC6WebhookPanel(auth.admin, auth.tenantId);
+    const configWithWebhook = { ...config, webhook };
+    assertC6ConfigResponseSafe(configWithWebhook);
 
     const { data: accounts, error } = await auth.admin
       .from('company_financial_accounts')
@@ -51,7 +54,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
-      config,
+      config: configWithWebhook,
       financialAccounts,
       persistBlocked: isC6ConfigPersistBlocked(undefined, auth.tenantId),
     });

@@ -27,6 +27,17 @@ export type C6BankConfigPublic = {
   emissionEnabled: boolean;
   boletoIntent: boolean;
   bolepixIntent: boolean;
+  webhook?: C6WebhookPublicStatus;
+};
+
+export type C6WebhookPublicStatus = {
+  registeredAtBank: false;
+  registrationLabel: 'Não cadastrado no Banco C6';
+  automaticReconciliation: 'Desligada';
+  receiptPath: string | null;
+  lastReceivedAt: string | null;
+  lastProcessedAt: string | null;
+  lastError: string | null;
 };
 
 export type C6BankConfigSaveInput = {

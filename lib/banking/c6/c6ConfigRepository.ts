@@ -488,7 +488,7 @@ export function redactC6ErrorMessage(error: unknown, fallback: string): string {
         : '';
   const message = raw || fallback;
   if (
-    /BEGIN |PRIVATE KEY|clientSecret|certificatePem|privateKeyPem|encrypted_payload|access_token|\bv1:/i.test(
+    /BEGIN |PRIVATE KEY|clientSecret|certificatePem|privateKeyPem|encrypted_payload|access_token|webhook_receipt_token|\/api\/banking\/c6\/webhook\/[A-Za-z0-9_-]{43}|\bv1:/i.test(
       message,
     )
   ) {

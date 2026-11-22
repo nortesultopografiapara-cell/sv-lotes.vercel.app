@@ -11,6 +11,19 @@ export const C6_NOTIFICATIONS_REGISTER_METHOD = 'POST' as const;
 export const C6_NOTIFICATIONS_ROTEIRO_STATUS = 200 as const;
 export const C6_NOTIFICATIONS_REQUIRED_FIELDS = ['url', 'service'] as const;
 
+/** Corpo que o banco envia. information é texto e não autoriza baixa. */
+export const C6_WEBHOOK_NOTIFICATION_FIELDS = [
+  'external_id',
+  'date_time',
+  'client_id',
+  'partner_id',
+  'service',
+  'status',
+  'information',
+] as const;
+
+export const C6_BANK_SLIP_NOTIFICATION_STATUSES = ['CREATED', 'PAID', 'CANCELLED'] as const;
+
 /** OpenAPI de notificações não está em docs/c6/. Consulta GET não é executada no pré-voo. */
 export const C6_NOTIFICATIONS_OPENAPI_IN_REPO = false;
 
