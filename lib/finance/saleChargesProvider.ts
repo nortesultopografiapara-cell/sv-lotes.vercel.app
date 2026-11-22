@@ -4,10 +4,12 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isC6CompanyOperationEnabled } from '@/lib/banking/c6/c6CompanyAccess';
+import { isC6ProviderCode, throwIfC6EmissionAttempt, C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
 import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 
-export type SaleChargesProviderCode = 'ASAAS_COMPANY' | 'INTER';
+export type SaleChargesProviderCode = 'ASAAS_COMPANY' | 'INTER' | 'C6';
 
 export async function resolveSaleChargesProvider(
   admin: SupabaseClient,
@@ -54,6 +56,7 @@ export async function resolveSaleChargesProvider(
 
   const account = resolved?.account || null;
   if (!account?.bankIntegrationId) {
+    throwIfC6EmissionAttempt(account?.provider, companyId);
     return {
       provider: 'ASAAS_COMPANY',
       financialAccountId: account?.id || null,
@@ -77,6 +80,19 @@ export async function resolveSaleChargesProvider(
     ...account,
     provider: providerRaw || account.provider || null,
   });
+  throwIfC6EmissionAttempt(providerRaw, companyId);
+  throwIfC6EmissionAttempt(account.provider, companyId);
+  if (isC6ProviderCode(providerRaw) || isC6ProviderCode(account.provider)) {
+    if (!isC6CompanyOperationEnabled(companyId, 'emission')) {
+      throw new C6EmissionNotHomologatedError('A conta C6 não usa o fluxo do Asaas nem o do Inter.');
+    }
+    return {
+      provider: 'C6',
+      financialAccountId: account.id,
+      financialAccountName: labeled,
+      bankIntegrationId: account.bankIntegrationId,
+    };
+  }
 
   if (providerRaw === 'INTER') {
     return {

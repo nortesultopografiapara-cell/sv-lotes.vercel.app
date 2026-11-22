@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { Banknote, Building2 } from 'lucide-react';
 import { AsaasIntegrationPanel } from '@/components/finance/AsaasIntegrationPanel';
+import { C6BankConfigPanel } from '@/components/finance/C6BankConfigPanel';
 import { FinancialAccountsPanel } from '@/components/finance/FinancialAccountsPanel';
 import { BanksDevelopmentPanel } from '@/components/finance/BanksDevelopmentPanel';
 import { BuyerReminderSettingsPanel } from '@/components/charges/BuyerReminderSettingsPanel';
 
-type Tab = 'accounts' | 'asaas' | 'banks' | 'cobrancas';
+type Tab = 'accounts' | 'asaas' | 'c6' | 'banks' | 'cobrancas';
 
 type Props = {
   tenantId: string;
@@ -18,6 +19,7 @@ function initialFinanceTab(): Tab {
   if (typeof window === 'undefined') return 'accounts';
   const hash = window.location.hash.replace(/^#/, '').toLowerCase();
   if (hash.includes('cobrancas') || hash.includes('lembretes')) return 'cobrancas';
+  if (hash.includes('c6')) return 'c6';
   return 'accounts';
 }
 
@@ -32,7 +34,7 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
           <h2 className="text-lg font-bold text-[var(--text-primary)]">Integração Financeira</h2>
         </div>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
-          Contas recebedoras e cobrança via Asaas — cada empreendimento e venda pode usar a conta correta.
+          Contas recebedoras, Asaas, Banco Inter e C6 Bank. Cada empresa configura a própria conta.
         </p>
       </div>
 
@@ -58,6 +60,17 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
           }`}
         >
           ASAAS (Conta padrão)
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('c6')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            tab === 'c6'
+              ? 'sv-brand-muted-bg text-[var(--text-primary)] ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_25%,transparent)]'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+          }`}
+        >
+          C6 Bank
         </button>
         <button
           type="button"
@@ -87,6 +100,8 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
         <FinancialAccountsPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
       ) : tab === 'asaas' ? (
         <AsaasIntegrationPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
+      ) : tab === 'c6' ? (
+        <C6BankConfigPanel readOnlyDemo={readOnlyDemo} />
       ) : tab === 'cobrancas' ? (
         <BuyerReminderSettingsPanel readOnlyDemo={readOnlyDemo} />
       ) : (

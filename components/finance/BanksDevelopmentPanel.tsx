@@ -31,7 +31,7 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
             <p className="text-sm text-[var(--text-secondary)] mt-1">
               O <strong className="font-semibold text-[var(--text-primary)]">Inter</strong> já
               permite cadastrar credenciais (Fase A). Emissão de cobranças virá nas próximas fases.
-              Nubank e Cora permanecem em preparação. O Asaas continua na aba própria, sem alteração.
+              O C6 Bank fica na aba própria desta tela. Nubank e Cora permanecem em preparação. O Asaas continua na aba própria, sem alteração.
             </p>
           </div>
         </div>

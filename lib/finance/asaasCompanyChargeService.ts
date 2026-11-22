@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isC6ProviderCode, throwIfC6EmissionAttempt, C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveChargePayer } from '@/lib/buyerLegalEntity';
 import type { BankEnvironment } from '@/lib/banking/types';
 import {
@@ -178,6 +179,10 @@ async function resolveCompanyAsaasCredentials(
   const provider = String(account.provider || '').trim().toUpperCase();
   if (provider === 'INTER') {
     throw new CompanyAsaasWrongProviderError();
+  }
+  throwIfC6EmissionAttempt(provider, companyId);
+  if (isC6ProviderCode(provider)) {
+    throw new C6EmissionNotHomologatedError('A conta C6 não usa o fluxo do Asaas.');
   }
 
   if (!account.bankIntegrationId) {

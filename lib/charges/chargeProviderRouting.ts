@@ -3,7 +3,30 @@
  * Fonte de verdade: provider da bank_integrations vinculada à conta.
  */
 
+import { isC6ProviderCode, throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import type { CompanyFinancialAccountResponse } from '@/lib/finance/companyFinancialAccountTypes';
+
+export { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '@/lib/banking/c6/c6EmitGuard';
+
+export type ChargesAccountClassification = ChargesEmitProvider | 'C6';
+
+export function isC6ChargesAccount(provider: string | null | undefined): boolean {
+  return isC6ProviderCode(provider);
+}
+
+export function assertChargesAccountMayEmit(
+  provider: string | null | undefined,
+  companyId?: string | null,
+): void {
+  throwIfC6EmissionAttempt(provider, companyId);
+}
+
+export function classifyChargesAccountProvider(
+  provider: string | null | undefined,
+): ChargesAccountClassification {
+  if (isC6ProviderCode(provider)) return 'C6';
+  return normalizeChargesEmitProvider(provider);
+}
 
 export type ChargesEmitProvider = 'ASAAS_COMPANY' | 'INTER';
 
