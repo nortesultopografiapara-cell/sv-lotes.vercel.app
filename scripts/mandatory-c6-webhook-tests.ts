@@ -338,6 +338,13 @@ async function main() {
   assert(blocked, 'o excesso de notificações é recusado');
 
   const root = path.resolve(__dirname, '..');
+  const middleware = fs.readFileSync(path.join(root, 'middleware.ts'), 'utf8');
+  const publicBlock = middleware.slice(
+    middleware.indexOf('const publicRoutes'),
+    middleware.indexOf('const isCompanyExportApi'),
+  );
+  assert(middleware.includes('isC6BankSlipWebhook'), 'o receptor C6 fica acessível sem sessão');
+  assert(!publicBlock.includes('/api/banking/c6/webhook'), 'preparar a URL continua exigindo sessão');
   const receiver = fs.readFileSync(
     path.join(root, 'app/api/banking/c6/webhook/[receiptToken]/route.ts'),
     'utf8',

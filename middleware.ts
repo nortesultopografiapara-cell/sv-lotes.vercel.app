@@ -109,10 +109,14 @@ export async function middleware(request: NextRequest) {
   const isCompanyExportApi = /^\/api\/master\/companies\/[^/]+\/exports(\/|$)/.test(
     url.pathname,
   );
+  const isC6BankSlipWebhook =
+    url.pathname === '/api/banking/c6/webhook' ||
+    /^\/api\/banking\/c6\/webhook\/[A-Za-z0-9_-]{43}$/.test(url.pathname);
   const isPublicRoute =
     isLanding ||
     isDemoPage ||
     isCompanyExportApi ||
+    isC6BankSlipWebhook ||
     publicRoutes.some((route) => url.pathname === route || url.pathname.startsWith(`${route}/`));
 
   if (isRecoveryLock && workspaceBlockedDuringRecovery(url.pathname, true)) {
