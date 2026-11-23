@@ -71,6 +71,18 @@ export type CompanyAsaasChargeResponse = {
   remoteCancelConfirmed?: boolean;
   /** Instantâneo local do cancelamento confirmado (ISO). */
   cancelledAt?: string | null;
+  /** Dados oficiais do Bolepix v2, quando a cobrança não veio da API v1. */
+  c6Bolepix?: {
+    api: 'v2';
+    externalReferenceId: string | null;
+    bankStatus: string | null;
+    billingType: string | null;
+    pixQrAvailable: boolean;
+    pixMimeType: string | null;
+    pdfAvailable: boolean;
+    settlementMethod: 'BANK_SLIP' | 'PIX' | null;
+    statusMessage: string;
+  } | null;
 };
 
 export type CreateCompanyInstallmentChargeInput = {

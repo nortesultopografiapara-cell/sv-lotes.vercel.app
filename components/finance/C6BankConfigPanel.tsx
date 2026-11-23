@@ -8,6 +8,7 @@ import {
   type C6BankConfigPublic,
 } from '@/lib/banking/c6/c6ConfigTypes';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { inspectC6BolepixPixKey } from '@/lib/banking/c6/c6BolepixV2Validation';
 
 type LocalFile = { name: string; content: string };
 
@@ -34,6 +35,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   const [financialAccountId, setFinancialAccountId] = useState('');
   const [boletoIntent, setBoletoIntent] = useState(false);
   const [bolepixIntent, setBolepixIntent] = useState(false);
+  const [pixKey, setPixKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [togglingEmission, setTogglingEmission] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
@@ -461,6 +463,42 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       {persistBlocked ? (
         <p className="text-sm text-amber-200">Cadastro C6 permanece bloqueado em Production.</p>
       ) : null}
+      <div className="rounded-lg border border-[var(--border-color)] p-3 text-xs text-[var(--text-secondary)] space-y-2">
+        <p className="font-semibold text-[var(--text-primary)]">Chave Pix aleatória do Bolepix</p>
+        <p>
+          A emissão Bolepix permanece desligada. Este campo só confere o formato EVP e não grava a chave,
+          o Client ID, o segredo nem o certificado.
+        </p>
+        <input
+          type="password"
+          autoComplete="off"
+          value={pixKey}
+          disabled={readOnlyDemo}
+          onChange={(event) => setPixKey(event.target.value)}
+          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
+          aria-label="Chave Pix aleatória"
+        />
+        <button
+          type="button"
+          disabled={readOnlyDemo || !pixKey.trim()}
+          onClick={() => {
+            const message = inspectC6BolepixPixKey(pixKey);
+            if (message) {
+              setError(message);
+              setInfo('');
+              return;
+            }
+            setError('');
+            setInfo(
+              'Formato EVP válido. A chave não foi gravada e a emissão Bolepix continua desligada.',
+            );
+            setPixKey('');
+          }}
+          className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+        >
+          Conferir chave Pix
+        </button>
+      </div>
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
       {info ? <p className="text-sm text-emerald-300">{info}</p> : null}
 

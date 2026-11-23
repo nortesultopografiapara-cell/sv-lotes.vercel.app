@@ -210,6 +210,7 @@ export function ChargeInstallmentActions({
         </div>
       );
     }
+    const bolepix = charge?.c6Bolepix?.api === 'v2' ? charge.c6Bolepix : null;
     const c6 = resolveC6ChargeActions({
       externalId: charge?.asaasPaymentId,
       status: installmentPaid ? 'PAID' : charge?.status,
@@ -219,7 +220,14 @@ export function ChargeInstallmentActions({
       ownerReadOnly,
       uncertain: Boolean(c6Notice?.uncertain),
       rejectionMessage: c6Notice?.message,
+      bolepix,
     });
+    const qrMime = bolepix?.pixMimeType === 'image/png' || bolepix?.pixMimeType === 'image/jpeg'
+      ? bolepix.pixMimeType
+      : null;
+    const qrImage = qrMime && charge?.pixQrCode && /^[A-Za-z0-9+/=\s]+$/.test(charge.pixQrCode)
+      ? charge.pixQrCode
+      : null;
     return (
       <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
         <div className="flex flex-wrap justify-end gap-1.5">
@@ -265,13 +273,19 @@ export function ChargeInstallmentActions({
               Copiar linha digitável
             </button>
           ) : null}
-          {c6.showView && !c6.showPaid && c6.showCopyLine ? (
+          {c6.showCopyPix ? (
+            <button type="button" className={btnClass} onClick={onCopyPix} title="Copiar o Pix Copia e Cola devolvido pelo C6">
+              <Copy className="h-3.5 w-3.5" />
+              Copiar Pix
+            </button>
+          ) : null}
+          {c6.showWhatsApp ? (
             <button
               type="button"
               className={btnClass}
               disabled={busy}
               onClick={onWhatsApp}
-              title="Enviar a linha digitável pelo WhatsApp"
+              title="Enviar os dados bancários já confirmados pelo C6"
             >
               <MessageCircle className="h-3.5 w-3.5" />
               WhatsApp
@@ -279,6 +293,22 @@ export function ChargeInstallmentActions({
           ) : null}
           {c6.showPaid ? <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span> : null}
         </div>
+        {c6.showQr && qrImage ? (
+          <img
+            src={`data:${qrMime};base64,${qrImage}`}
+            alt="QR Code Pix devolvido pelo C6"
+            className="h-24 w-24 rounded bg-white p-1"
+          />
+        ) : c6.showQr ? (
+          <p className="max-w-md text-right text-[10px] text-[var(--text-muted)]">
+            O C6 não devolveu a imagem do QR Code.
+          </p>
+        ) : null}
+        {c6.bankStatusLabel ? (
+          <p className="max-w-md text-right text-[10px] text-[var(--text-muted)]">
+            Status bancário: {c6.bankStatusLabel}
+          </p>
+        ) : null}
         {c6.notice ? (
           <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">{c6.notice}</p>
         ) : null}

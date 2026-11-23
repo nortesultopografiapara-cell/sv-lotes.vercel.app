@@ -31,6 +31,7 @@ export const C6_BOLEPIX_V2_PIX_KEY_TYPE = 'EVP' as const;
 export const C6_BOLEPIX_V2_REFERENCE_PATTERN = /^[A-Z0-9]{26}$/;
 
 export const C6_BOLEPIX_V2_LIVE_CALLS_ENABLED = false as const;
+export const C6_BOLEPIX_V2_CONFIG_WRITES_ENABLED = false as const;
 
 export const C6_BOLEPIX_V2_STATUS_MEANING = {
   CREATED: 'Cobrança criada. O contrato não afirma registro na rede bancária.',

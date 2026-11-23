@@ -44,6 +44,14 @@ export type C6BolepixV2CreateInput = {
 
 const EVP = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export function inspectC6BolepixPixKey(value: string): string | null {
+  const key = String(value || '').trim();
+  if (!EVP.test(key)) {
+    return 'A chave Pix do Bolepix precisa ser aleatória (EVP), no formato informado pelo C6.';
+  }
+  return null;
+}
+
 export function c6BolepixV2BillingScheme(environment: BankEnvironment): '15' | '21' {
   return environment === 'PRODUCTION'
     ? C6_BOLEPIX_V2_BILLING_SCHEME.PRODUCTION
