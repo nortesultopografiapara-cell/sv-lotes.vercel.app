@@ -779,6 +779,91 @@ async function main() {
     fetchFn: async () => ({ status: 200, bodyText: '<html></html>', contentType: 'text/html' }),
   });
   assert(!htmlPdf.ok && htmlPdf.pdfBody == null, 'arquivo que não é PDF oficial é recusado');
+
+  const transport = await import('../lib/banking/c6/c6BolepixV2Transport');
+  const officialBody = (await import('../lib/banking/c6/c6BolepixV2Validation')).buildC6BolepixV2CreateBody(
+    { ...base, pixKey: sample },
+    NOW,
+  );
+  const plan = transport.planC6BolepixV2Request({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    creds: { companyId: 'company-a', integrationId: 'integration-a', environment: 'PRODUCTION' },
+    operation: 'create',
+    accessToken: 'token-de-teste',
+    body: officialBody,
+  });
+  assert(plan.url === 'https://baas-api.c6bank.info/v2/bank_slips/', 'produção usa o host oficial v2');
+  assert(plan.method === 'POST', 'a emissão é POST');
+  assert(plan.headers.Authorization === 'Bearer token-de-teste', 'o pedido leva o Bearer');
+  assert(plan.redactedHeaders.Authorization === 'Bearer [redacted]', 'o cabeçalho público não leva o token');
+  assert(plan.headers['partner-software-name'] === 'SV LOTES', 'o cabeçalho do software parceiro está presente');
+  assert(String(plan.body || '').includes(sample), 'o corpo oficial leva a EVP');
+  assert(!JSON.stringify(plan.redactedBody).includes(sample), 'a evidência do transporte não leva a EVP');
+  assert(!JSON.stringify(plan.redactedHeaders).includes('token-de-teste'), 'a evidência do transporte não leva o token');
+  const pdfPlan = transport.planC6BolepixV2Request({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    creds: { companyId: 'company-a', integrationId: 'integration-a', environment: 'SANDBOX' },
+    operation: 'pdf',
+    accessToken: 'token-de-teste',
+    externalReferenceId: REFERENCE,
+  });
+  assert(pdfPlan.url.endsWith(`/${REFERENCE}/pdf`) && pdfPlan.url.includes('baas-api-sandbox.c6bank.info'), 'o PDF usa a referência no sandbox');
+  assert(pdfPlan.headers.Accept === 'application/pdf', 'o PDF pede application/pdf');
+  let foreignTransport = false;
+  try {
+    transport.planC6BolepixV2Request({
+      companyId: 'company-a',
+      integrationId: 'integration-a',
+      creds: { companyId: 'company-b', integrationId: 'integration-a', environment: 'PRODUCTION' },
+      operation: 'get',
+      accessToken: 'token-de-teste',
+      externalReferenceId: REFERENCE,
+    });
+  } catch (error) {
+    foreignTransport = error instanceof Error && error.message.includes('outra empresa');
+  }
+  assert(foreignTransport, 'o transporte não atravessa empresa');
+  let transportCalls = 0;
+  let timedOut = false;
+  try {
+    await transport.performC6BolepixV2Https(plan, async () => {
+      transportCalls += 1;
+      const { C6BoletoTransportError } = await import('../lib/banking/c6/c6BoletoClient');
+      throw new C6BoletoTransportError('TIMEOUT', 'Timeout ao contatar o C6 Bank (boleto).');
+    });
+  } catch (error) {
+    const { C6BoletoTransportError } = await import('../lib/banking/c6/c6BoletoClient');
+    timedOut = error instanceof C6BoletoTransportError && error.code === 'TIMEOUT';
+  }
+  assert(timedOut && transportCalls === 1, 'timeout de transporte não repete a chamada');
+  let liveTransportBlocked = false;
+  let liveFetchCalls = 0;
+  try {
+    await transport.postC6BolepixV2Charge({
+      companyId: 'company-a',
+      integrationId: 'integration-a',
+      environment: 'PRODUCTION',
+      input: { ...base, pixKey: sample },
+      fetchFn: async () => {
+        liveFetchCalls += 1;
+        return { status: 201, bodyText: '{}', contentType: 'application/json' };
+      },
+      now: NOW,
+    });
+  } catch (error) {
+    const { C6BolepixV2LiveDisabledError } = await import('../lib/banking/c6/c6BolepixV2Client');
+    liveTransportBlocked = error instanceof C6BolepixV2LiveDisabledError;
+  }
+  assert(liveTransportBlocked && liveFetchCalls === 0, 'sem liberação o mTLS não é chamado');
+  const agent = transport.createC6BolepixMtlsAgent({
+    certificatePem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
+    privateKeyPem: '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----',
+  });
+  agent.destroy();
+  assert(agent instanceof (await import('node:https')).Agent, 'o agente reutiliza o certificado mTLS');
+
   if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;
 

@@ -15,7 +15,9 @@ import {
   type C6BoletoExecuteOptions,
   type C6BoletoFetchFn,
 } from '@/lib/banking/c6/c6BoletoClient';
-import { executeC6BolepixV2Create, executeC6BolepixV2Get, executeC6BolepixV2Pdf, C6BolepixV2LiveDisabledError } from '@/lib/banking/c6/c6BolepixV2Client';
+import { executeC6BolepixV2Get, executeC6BolepixV2Pdf, C6BolepixV2LiveDisabledError } from '@/lib/banking/c6/c6BolepixV2Client';
+import { postC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
+import { isC6BolepixV2LiveRelease } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { C6BolepixPixKeyRequiredError, c6BolepixV2ReferenceForInstallment } from '@/lib/banking/c6/c6BolepixV2Emission';
 import {
   c6BolepixV2MayCallBank,
@@ -309,7 +311,7 @@ export async function emitC6InstallmentBoleto(
     },
     options?.now,
   );
-  if (!simulated(options)) {
+  if (!simulated(options) && !isC6BolepixV2LiveRelease(companyId, clean(integration.id))) {
     throw new C6BolepixV2LiveDisabledError();
   }
   const fingerprint = c6BolepixRequestFingerprint({
@@ -349,7 +351,10 @@ export async function emitC6InstallmentBoleto(
           : 'Esta parcela já tem reserva Bolepix v2.',
     };
   }
-  const created = await executeC6BolepixV2Create({
+  const created = await postC6BolepixV2Charge({
+    companyId,
+    integrationId: clean(integration.id),
+    environment,
     input: {
       environment,
       externalReferenceId: bolepixReference,
@@ -370,6 +375,9 @@ export async function emitC6InstallmentBoleto(
     },
     fetchFn: options?.fetchFn,
     allowSimulatedHttp: options?.allowSimulatedHttp,
+    credentials: options?.credentials
+      ? { ...options.credentials, integrationId: clean(integration.id) }
+      : null,
     now: options?.now,
   });
   const finished = completionForC6BolepixV2({
