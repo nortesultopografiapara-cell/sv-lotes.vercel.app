@@ -309,7 +309,7 @@ export async function emitC6InstallmentBoleto(
     },
     options?.now,
   );
-  if (!c6BolepixV2MayCallBank(companyId, clean(integration.id), simulated(options))) {
+  if (!simulated(options)) {
     throw new C6BolepixV2LiveDisabledError();
   }
   const fingerprint = c6BolepixRequestFingerprint({
