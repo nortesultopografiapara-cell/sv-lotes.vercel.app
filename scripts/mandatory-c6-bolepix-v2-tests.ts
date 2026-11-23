@@ -213,6 +213,11 @@ async function main() {
   assert(!sql.includes('UPDATE public.finance_receipts'), 'a migration não altera recebível');
   assert(!sql.includes('UPDATE public.c6_boleto_reservations'), 'a migration não altera a reserva v1');
   assert(!sql.includes('UPDATE public.bank_charges'), 'a migration não altera cobrança já gravada');
+  assert(sql.includes('c6_bolepix_reservations_company_fk'), 'a reserva referencia a empresa');
+  assert(sql.includes('REVOKE ALL ON TABLE public.c6_bolepix_pix_keys FROM PUBLIC, anon, authenticated, service_role'), 'anon e authenticated não recebem a tabela');
+  assert(!sql.includes('GRANT TRUNCATE') && !sql.includes('GRANT ALL'), 'a migration não concede TRUNCATE nem ALL');
+  assert(sql.includes('trg_c6_boleto_reservations_block_bolepix'), 'um insert v1 é recusado quando a v2 já existe');
+  assert(sql.includes('ENABLE ROW LEVEL SECURITY'), 'RLS fica ligado nas três tabelas');
 
   const reservation = await import('../lib/banking/c6/c6BolepixV2Reservation');
   const fingerprint = reservation.c6BolepixRequestFingerprint({
@@ -241,6 +246,30 @@ async function main() {
     requestFingerprint: fingerprint,
   });
   assert(first.accepted && !second.accepted && second.rows.length === 1, 'a segunda reserva da mesma parcela é bloqueada');
+  const blockedByV1 = reservation.reserveC6Bolepix([], {
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationCompanyId: 'company-a',
+    receiptCompanyId: 'company-a',
+    financeReceiptId: 'receipt-old',
+    externalReferenceId: '01KP640RNSYXH9G41GR27RTAWQ',
+    requestFingerprint: fingerprint,
+    v1Status: 'SUCCEEDED',
+    v1SlipId: '01M8OLD',
+  });
+  assert(!blockedByV1.accepted && blockedByV1.rows.length === 0, 'reserva v1 impede a v2 da mesma parcela');
+  const blockedByCharge = reservation.reserveC6Bolepix([], {
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationCompanyId: 'company-a',
+    receiptCompanyId: 'company-a',
+    financeReceiptId: 'receipt-paid',
+    externalReferenceId: '01KP640RNSYXH9G41GR27RTAWR',
+    requestFingerprint: fingerprint,
+    bankChargeExternalId: 'charge-1',
+    bankChargeStatus: 'PAID',
+  });
+  assert(!blockedByCharge.accepted, 'parcela já cobrada no C6 não recebe outra versão');
   let otherCompany = false;
   try {
     reservation.reserveC6Bolepix([], {
@@ -323,6 +352,22 @@ async function main() {
     foreignKey = error instanceof Error && error.message.includes('outra empresa');
   }
   assert(foreignKey, 'a chave Pix não atravessa empresa');
+  const productionKey = pix.evaluateC6BolepixPixKeyRegistration({
+    role: 'ADMIN',
+    projectRef: 'aezktedncttwpqeunjej',
+    writesEnabled: true,
+  });
+  const ownerKey = pix.evaluateC6BolepixPixKeyRegistration({
+    role: 'OWNER',
+    projectRef: 'hoynysmynxncdlptuzub',
+    writesEnabled: true,
+  });
+  const developAdmin = pix.evaluateC6BolepixPixKeyRegistration({
+    role: 'ADMIN',
+    projectRef: 'hoynysmynxncdlptuzub',
+    writesEnabled: false,
+  });
+  assert(!productionKey.allowed && !ownerKey.allowed && !developAdmin.allowed, 'Production, OWNER e cadastro desligado não gravam a EVP');
 
   const official = await import('../lib/banking/c6/c6BolepixV2Official');
   const stored = official.officialC6BolepixFromResponse({
@@ -378,6 +423,21 @@ async function main() {
   assert(!waiting.settleCash, 'WAITING_CONFIRMATION não baixa');
   assert(settled.settleCash && settled.writesFinance === false && settled.paymentType === 'BANK_SLIP', 'a evidência de boleto não grava caixa');
   assert(!reconcile.reconcileC6BolepixV2Webhook().settleCash, 'webhook sem contrato não baixa');
+  assert(!reconcile.reconcileC6BolepixV2Query({ status: 'CANCELED' }).settleCash, 'cancelamento não baixa');
+  const foreignSettlement = reconcile.reconcileC6BolepixV2Query({
+    status: 'PAID',
+    expectedCompanyId: 'company-a',
+    companyId: 'company-b',
+    payments: [{ amount: '10.00', paymentType: 'PIX', paymentDate: '2026-11-23', externalPaymentId: 'pay-1' }],
+  });
+  const duplicateSettlement = reconcile.reconcileC6BolepixV2Query({
+    status: 'PAID',
+    expectedCompanyId: 'company-a',
+    companyId: 'company-a',
+    payments: [{ amount: '10.00', paymentType: 'PIX', paymentDate: '2026-11-23', externalPaymentId: 'pay-1' }],
+    settledPaymentIds: ['pay-1'],
+  });
+  assert(!foreignSettlement.settleCash && !duplicateSettlement.settleCash, 'empresa diferente e pagamento repetido não baixam');
 
   const actions = await import('../lib/charges/c6ChargeActions');
   const v2Actions = actions.resolveC6ChargeActions({

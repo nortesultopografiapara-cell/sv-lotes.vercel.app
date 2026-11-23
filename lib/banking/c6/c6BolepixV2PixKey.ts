@@ -5,6 +5,9 @@
 
 import { createHash } from 'node:crypto';
 import { C6_BOLEPIX_V2_CONFIG_WRITES_ENABLED } from '@/lib/banking/c6/c6BolepixV2OpenApi';
+import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '@/lib/homolog/env';
+import { isPlatformAdmin } from '@/lib/rls';
+import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 import {
   C6BolepixV2ValidationError,
   inspectC6BolepixPixKey,
@@ -60,6 +63,26 @@ export function stageC6BolepixPixKey(
     encryptedKey,
     fingerprint: c6BolepixPixKeyFingerprint(input.pixKey),
   };
+}
+
+export function evaluateC6BolepixPixKeyRegistration(input: {
+  role: string;
+  projectRef: string | null;
+  writesEnabled?: boolean;
+}): { allowed: false; reason: string } | { allowed: true; reason: 'develop' } {
+  if (input.projectRef === PRODUCTION_PROJECT_REF) {
+    return { allowed: false, reason: 'Production não recebe a chave Pix.' };
+  }
+  if (input.projectRef !== DEVELOP_PROJECT_REF) {
+    return { allowed: false, reason: 'A chave Pix só pode ser gravada no Develop.' };
+  }
+  if (!isTenantEnterpriseAdminRole(input.role) && !isPlatformAdmin(input.role)) {
+    return { allowed: false, reason: 'Somente administrador da empresa pode cadastrar a chave Pix.' };
+  }
+  if (!(input.writesEnabled ?? C6_BOLEPIX_V2_CONFIG_WRITES_ENABLED)) {
+    return { allowed: false, reason: 'O cadastro da chave Pix permanece desligado.' };
+  }
+  return { allowed: true, reason: 'develop' };
 }
 
 export function presentC6BolepixPixKey(

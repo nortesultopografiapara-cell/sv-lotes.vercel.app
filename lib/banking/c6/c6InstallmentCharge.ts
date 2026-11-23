@@ -204,6 +204,34 @@ export async function emitC6InstallmentBoleto(
   const zip = clean(customer.cep || customer.zip_code).replace(/\D/g, '');
 
   const current = await existingCharge(admin, companyId, installmentId);
+  const bolepixReservation = await admin
+    .from('c6_bolepix_reservations')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('finance_receipt_id', installmentId);
+  if (bolepixReservation.error) {
+    const reservationError = String(bolepixReservation.error.message || '');
+    if (!/c6_bolepix_reservations|does not exist|schema cache|Could not find the table/i.test(reservationError)) {
+      throw new Error(reservationError);
+    }
+  } else if (Array.isArray(bolepixReservation.data) && bolepixReservation.data.length > 0) {
+    return {
+      emitted: false,
+      reused: false,
+      duplicate: true,
+      needsReconciliation: false,
+      bankSlipId: null,
+      digitableLine: null,
+      barCode: null,
+      pixCopyPaste: null,
+      bolepixSpecInRepo: C6_BOLEPIX_OFFICIAL_SPEC_IN_REPO,
+      amount,
+      dueDate,
+      installmentId,
+      companyId,
+      message: 'Esta parcela já tem reserva Bolepix v2.',
+    };
+  }
   if (clean(current?.external_id)) {
     return {
       emitted: false,

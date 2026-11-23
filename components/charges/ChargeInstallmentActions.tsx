@@ -304,6 +304,21 @@ export function ChargeInstallmentActions({
             O C6 não devolveu a imagem do QR Code.
           </p>
         ) : null}
+        {bolepix && charge?.nossoNumero ? (
+          <p className="max-w-md text-right text-[10px] text-[var(--text-muted)]">
+            Nosso Número: {charge.nossoNumero}
+          </p>
+        ) : null}
+        {bolepix && charge?.barCode ? (
+          <p className="max-w-md break-all text-right text-[10px] text-[var(--text-muted)]">
+            Código de barras: {charge.barCode}
+          </p>
+        ) : null}
+        {bolepix && !c6.showView ? (
+          <p className="max-w-md text-right text-[10px] text-[var(--text-muted)]">
+            O C6 ainda não devolveu o PDF oficial desta cobrança.
+          </p>
+        ) : null}
         {c6.bankStatusLabel ? (
           <p className="max-w-md text-right text-[10px] text-[var(--text-muted)]">
             Status bancário: {c6.bankStatusLabel}

@@ -1,5 +1,12 @@
--- Bolepix v2. NÃO EXECUTAR EM PRODUCTION.
--- Não altera c6_boleto_reservations, bank_charges, finance_receipts, credenciais nem o boleto já emitido.
+-- Bolepix v2. NÃO EXECUTAR EM PRODUCTION (aezktedncttwpqeunjej).
+-- Não altera linhas de c6_boleto_reservations, bank_charges, finance_receipts nem credenciais.
+-- O trigger novo só recusa um INSERT v1 quando a mesma parcela já tem reserva v2.
+-- Rollback, com as tabelas vazias e somente no Develop:
+--   DROP TRIGGER IF EXISTS trg_c6_boleto_reservations_block_bolepix ON public.c6_boleto_reservations;
+--   DROP FUNCTION IF EXISTS public.c6_bolepix_reject_v1_when_v2_exists();
+--   DROP FUNCTION IF EXISTS public.reserve_c6_bolepix(uuid, uuid, uuid, text, text);
+--   DROP FUNCTION IF EXISTS public.complete_c6_bolepix(uuid, uuid, text, text, integer, text, boolean);
+--   DROP TABLE IF EXISTS public.c6_bolepix_pix_keys, public.c6_bolepix_official, public.c6_bolepix_reservations;
 
 CREATE TABLE IF NOT EXISTS public.c6_bolepix_reservations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,7 +30,10 @@ CREATE TABLE IF NOT EXISTS public.c6_bolepix_reservations (
     status IN ('RESERVED', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'UNKNOWN')
   ),
   CONSTRAINT c6_bolepix_reservations_reference_unique UNIQUE (company_id, integration_id, external_reference_id),
-  CONSTRAINT c6_bolepix_reservations_receipt_unique UNIQUE (company_id, integration_id, finance_receipt_id)
+  CONSTRAINT c6_bolepix_reservations_receipt_unique UNIQUE (company_id, integration_id, finance_receipt_id),
+  CONSTRAINT c6_bolepix_reservations_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT,
+  CONSTRAINT c6_bolepix_reservations_integration_fk FOREIGN KEY (integration_id) REFERENCES public.bank_integrations(id) ON DELETE RESTRICT,
+  CONSTRAINT c6_bolepix_reservations_receipt_fk FOREIGN KEY (finance_receipt_id) REFERENCES public.finance_receipts(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS public.c6_bolepix_official (
@@ -57,7 +67,11 @@ CREATE TABLE IF NOT EXISTS public.c6_bolepix_official (
   ),
   CONSTRAINT c6_bolepix_official_settlement_chk CHECK (
     settlement_method IS NULL OR settlement_method IN ('BANK_SLIP', 'PIX')
-  )
+  ),
+  CONSTRAINT c6_bolepix_official_receipt_unique UNIQUE (company_id, finance_receipt_id),
+  CONSTRAINT c6_bolepix_official_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT,
+  CONSTRAINT c6_bolepix_official_integration_fk FOREIGN KEY (integration_id) REFERENCES public.bank_integrations(id) ON DELETE RESTRICT,
+  CONSTRAINT c6_bolepix_official_receipt_fk FOREIGN KEY (finance_receipt_id) REFERENCES public.finance_receipts(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS public.c6_bolepix_pix_keys (
@@ -70,16 +84,18 @@ CREATE TABLE IF NOT EXISTS public.c6_bolepix_pix_keys (
   updated_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT c6_bolepix_pix_keys_company_unique UNIQUE (company_id, integration_id),
   CONSTRAINT c6_bolepix_pix_keys_cipher_chk CHECK (encrypted_key ~ '^v1:'),
-  CONSTRAINT c6_bolepix_pix_keys_fingerprint_chk CHECK (key_fingerprint ~ '^[a-f0-9]{12}$')
+  CONSTRAINT c6_bolepix_pix_keys_fingerprint_chk CHECK (key_fingerprint ~ '^[a-f0-9]{12}$'),
+  CONSTRAINT c6_bolepix_pix_keys_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT,
+  CONSTRAINT c6_bolepix_pix_keys_integration_fk FOREIGN KEY (integration_id) REFERENCES public.bank_integrations(id) ON DELETE RESTRICT
 );
 
 ALTER TABLE public.c6_bolepix_reservations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.c6_bolepix_official ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.c6_bolepix_pix_keys ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.c6_bolepix_reservations FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON TABLE public.c6_bolepix_official FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON TABLE public.c6_bolepix_pix_keys FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.c6_bolepix_reservations FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.c6_bolepix_official FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.c6_bolepix_pix_keys FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.c6_bolepix_reservations TO service_role;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.c6_bolepix_official TO service_role;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.c6_bolepix_pix_keys TO service_role;
@@ -100,6 +116,7 @@ DECLARE
   v_inserted uuid;
   v_existing public.c6_bolepix_reservations%ROWTYPE;
   v_count integer;
+  v_v1_ref text;
 BEGIN
   IF p_external_reference_id !~ '^[A-Z0-9]{26}$' THEN
     RAISE EXCEPTION 'Referência inválida.';
@@ -121,6 +138,36 @@ BEGIN
     AND environment IN ('SANDBOX', 'PRODUCTION');
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Integração C6 não encontrada nesta empresa.';
+  END IF;
+
+  v_v1_ref := upper(right(regexp_replace(p_finance_receipt_id::text, '[^A-Za-z0-9]', '', 'g'), 10));
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtext('c6-charge:' || p_company_id::text || ':' || p_finance_receipt_id::text)
+  );
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtext('c6-boleto:' || p_company_id::text || ':' || p_integration_id::text || ':' || v_v1_ref)
+  );
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.bank_charges
+    WHERE company_id = p_company_id
+      AND finance_receipt_id = p_finance_receipt_id
+      AND provider = 'C6'
+      AND nullif(btrim(external_id), '') IS NOT NULL
+      AND status NOT IN ('CANCELLED', 'EXPIRED')
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.c6_boleto_reservations
+    WHERE company_id = p_company_id
+      AND integration_id = p_integration_id
+      AND upper(external_reference_id) = v_v1_ref
+      AND (
+        status IN ('RESERVED', 'PROCESSING', 'SUCCEEDED', 'UNKNOWN')
+        OR nullif(btrim(c6_bank_slip_id), '') IS NOT NULL
+      )
+  ) THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'blocked');
   END IF;
 
   PERFORM pg_catalog.pg_advisory_xact_lock(
@@ -258,6 +305,69 @@ REVOKE ALL ON FUNCTION public.complete_c6_bolepix(uuid, uuid, text, text, intege
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.reserve_c6_bolepix(uuid, uuid, uuid, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_c6_bolepix(uuid, uuid, text, text, integer, text, boolean) TO service_role;
+ALTER FUNCTION public.reserve_c6_bolepix(uuid, uuid, uuid, text, text) OWNER TO postgres;
+ALTER FUNCTION public.complete_c6_bolepix(uuid, uuid, text, text, integer, text, boolean) OWNER TO postgres;
 
 COMMENT ON FUNCTION public.reserve_c6_bolepix(uuid, uuid, uuid, text, text) IS
-  'Reserva Bolepix v2 por parcela. Não altera a reserva v1 nem o recebível.';
+  'Reserva Bolepix v2 por parcela. Recusa parcela que já tenha cobrança C6 ou reserva v1 ativa. Não altera a reserva v1 nem o recebível.';
+
+CREATE OR REPLACE FUNCTION public.c6_bolepix_reject_v1_when_v2_exists()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.c6_bolepix_reservations
+    WHERE company_id = NEW.company_id
+      AND integration_id = NEW.integration_id
+      AND upper(right(regexp_replace(finance_receipt_id::text, '[^A-Za-z0-9]', '', 'g'), 10))
+        = upper(NEW.external_reference_id)
+  ) THEN
+    RAISE EXCEPTION 'A parcela já possui reserva Bolepix v2.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_c6_boleto_reservations_block_bolepix ON public.c6_boleto_reservations;
+CREATE TRIGGER trg_c6_boleto_reservations_block_bolepix
+  BEFORE INSERT ON public.c6_boleto_reservations
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.c6_bolepix_reject_v1_when_v2_exists();
+
+ALTER FUNCTION public.c6_bolepix_reject_v1_when_v2_exists() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.c6_bolepix_reject_v1_when_v2_exists() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.c6_bolepix_official_same_company()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_reservation public.c6_bolepix_reservations%ROWTYPE;
+BEGIN
+  SELECT * INTO v_reservation
+  FROM public.c6_bolepix_reservations
+  WHERE id = NEW.reservation_id;
+  IF NOT FOUND
+     OR v_reservation.company_id IS DISTINCT FROM NEW.company_id
+     OR v_reservation.integration_id IS DISTINCT FROM NEW.integration_id
+     OR v_reservation.finance_receipt_id IS DISTINCT FROM NEW.finance_receipt_id THEN
+    RAISE EXCEPTION 'Cobrança oficial de outra empresa ou parcela.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_c6_bolepix_official_same_company ON public.c6_bolepix_official;
+CREATE TRIGGER trg_c6_bolepix_official_same_company
+  BEFORE INSERT OR UPDATE ON public.c6_bolepix_official
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.c6_bolepix_official_same_company();
+
+ALTER FUNCTION public.c6_bolepix_official_same_company() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.c6_bolepix_official_same_company() FROM PUBLIC, anon, authenticated, service_role;

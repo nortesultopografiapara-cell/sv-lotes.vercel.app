@@ -52,6 +52,10 @@ export function reserveC6Bolepix(
     financeReceiptId: string;
     externalReferenceId: string;
     requestFingerprint: string;
+    v1Status?: string | null;
+    v1SlipId?: string | null;
+    bankChargeExternalId?: string | null;
+    bankChargeStatus?: string | null;
   },
 ): C6BolepixReserveResult {
   const reference = assertC6BolepixV2Reference(input.externalReferenceId);
@@ -62,6 +66,15 @@ export function reserveC6Bolepix(
     throw new Error('Parcela de outra empresa.');
   }
   const next = rows.map((row) => ({ ...row }));
+  const bankStatus = String(input.bankChargeStatus || '').toUpperCase();
+  const v1Status = String(input.v1Status || '').toUpperCase();
+  if (
+    (input.bankChargeExternalId && bankStatus !== 'CANCELLED' && bankStatus !== 'EXPIRED') ||
+    ['RESERVED', 'PROCESSING', 'SUCCEEDED', 'UNKNOWN'].includes(v1Status) ||
+    String(input.v1SlipId || '').trim()
+  ) {
+    return { accepted: false, reason: 'blocked', rows: next };
+  }
   const sameReceipt = next.find(
     (row) =>
       row.companyId === input.companyId &&
