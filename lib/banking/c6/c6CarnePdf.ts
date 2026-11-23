@@ -1,6 +1,7 @@
 /**
  * Carnê C6 no mesmo gerador do Asaas e do Inter: A4, três boletos por folha.
- * Só aceita linha digitável ou código de barras oficiais. Não chama o banco.
+ * Só aceita linha digitável ou código de barras oficiais.
+ * Não reduz o PDF do banco e não chama o C6. Sem esses dados, use o PDF oficial.
  */
 
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
@@ -56,7 +57,9 @@ export async function buildC6CarnePdfBytes(params: {
   );
   const skippedWithoutOfficialLine = params.items.length - printable.length;
   if (printable.length === 0) {
-    throw new Error('Nenhum boleto C6 com linha digitável ou código de barras oficiais.');
+    throw new Error(
+      'Nenhum boleto C6 com linha digitável ou código de barras oficiais. Baixe o PDF oficial do banco.',
+    );
   }
   const bankCode = bankCodeFromOfficial(officialDigits(printable[0].charge));
   const bytes = await buildSaleCarnePdfBytes({

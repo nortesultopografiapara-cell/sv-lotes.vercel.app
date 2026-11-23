@@ -54,6 +54,7 @@ export function reserveC6Bolepix(
     requestFingerprint: string;
     v1Status?: string | null;
     v1SlipId?: string | null;
+    v1RetryAllowed?: boolean;
     bankChargeExternalId?: string | null;
     bankChargeStatus?: string | null;
   },
@@ -71,6 +72,7 @@ export function reserveC6Bolepix(
   if (
     (input.bankChargeExternalId && bankStatus !== 'CANCELLED' && bankStatus !== 'EXPIRED') ||
     ['RESERVED', 'PROCESSING', 'SUCCEEDED', 'UNKNOWN'].includes(v1Status) ||
+    (v1Status === 'FAILED' && input.v1RetryAllowed === true) ||
     String(input.v1SlipId || '').trim()
   ) {
     return { accepted: false, reason: 'blocked', rows: next };

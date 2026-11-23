@@ -49,6 +49,8 @@ export type C6BolepixV2CallResult = {
   disposition: 'succeeded' | 'rejected' | 'uncertain';
   fields: C6BolepixV2OfficialFields | null;
   pdfBytes: number | null;
+  pdfBody: string | null;
+  responseBody: unknown;
   specVersion: typeof C6_BOLEPIX_V2_SPEC_VERSION;
 };
 
@@ -98,26 +100,38 @@ async function execute(
   fetchFn: FetchFn | undefined,
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string },
+  simulated: boolean,
 ): Promise<C6BolepixV2FetchResult> {
-  if (!fetchFn || !C6_BOLEPIX_V2_LIVE_CALLS_ENABLED) {
-    if (!fetchFn) throw new C6BolepixV2LiveDisabledError();
+  if (!C6_BOLEPIX_V2_LIVE_CALLS_ENABLED) {
+    if (simulated && typeof fetchFn === 'function') return fetchFn(url, init);
+    throw new C6BolepixV2LiveDisabledError();
   }
+  if (typeof fetchFn !== 'function') throw new C6BolepixV2LiveDisabledError();
   return fetchFn(url, init);
 }
 
 export async function executeC6BolepixV2Create(params: {
   input: C6BolepixV2CreateInput;
   fetchFn?: FetchFn;
+  allowSimulatedHttp?: boolean;
   now?: Date;
-}): Promise<C6BolepixV2CallResult & { body: Record<string, unknown> }> {
+}): Promise<C6BolepixV2CallResult & { body: Record<string, unknown>; responseBody: unknown }> {
   const body = buildC6BolepixV2CreateBody(params.input, params.now);
   const url = baseUrl(params.input.environment);
+  if (!url.includes('/v2/bank_slips/')) {
+    throw new Error('O Bolepix só pode ser enviado ao endpoint oficial v2.');
+  }
   try {
-    const response = await execute(params.fetchFn, url, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const response = await execute(
+      params.fetchFn,
+      url,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      params.allowSimulatedHttp === true,
+    );
     const parsed = response.bodyText ? JSON.parse(response.bodyText) : null;
     const fields = readC6BolepixV2OfficialFields(parsed);
     return {
@@ -126,8 +140,10 @@ export async function executeC6BolepixV2Create(params: {
       disposition: classify(response.status, fields),
       fields,
       pdfBytes: null,
+      pdfBody: null,
       specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
       body,
+      responseBody: parsed,
     };
   } catch (error) {
     if (error instanceof C6BolepixV2LiveDisabledError) throw error;
@@ -137,8 +153,10 @@ export async function executeC6BolepixV2Create(params: {
       disposition: 'uncertain',
       fields: null,
       pdfBytes: null,
+      pdfBody: null,
       specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
       body,
+      responseBody: null,
     };
   }
 }
@@ -147,13 +165,19 @@ export async function executeC6BolepixV2Get(params: {
   environment: BankEnvironment;
   externalReferenceId: string;
   fetchFn?: FetchFn;
+  allowSimulatedHttp?: boolean;
 }): Promise<C6BolepixV2CallResult> {
   const reference = assertC6BolepixV2Reference(params.externalReferenceId);
   const url = `${baseUrl(params.environment)}${encodeURIComponent(reference)}`;
-  const response = await execute(params.fetchFn, url, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
+  const response = await execute(
+    params.fetchFn,
+    url,
+    {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    },
+    params.allowSimulatedHttp === true,
+  );
   const parsed = response.bodyText ? JSON.parse(response.bodyText) : null;
   const fields = readC6BolepixV2OfficialFields(parsed);
   return {
@@ -162,6 +186,8 @@ export async function executeC6BolepixV2Get(params: {
     disposition: response.status === 200 && fields ? 'succeeded' : response.status >= 500 ? 'uncertain' : 'rejected',
     fields,
     pdfBytes: null,
+    pdfBody: null,
+    responseBody: parsed,
     specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
   };
 }
@@ -170,20 +196,32 @@ export async function executeC6BolepixV2Pdf(params: {
   environment: BankEnvironment;
   externalReferenceId: string;
   fetchFn?: FetchFn;
+  allowSimulatedHttp?: boolean;
 }): Promise<C6BolepixV2CallResult> {
   const reference = assertC6BolepixV2Reference(params.externalReferenceId);
   const url = `${baseUrl(params.environment)}${encodeURIComponent(reference)}/pdf`;
-  const response = await execute(params.fetchFn, url, {
-    method: 'GET',
-    headers: { Accept: 'application/pdf' },
-  });
-  const pdf = response.bodyText.startsWith('%PDF');
+  const response = await execute(
+    params.fetchFn,
+    url,
+    {
+      method: 'GET',
+      headers: { Accept: 'application/pdf' },
+    },
+    params.allowSimulatedHttp === true,
+  );
+  const contentType = String(response.contentType || '').toLowerCase();
+  const pdf =
+    response.status === 200 &&
+    contentType.includes('application/pdf') &&
+    response.bodyText.startsWith('%PDF');
   return {
-    ok: response.status === 200 && pdf,
+    ok: pdf,
     httpStatus: response.status,
-    disposition: response.status === 200 && pdf ? 'succeeded' : response.status >= 500 ? 'uncertain' : 'rejected',
+    disposition: pdf ? 'succeeded' : response.status >= 500 ? 'uncertain' : 'rejected',
     fields: null,
     pdfBytes: pdf ? response.bodyText.length : null,
+    pdfBody: pdf ? response.bodyText : null,
+    responseBody: null,
     specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
   };
 }

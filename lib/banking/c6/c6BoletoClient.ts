@@ -563,13 +563,21 @@ async function executePrepared(
   }
 }
 
+export class C6V1EmissionRetiredError extends Error {
+  constructor() {
+    super(
+      'A emissão C6 v1 foi desativada. Novas cobranças usam o Bolepix v2, que permanece sem chamada real.',
+    );
+    this.name = 'C6V1EmissionRetiredError';
+  }
+}
+
 export async function executeC6BankSlipCreate(
-  creds: C6AuthCredentials,
-  input: C6BoletoCreateInput,
-  options?: C6BoletoExecuteOptions,
+  _creds: C6AuthCredentials,
+  _input: C6BoletoCreateInput,
+  _options?: C6BoletoExecuteOptions,
 ): Promise<C6BoletoExecuteResult> {
-  const prepared = prepareC6BankSlipCreate(creds, input, { now: options?.now });
-  return executePrepared(creds, prepared, options, options?.testCase || 'B_01');
+  throw new C6V1EmissionRetiredError();
 }
 
 export async function executeC6BankSlipGet(

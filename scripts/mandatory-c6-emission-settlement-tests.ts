@@ -294,66 +294,22 @@ async function main() {
 
   const emittedCalls = { n: 0, body: '' };
   const emitted = memory({});
-  const first = await emitC6InstallmentBoleto(emitted.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('ok', emittedCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(first.emitted && first.bankSlipId === 'slip-1', 'boleto individual simulado registra o id');
-  assert(first.pixCopyPaste === null && first.bolepixSpecInRepo === false, 'Pix não é inventado');
-  assert(emitted.tables.bank_charges[0].our_number === '998877', 'nosso número oficial é gravado quando o C6 envia');
-  assert(emitted.tables.bank_charges[0].pix_copy_paste == null, 'campo Pix do retorno não vira Pix copia e cola');
-  assert(!emittedCalls.body.includes('pix') && !emittedCalls.body.includes('chave'), 'o POST oficial não leva Pix');
-  const sent = JSON.parse(emittedCalls.body) as {
-    amount: number;
-    due_date: string;
-    payer: { tax_id: string; address: { number: number; street: string } };
-  };
-  assert(sent.amount === 10.5 && sent.due_date === '2026-12-20', 'valor e vencimento originais são enviados');
-  assert(sent.payer.tax_id === '52998224725', 'o pagador da parcela é enviado');
-  assert(sent.payer.address.number === 10 && sent.payer.address.street === 'Rua A', 'payer.address.number recebe o número informado');
+  let v1Retired = false;
+  try {
+    await emitC6InstallmentBoleto(emitted.admin as never, COMPANY_A, INSTALLMENT, {
+      allowSimulatedHttp: true,
+      fetchFn: boletoFetch('ok', emittedCalls) as never,
+      authFetchFn: authFetch() as never,
+      credentials: creds,
+      now: NOW,
+    });
+  } catch (error) {
+    v1Retired = error instanceof Error && error.message.includes('Bolepix v2');
+  }
+  assert(v1Retired && emittedCalls.n === 0 && emitted.reservations.length === 0, 'nova emissão não chama a API v1 nem reserva');
+  assert(!emittedCalls.body.includes('/v1/bank_slips/'), 'não há fallback para o POST v1');
   const receipt = emitted.tables.finance_receipts[0];
   assert(receipt.amount === 10.5 && receipt.due_date === '2026-12-20' && receipt.status === 'pendente', 'a parcela não muda na emissão');
-  const second = await emitC6InstallmentBoleto(emitted.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('ok', emittedCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(second.reused && emittedCalls.n === 1, 'a segunda emissão não chama o banco');
-
-  const timeoutCalls = { n: 0, body: '' };
-  const timeout = memory({});
-  const timed = await emitC6InstallmentBoleto(timeout.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('timeout', timeoutCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(timed.needsReconciliation && timeout.reservations[0]?.status === 'UNKNOWN', 'timeout fica ambíguo');
-  await emitC6InstallmentBoleto(timeout.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('timeout', timeoutCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(timeoutCalls.n === 1, 'timeout não gera segunda emissão');
-
-  const ambiguousCalls = { n: 0, body: '' };
-  const ambiguous = memory({});
-  const unclear = await emitC6InstallmentBoleto(ambiguous.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('ambiguous', ambiguousCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(!unclear.emitted && unclear.needsReconciliation && ambiguous.tables.bank_charges.length === 0, 'HTTP 201 sem id não grava boleto');
 
   const foreign = memory({ companyId: COMPANY_B });
   let foreignError = false;
@@ -371,12 +327,18 @@ async function main() {
   assert(foreignError && foreign.reservations.length === 0, 'empresa A não emite parcela da empresa B');
 
   const paid = memory({});
-  await emitC6InstallmentBoleto(paid.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('ok', { n: 0, body: '' }) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
+  paid.tables.bank_charges.push({
+    id: 'charge-hist',
+    company_id: COMPANY_A,
+    integration_id: 'int-1',
+    finance_receipt_id: INSTALLMENT,
+    provider: 'C6',
+    external_id: 'slip-1',
+    amount: 10.5,
+    due_date: '2026-12-20',
+    status: 'REGISTERED',
+    digitable_line: LINE,
+    barcode: '33690000000000000000000000000000000000000000',
   });
   const consulted = await queryC6InstallmentBoleto(paid.admin as never, COMPANY_A, INSTALLMENT, {
     allowSimulatedHttp: true,
@@ -396,12 +358,16 @@ async function main() {
   assert(again.settlement?.duplicate === true && paid.tables.cash_movements.length === 1, 'a segunda baixa não duplica o caixa');
 
   const divergent = memory({});
-  await emitC6InstallmentBoleto(divergent.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('ok', { n: 0, body: '' }) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
+  divergent.tables.bank_charges.push({
+    id: 'charge-div',
+    company_id: COMPANY_A,
+    integration_id: 'int-1',
+    finance_receipt_id: INSTALLMENT,
+    provider: 'C6',
+    external_id: 'slip-1',
+    amount: 10.5,
+    due_date: '2026-12-20',
+    status: 'REGISTERED',
   });
   const diverged = await queryC6InstallmentBoleto(divergent.admin as never, COMPANY_A, INSTALLMENT, {
     allowSimulatedHttp: true,
@@ -418,17 +384,6 @@ async function main() {
     credentials: creds,
   });
   assert(pdf.ok && pdf.httpStatus === 200 && pdf.bytes?.subarray(0, 4).toString() === '%PDF', 'consulta de PDF simulada devolve os bytes');
-
-  const tenCalls = { n: 0, body: '' };
-  const ten = memory({ amount: 10, due: '2026-11-23' });
-  const tenResult = await emitC6InstallmentBoleto(ten.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('ok', tenCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(tenResult.emitted && JSON.parse(tenCalls.body).amount === 10, 'R$ 10,00 passa na validação e no payload');
 
   const missingCalls = { n: 0, body: '' };
   const missingNumber = memory({});
@@ -474,85 +429,6 @@ async function main() {
       withoutNumberCalls.n === 0 &&
       withoutNumber.reservations.length === 0,
     'S/N não vira zero e não reserva boleto',
-  );
-
-  const rejectedCalls = { n: 0, body: '' };
-  const rejected = memory({});
-  const rejectedResult = await emitC6InstallmentBoleto(rejected.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('rejected', rejectedCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(
-    !rejectedResult.emitted &&
-      rejectedResult.message.includes('HTTP 400') &&
-      !rejectedResult.message.includes('segredo') &&
-      !rejectedResult.needsReconciliation &&
-      rejected.reservations[0]?.status === 'FAILED' &&
-      rejected.tables.bank_charges.length === 0,
-    'HTTP 400 não registra boleto e não devolve segredo',
-  );
-  const retried = await emitC6InstallmentBoleto(rejected.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('rejected', rejectedCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(
-    rejectedCalls.n === 2 &&
-      !retried.emitted &&
-      rejected.reservations[0]?.retryAllowed === true &&
-      rejected.tables.bank_charges.length === 0,
-    'HTTP 400 sem id permite uma nova tentativa controlada',
-  );
-
-  const conflictCalls = { n: 0, body: '' };
-  const conflict = memory({});
-  const conflictResult = await emitC6InstallmentBoleto(conflict.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('conflict', conflictCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  await emitC6InstallmentBoleto(conflict.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('conflict', conflictCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(
-    conflictResult.needsReconciliation &&
-      conflict.reservations[0]?.status === 'UNKNOWN' &&
-      conflictCalls.n === 1,
-    'HTTP 409 não é tratado como ausência de boleto',
-  );
-
-  const identifiedCalls = { n: 0, body: '' };
-  const identified = memory({});
-  const identifiedResult = await emitC6InstallmentBoleto(identified.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('rejected-with-id', identifiedCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  await emitC6InstallmentBoleto(identified.admin as never, COMPANY_A, INSTALLMENT, {
-    allowSimulatedHttp: true,
-    fetchFn: boletoFetch('rejected-with-id', identifiedCalls) as never,
-    authFetchFn: authFetch() as never,
-    credentials: creds,
-    now: NOW,
-  });
-  assert(
-    identifiedResult.needsReconciliation &&
-      identified.tables.bank_charges.length === 0 &&
-      identifiedCalls.n === 1,
-    'HTTP 400 com identificador bloqueia nova emissão',
   );
 
   const pending = resolveC6ChargeActions({

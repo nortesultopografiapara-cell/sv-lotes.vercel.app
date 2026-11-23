@@ -36,6 +36,9 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
   const [boletoIntent, setBoletoIntent] = useState(false);
   const [bolepixIntent, setBolepixIntent] = useState(false);
   const [pixKey, setPixKey] = useState('');
+  const [pixConfigured, setPixConfigured] = useState(false);
+  const [pixMask, setPixMask] = useState<string | null>(null);
+  const [pixSaving, setPixSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [togglingEmission, setTogglingEmission] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
@@ -61,12 +64,72 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       setBolepixIntent(cfg.bolepixIntent === true);
       setFinancialAccountId(cfg.financialAccountId || '');
       setAccounts((data.financialAccounts as AccountOption[]) || []);
+      await loadPixStatus(cfg.id, cfg.financialAccountId || '');
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Erro ao carregar');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  async function loadPixStatus(integrationId: string | null, accountId: string) {
+    if (!integrationId || !accountId) {
+      setPixConfigured(false);
+      setPixMask(null);
+      return;
+    }
+    const res = await fetch(
+      `/api/banking/c6/bolepix/pix-key?integrationId=${encodeURIComponent(integrationId)}&financialAccountId=${encodeURIComponent(accountId)}`,
+      { credentials: 'include' },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    setPixConfigured(Boolean(data.configured));
+    setPixMask(typeof data.mask === 'string' ? data.mask : null);
+  }
+
+  async function savePixKey() {
+    const message = inspectC6BolepixPixKey(pixKey);
+    if (message) {
+      setError(message);
+      setInfo('');
+      return;
+    }
+    if (!config?.id || !financialAccountId) {
+      setError('A chave Pix precisa da conta beneficiária vinculada a esta integração C6.');
+      setInfo('');
+      return;
+    }
+    setPixSaving(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/c6/bolepix/pix-key', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pixKey,
+          integrationId: config.id,
+          financialAccountId,
+          replace: pixConfigured,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível gravar a chave Pix.');
+      setPixConfigured(Boolean(data.configured));
+      setPixMask(typeof data.mask === 'string' ? data.mask : null);
+      setInfo(
+        data.message ||
+          'Chave Pix gravada de forma cifrada. A emissão Bolepix continua desligada.',
+      );
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível gravar a chave Pix.');
+    } finally {
+      setPixKey('');
+      setPixSaving(false);
+    }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -346,7 +409,11 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
             <select
               value={financialAccountId}
               disabled={readOnlyDemo || persistBlocked}
-              onChange={(event) => setFinancialAccountId(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setFinancialAccountId(next);
+                void loadPixStatus(config?.id || null, next);
+              }}
               className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
             >
               <option value="">Sem vínculo</option>
@@ -464,39 +531,31 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
         <p className="text-sm text-amber-200">Cadastro C6 permanece bloqueado em Production.</p>
       ) : null}
       <div className="rounded-lg border border-[var(--border-color)] p-3 text-xs text-[var(--text-secondary)] space-y-2">
-        <p className="font-semibold text-[var(--text-primary)]">Chave Pix aleatória do Bolepix</p>
+        <p className="font-semibold text-[var(--text-primary)]">Bolepix v2 — Chave Pix</p>
         <p>
-          A emissão Bolepix permanece desligada. Este campo só confere o formato EVP e não grava a chave,
-          o Client ID, o segredo nem o certificado.
+          Situação: {pixConfigured ? 'configurada' : 'não configurada'}
+          {pixMask ? ` · ${pixMask}` : ''}.
+        </p>
+        <p>
+          A integração Bolepix não está operacional. Cadastrar a chave não ativa a emissão e não altera
+          Client ID, segredo ou certificado.
         </p>
         <input
           type="password"
           autoComplete="off"
           value={pixKey}
-          disabled={readOnlyDemo}
+          disabled={readOnlyDemo || pixSaving}
           onChange={(event) => setPixKey(event.target.value)}
           className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
           aria-label="Chave Pix aleatória"
         />
         <button
           type="button"
-          disabled={readOnlyDemo || !pixKey.trim()}
-          onClick={() => {
-            const message = inspectC6BolepixPixKey(pixKey);
-            if (message) {
-              setError(message);
-              setInfo('');
-              return;
-            }
-            setError('');
-            setInfo(
-              'Formato EVP válido. A chave não foi gravada e a emissão Bolepix continua desligada.',
-            );
-            setPixKey('');
-          }}
+          disabled={readOnlyDemo || pixSaving || !pixKey.trim() || !config?.id || !financialAccountId}
+          onClick={() => void savePixKey()}
           className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
         >
-          Conferir chave Pix
+          {pixSaving ? 'Salvando' : pixConfigured ? 'Substituir chave Pix' : 'Salvar chave Pix'}
         </button>
       </div>
       {error ? <p className="text-sm text-red-300">{error}</p> : null}

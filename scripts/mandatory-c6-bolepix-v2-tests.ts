@@ -52,6 +52,21 @@ async function main() {
     liveBlocked = error instanceof C6BolepixV2LiveDisabledError;
   }
   assert(liveBlocked, 'sem fetch simulado a emissão não sai do processo');
+  let injectedCalls = 0;
+  let injectedBlocked = false;
+  try {
+    await executeC6BolepixV2Create({
+      input: base,
+      now: NOW,
+      fetchFn: async () => {
+        injectedCalls += 1;
+        return { status: 201, bodyText: '{}', contentType: 'application/json' };
+      },
+    });
+  } catch (error) {
+    injectedBlocked = error instanceof C6BolepixV2LiveDisabledError;
+  }
+  assert(injectedBlocked && injectedCalls === 0, 'fetch injetado sem simulação não chama o banco');
 
   const spec = fs.readFileSync(path.join(process.cwd(), 'docs/c6/bankslip-v2-api.yaml'), 'utf8');
   assert(spec.includes('title: Boleto com Liquidação via Barra ou Pix'), 'a spec oficial está no repositório');
@@ -61,7 +76,7 @@ async function main() {
   const created = await executeC6BolepixV2Create({
     input: { ...base, pixKey: '123e4567-e89b-12d3-a456-426614174000' },
     now: NOW,
-    fetchFn: json(201, {
+    allowSimulatedHttp: true, fetchFn: json(201, {
       id: '01HVSBSTN8CCTCTEQT6MC7TD4B',
       external_reference_id: REFERENCE,
       amount: 10,
@@ -90,7 +105,7 @@ async function main() {
   const withoutPix = await executeC6BolepixV2Create({
     input: base,
     now: NOW,
-    fetchFn: json(201, { id: '01HVSBSTN8CCTCTEQT6MC7TD4C', status: 'CREATED', payment_method: { bank_slip: {} } }),
+    allowSimulatedHttp: true, fetchFn: json(201, { id: '01HVSBSTN8CCTCTEQT6MC7TD4C', status: 'CREATED', payment_method: { bank_slip: {} } }),
   });
   assert(!('pix' in (withoutPix.body.payment_method as object)), 'sem chave Pix o bloco não é enviado');
   assert(withoutPix.fields?.pixCopyPaste == null, 'Pix ausente não é fabricado');
@@ -100,7 +115,7 @@ async function main() {
     await executeC6BolepixV2Create({
       input: { ...base, pixKey: 'email@exemplo.com' },
       now: NOW,
-      fetchFn: json(201, { id: 'x' }),
+      allowSimulatedHttp: true, fetchFn: json(201, { id: 'x' }),
     });
   } catch (error) {
     invalidPix = error instanceof C6BolepixV2ValidationError;
@@ -121,7 +136,7 @@ async function main() {
   const ambiguous = await executeC6BolepixV2Create({
     input: base,
     now: NOW,
-    fetchFn: async () => {
+    allowSimulatedHttp: true, fetchFn: async () => {
       calls += 1;
       return { status: 201, bodyText: '{"amount":10}', contentType: 'application/json' };
     },
@@ -132,14 +147,14 @@ async function main() {
   const rejected = await executeC6BolepixV2Create({
     input: base,
     now: NOW,
-    fetchFn: json(422, { error: 'invalid' }),
+    allowSimulatedHttp: true, fetchFn: json(422, { error: 'invalid' }),
   });
   assert(rejected.disposition === 'rejected' && rejected.httpStatus === 422, '422 sem id é rejeição definitiva');
 
   const unavailable = await executeC6BolepixV2Create({
     input: base,
     now: NOW,
-    fetchFn: async () => {
+    allowSimulatedHttp: true, fetchFn: async () => {
       throw new Error('timeout');
     },
   });
@@ -148,14 +163,14 @@ async function main() {
   const server = await executeC6BolepixV2Create({
     input: base,
     now: NOW,
-    fetchFn: json(503, { error: 'down' }),
+    allowSimulatedHttp: true, fetchFn: json(503, { error: 'down' }),
   });
   assert(server.disposition === 'uncertain', '5xx permanece incerto');
 
   const queried = await executeC6BolepixV2Get({
     environment: 'PRODUCTION',
     externalReferenceId: REFERENCE,
-    fetchFn: json(200, {
+    allowSimulatedHttp: true, fetchFn: json(200, {
       id: '01HVSBSTN8CCTCTEQT6MC7TD4B',
       external_reference_id: REFERENCE,
       status: 'CREATED',
@@ -167,7 +182,7 @@ async function main() {
   const pdf = await executeC6BolepixV2Pdf({
     environment: 'PRODUCTION',
     externalReferenceId: REFERENCE,
-    fetchFn: async (url, init) => {
+    allowSimulatedHttp: true, fetchFn: async (url, init) => {
       assert(url.endsWith(`/${REFERENCE}/pdf`), 'o PDF usa a referência externa');
       assert(init.headers.Accept === 'application/pdf', 'o PDF pede application/pdf');
       return { status: 200, bodyText: '%PDF-1.4', contentType: 'application/pdf' };
@@ -177,7 +192,7 @@ async function main() {
   const missingPdf = await executeC6BolepixV2Pdf({
     environment: 'PRODUCTION',
     externalReferenceId: REFERENCE,
-    fetchFn: async () => ({ status: 404, bodyText: '{"error":"missing"}', contentType: 'application/json' }),
+    allowSimulatedHttp: true, fetchFn: async () => ({ status: 404, bodyText: '{"error":"missing"}', contentType: 'application/json' }),
   });
   assert(!missingPdf.ok && missingPdf.httpStatus === 404, 'o status real do PDF é preservado');
 
@@ -201,7 +216,9 @@ async function main() {
   const v1 = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6BoletoEndpoints.ts'), 'utf8');
   assert(v1.includes('/v1/bank_slips/'), 'a cobrança antiga continua na API v1');
   const emit = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6InstallmentCharge.ts'), 'utf8');
-  assert(!emit.includes('/v2/bank_slips'), 'a emissão atual não foi convertida para v2');
+  assert(emit.includes('recoverC6BolepixEmissionKey') || emit.includes('c6BolepixV2PayloadFromSealedKey'), 'a emissão decifra a EVP no servidor');
+  assert(emit.includes('reserve_c6_bolepix'), 'a emissão nova reserva só o Bolepix');
+  assert(!emit.includes('executeC6BankSlipCreate') && !emit.includes('reserve_c6_boleto'), 'a emissão nova não usa a v1');
 
   const sql = fs.readFileSync(
     path.join(process.cwd(), 'supabase/migrations/20261123120000_c6_bolepix_v2_reservation.sql'),
@@ -352,22 +369,116 @@ async function main() {
     foreignKey = error instanceof Error && error.message.includes('outra empresa');
   }
   assert(foreignKey, 'a chave Pix não atravessa empresa');
-  const productionKey = pix.evaluateC6BolepixPixKeyRegistration({
-    role: 'ADMIN',
-    projectRef: 'aezktedncttwpqeunjej',
-    writesEnabled: true,
-  });
+  const sample = '123e4567-e89b-12d3-a456-426614174000';
   const ownerKey = pix.evaluateC6BolepixPixKeyRegistration({
     role: 'OWNER',
-    projectRef: 'hoynysmynxncdlptuzub',
-    writesEnabled: true,
+    encryptionConfigured: true,
+    replace: true,
+    existing: false,
   });
-  const developAdmin = pix.evaluateC6BolepixPixKeyRegistration({
+  const brokerKey = pix.evaluateC6BolepixPixKeyRegistration({
+    role: 'BROKER',
+    encryptionConfigured: true,
+    replace: true,
+    existing: false,
+  });
+  const missingSecret = pix.evaluateC6BolepixPixKeyRegistration({
     role: 'ADMIN',
-    projectRef: 'hoynysmynxncdlptuzub',
-    writesEnabled: false,
+    encryptionConfigured: false,
+    replace: false,
+    existing: false,
   });
-  assert(!productionKey.allowed && !ownerKey.allowed && !developAdmin.allowed, 'Production, OWNER e cadastro desligado não gravam a EVP');
+  assert(!ownerKey.allowed && ownerKey.status === 403, 'OWNER não cadastra a EVP');
+  assert(!brokerKey.allowed, 'usuário comum não cadastra a EVP');
+  assert(!missingSecret.allowed && missingSecret.status === 503, 'sem a chave de criptografia a EVP não é gravada');
+  assert(!missingSecret.reason.includes('=') && missingSecret.reason.includes('BANKING_CREDENTIALS_ENCRYPTION_KEY'), 'o nome da variável não revela o segredo');
+  const previousSecret = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
+  process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = 'teste-fase-4a-chave-bancaria';
+  try {
+    const linked = {
+      integration: { companyId: 'company-a', provider: 'C6' },
+      account: { companyId: 'company-a', integrationId: 'integration-a', active: true },
+      existing: null,
+    };
+    const saved = pix.prepareC6BolepixPixKeyWrite({
+      role: 'ADMIN',
+      companyId: 'company-a',
+      integrationId: 'integration-a',
+      financialAccountId: 'account-a',
+      pixKey: sample,
+      replace: false,
+      encryptionConfigured: true,
+      lookup: linked,
+    });
+    assert(saved.publicView.configured && saved.publicView.emissionEnabled === false, 'cadastrar a EVP não liga a emissão');
+    assert(!saved.publicView.mask?.includes(sample) && !JSON.stringify(saved.publicView).includes(sample), 'a resposta não devolve a chave');
+    assert(saved.record.encryptedKey.startsWith('v1:') && !saved.record.encryptedKey.includes(sample), 'a chave fica cifrada');
+    assert(pix.openC6BolepixPixKey(saved.record.encryptedKey) === sample, 'a cifra autenticada abre a mesma EVP');
+    const masked = pix.maskC6BolepixPixKey(saved.record);
+    assert(masked.mask === `EVP ••••${saved.record.fingerprint.slice(-4)}` && !masked.mask.includes(sample), 'a tela só mostra a máscara');
+    let otherAccount = false;
+    try {
+      pix.prepareC6BolepixPixKeyWrite({
+        role: 'ADMIN',
+        companyId: 'company-a',
+        integrationId: 'integration-a',
+        financialAccountId: 'account-b',
+        pixKey: sample,
+        replace: false,
+        encryptionConfigured: true,
+        lookup: {
+          integration: linked.integration,
+          account: { companyId: 'company-a', integrationId: 'integration-b', active: true },
+          existing: null,
+        },
+      });
+    } catch (error) {
+      otherAccount = error instanceof Error && error.message.includes('CNPJ igual não basta');
+    }
+    assert(otherAccount, 'conta de outra integração C6 não recebe a EVP');
+    let replacedBlocked = false;
+    try {
+      pix.prepareC6BolepixPixKeyWrite({
+        role: 'COMPANY_ADMIN',
+        companyId: 'company-a',
+        integrationId: 'integration-a',
+        financialAccountId: 'account-a',
+        pixKey: '123e4567-e89b-12d3-a456-426614174001',
+        replace: false,
+        encryptionConfigured: true,
+        lookup: { ...linked, existing: { encryptedKey: saved.record.encryptedKey, fingerprint: saved.record.fingerprint } },
+      });
+    } catch (error) {
+      replacedBlocked = error instanceof pix.C6BolepixPixKeyAccessError && error.status === 409;
+    }
+    assert(replacedBlocked, 'substituir a EVP exige autorização explícita');
+    const replaced = pix.prepareC6BolepixPixKeyWrite({
+      role: 'ADMIN_EMPRESA',
+      companyId: 'company-a',
+      integrationId: 'integration-a',
+      financialAccountId: 'account-a',
+      pixKey: '123e4567-e89b-12d3-a456-426614174001',
+      replace: true,
+      encryptionConfigured: true,
+      lookup: { ...linked, existing: { encryptedKey: saved.record.encryptedKey, fingerprint: saved.record.fingerprint } },
+    });
+    assert(
+      replaced.publicView.replaced &&
+        pix.openC6BolepixPixKey(replaced.record.encryptedKey) === '123e4567-e89b-12d3-a456-426614174001',
+      'o administrador substitui a EVP',
+    );
+    const foreignSecret = (await import('../lib/banking/credentialsCrypto')).encryptBankingSecret('segredo-de-outra-funcao');
+    let purposeBlocked = false;
+    try {
+      pix.openC6BolepixPixKey(foreignSecret);
+    } catch (error) {
+      purposeBlocked = error instanceof pix.C6BolepixPixKeyAccessError;
+    }
+    assert(purposeBlocked, 'um segredo bancário de outra função não vale como EVP');
+  } finally {
+    if (previousSecret == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
+    else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousSecret;
+  }
 
   const official = await import('../lib/banking/c6/c6BolepixV2Official');
   const stored = official.officialC6BolepixFromResponse({
@@ -459,9 +570,217 @@ async function main() {
   });
   assert(v2Actions.showView && v2Actions.showCopyPix && !v2Actions.showWhatsApp && !v2Actions.showGenerate, 'Bolepix criado não é compartilhado como pagamento na rede');
   const route = fs.readFileSync(path.join(process.cwd(), 'app/api/banking/c6/bolepix/pix-key/route.ts'), 'utf8');
-  assert(route.includes('status: 409') && !route.includes('request.json'), 'a rota da chave não lê nem grava o segredo');
+  const pixSource = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6BolepixV2PixKey.ts'), 'utf8');
+  assert(route.includes('request.json') && route.includes('prepareC6BolepixPixKeyWrite'), 'a rota grava a EVP só depois da validação');
+  assert(!route.includes('console.') && !pixSource.includes('console.'), 'a chave não é escrita em log');
+  assert(!route.includes('executeC6Bolepix') && route.includes('emissionEnabled: false'), 'cadastrar a EVP não emite boleto');
+  assert(!route.includes('client_secret') && !route.includes('certificate'), 'a rota não altera credencial C6');
   const panel = fs.readFileSync(path.join(process.cwd(), 'components/finance/C6BankConfigPanel.tsx'), 'utf8');
-  assert(panel.includes('A emissão Bolepix permanece desligada'), 'a tela avisa que a emissão continua desligada');
+  assert(panel.includes('Bolepix v2 — Chave Pix'), 'o painel tem a seção da chave');
+  assert(panel.includes('Cadastrar a chave não ativa a emissão'), 'a tela avisa que a emissão continua desligada');
+  const migration = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/20261123120000_c6_bolepix_v2_reservation.sql'),
+    'utf8',
+  );
+  const raceA = reservation.reserveC6Bolepix([], {
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationCompanyId: 'company-a',
+    receiptCompanyId: 'company-a',
+    financeReceiptId: 'receipt-race',
+    externalReferenceId: '01KP640RNSYXH9G41GR27RTAXA',
+    requestFingerprint: fingerprint,
+  });
+  const raceB = reservation.reserveC6Bolepix([], {
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationCompanyId: 'company-a',
+    receiptCompanyId: 'company-a',
+    financeReceiptId: 'receipt-race',
+    externalReferenceId: '01KP640RNSYXH9G41GR27RTAYA',
+    requestFingerprint: fingerprint,
+  });
+  assert(raceA.accepted && raceB.accepted, 'o modelo em memória não serializa duas reservas simultâneas');
+  assert(
+    migration.includes('c6_bolepix_reservations_receipt_unique') && migration.includes('pg_advisory_xact_lock'),
+    'o banco aplica unicidade e trava transacional na reserva',
+  );
+
+  const retryableV1 = reservation.reserveC6Bolepix([], {
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationCompanyId: 'company-a',
+    receiptCompanyId: 'company-a',
+    financeReceiptId: 'receipt-retry',
+    externalReferenceId: '01KP640RNSYXH9G41GR27RTAXB',
+    requestFingerprint: fingerprint,
+    v1Status: 'FAILED',
+    v1RetryAllowed: true,
+  });
+  assert(!retryableV1.accepted, 'reserva v1 com nova tentativa impede a v2');
+  const otherCompanyReserve = reservation.reserveC6Bolepix([], {
+    companyId: 'company-b',
+    integrationId: 'integration-b',
+    integrationCompanyId: 'company-b',
+    receiptCompanyId: 'company-b',
+    financeReceiptId: 'receipt-other',
+    externalReferenceId: '01KP640RNSYXH9G41GR27RTAXC',
+    requestFingerprint: fingerprint,
+  });
+  assert(otherCompanyReserve.accepted, 'outra empresa reserva a própria parcela');
+
+  const emission = await import('../lib/banking/c6/c6BolepixV2Emission');
+  let pixRequired = false;
+  try {
+    emission.buildC6BolepixV2EmissionBody({
+      environment: 'SANDBOX',
+      externalReferenceId: emission.c6BolepixV2ReferenceForInstallment('receipt-1'),
+      amount: 10,
+      dueDate: '2026-11-23',
+      description: 'Parcela',
+      payer,
+    });
+  } catch (error) {
+    pixRequired = error instanceof emission.C6BolepixPixKeyRequiredError;
+  }
+  assert(pixRequired, 'sem EVP a emissão Bolepix não segue sem Pix');
+  const bolepixBody = emission.buildC6BolepixV2EmissionBody(
+    {
+      environment: 'PRODUCTION',
+      externalReferenceId: emission.c6BolepixV2ReferenceForInstallment('receipt-1'),
+      amount: 10,
+      dueDate: '2026-11-23',
+      description: 'Parcela',
+      payer,
+      pixKey: '123e4567-e89b-12d3-a456-426614174000',
+    },
+    NOW,
+  ) as { payment_method: { bank_slip: { billing_scheme: string }; pix: { type: string; key: string } } };
+  assert(bolepixBody.payment_method.bank_slip.billing_scheme === '15', 'produção usa a carteira 15');
+  assert(bolepixBody.payment_method.pix.type === 'EVP', 'a EVP cadastrada entra no pedido');
+  assert(!JSON.stringify(bolepixBody).includes('"10"'), 'a carteira impressa 10 não é enviada');
+  const emitter = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6InstallmentCharge.ts'), 'utf8');
+  const creator = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6BoletoClient.ts'), 'utf8');
+  assert(!emitter.includes('executeC6BankSlipCreate'), 'o fluxo da parcela não emite pela v1');
+  assert(creator.includes('C6V1EmissionRetiredError'), 'o POST v1 está desativado no cliente');
+  const raceMigration = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/20261123193000_c6_bolepix_close_v1_retry_race.sql'),
+    'utf8',
+  );
+  assert(raceMigration.includes("status = 'FAILED' AND retry_allowed IS TRUE"), 'a migration fecha a tentativa v1');
+  assert(raceMigration.includes('BEFORE UPDATE'), 'a migration protege o UPDATE da reserva v1');
+  assert(raceMigration.includes("pg_advisory_xact_lock"), 'a migration usa o mesmo lock da reserva v1');
+  assert(!/update\s+public\.finance_receipts/i.test(raceMigration), 'a migration não altera recebíveis');
+  assert(!/delete\s+from\s+public\.c6_boleto_reservations/i.test(raceMigration), 'a migration não apaga o histórico v1');
+
+  const issue = await import('../lib/banking/c6/c6BolepixV2Issue');
+  const openApi = await import('../lib/banking/c6/c6BolepixV2OpenApi');
+  assert(openApi.C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === false, 'a chamada real permanece desligada');
+  assert(openApi.C6_BOLEPIX_V2_RELEASED_INTEGRATIONS.length === 0, 'nenhuma empresa está liberada');
+  assert(!issue.c6BolepixV2MayCallBank('company-a', 'integration-a', false), 'sem simulação a chamada não sai');
+  const previousKey = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
+  process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = 'teste-fase-4c-chave-bancaria';
+  const saved = pix.prepareC6BolepixPixKeyWrite({
+    role: 'ADMIN',
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    financialAccountId: 'account-a',
+    pixKey: sample,
+    replace: false,
+    encryptionConfigured: true,
+    lookup: {
+      integration: { companyId: 'company-a', provider: 'C6' },
+      account: { companyId: 'company-a', integrationId: 'integration-a', active: true },
+      existing: null,
+    },
+  });
+  const sealedPayload = issue.c6BolepixV2PayloadFromSealedKey(
+    {
+      companyId: 'company-a',
+      environment: 'PRODUCTION',
+      externalReferenceId: emission.c6BolepixV2ReferenceForInstallment('receipt-1'),
+      amount: 10,
+      dueDate: '2026-11-23',
+      description: 'Parcela',
+      payer,
+      encryptedKey: saved.record.encryptedKey,
+      fingerprint: saved.record.fingerprint,
+    },
+    NOW,
+  );
+  const sentPix = (sealedPayload.body.payment_method as { pix: { type: string; key: string }; bank_slip: { billing_scheme: string } }).pix;
+  assert(sentPix.type === 'EVP' && sentPix.key === sample, 'a EVP decifrada entra no pedido');
+  assert(sentPix.key !== saved.record.fingerprint, 'a impressão digital não é a chave Pix');
+  assert(sealedPayload.endpoint.includes('/v2/bank_slips/') && !sealedPayload.endpoint.includes('/v1/'), 'o pedido aponta para o endpoint v2');
+  assert(!JSON.stringify(issue.redactC6BolepixV2Body(sealedPayload.body)).includes(sample), 'a evidência pública não leva a EVP');
+  assert(issue.redactC6BolepixSecret(`falha ${sample}`).includes('[chave]'), 'mensagem de erro não conserva a EVP');
+  let bankCalls = 0;
+  const issued = await executeC6BolepixV2Create({
+    input: {
+      environment: 'PRODUCTION',
+      externalReferenceId: emission.c6BolepixV2ReferenceForInstallment('receipt-1'),
+      amount: 10,
+      dueDate: '2026-11-23',
+      description: 'Parcela',
+      payer,
+      pixKey: sealedPayload.pixKey,
+    },
+    now: NOW,
+    allowSimulatedHttp: true,
+    fetchFn: async (url, init) => {
+      bankCalls += 1;
+      assert(url.includes('/v2/bank_slips/') && !url.includes('/v1/bank_slips/'), 'o HTTP simulado não usa a v1');
+      assert(String(init.body || '').includes(sample), 'o corpo enviado leva a EVP decifrada');
+      return {
+        status: 201,
+        bodyText: JSON.stringify({
+          id: '01HVSBSTN8CCTCTEQT6MC7TD4B',
+          external_reference_id: emission.c6BolepixV2ReferenceForInstallment('receipt-1'),
+          status: 'CREATED',
+          amount: 10,
+          due_date: '2026-11-23',
+          payment_method: {
+            bank_slip: { billing_scheme: '15', billing_type: '3', digitable_line: '33691', bar_code: '33692', our_number: '1' },
+            pix: { qr_code: '000201', image_content: 'aW1n', mime_type: 'image/png' },
+          },
+        }),
+        contentType: 'application/json',
+      };
+    },
+  });
+  const done = issue.completionForC6BolepixV2({
+    disposition: issued.disposition,
+    httpStatus: issued.httpStatus,
+    chargeId: issued.fields?.id,
+  });
+  assert(done.status === 'SUCCEEDED' && done.automaticRetry === false && bankCalls === 1, 'HTTP 201 encerra a tentativa');
+  assert(issued.fields?.status === 'CREATED', 'CREATED não é tratado como pagamento');
+  const timed = await executeC6BolepixV2Create({
+    input: base,
+    now: NOW,
+    allowSimulatedHttp: true,
+    fetchFn: async () => {
+      bankCalls += 1;
+      throw new Error('timeout');
+    },
+  });
+  const uncertain = issue.completionForC6BolepixV2({
+    disposition: timed.disposition,
+    httpStatus: timed.httpStatus,
+    chargeId: timed.fields?.id,
+  });
+  assert(uncertain.status === 'UNKNOWN' && uncertain.automaticRetry === false, 'timeout não dispara outra emissão');
+  const refused = issue.completionForC6BolepixV2({ disposition: 'rejected', httpStatus: 422, chargeId: null });
+  assert(refused.status === 'FAILED' && refused.retryAllowed && refused.automaticRetry === false, 'rejeição definitiva não repete sozinha');
+  const htmlPdf = await executeC6BolepixV2Pdf({
+    environment: 'PRODUCTION',
+    externalReferenceId: REFERENCE,
+    allowSimulatedHttp: true,
+    fetchFn: async () => ({ status: 200, bodyText: '<html></html>', contentType: 'text/html' }),
+  });
+  assert(!htmlPdf.ok && htmlPdf.pdfBody == null, 'arquivo que não é PDF oficial é recusado');
+  if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
+  else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;
 
   console.log('C6_BOLEPIX_V2_OK');
   console.log('SIMULADO: criação, Pix, PDF, consulta, baixa e bloqueio real. Nenhum HTTP ao banco.');

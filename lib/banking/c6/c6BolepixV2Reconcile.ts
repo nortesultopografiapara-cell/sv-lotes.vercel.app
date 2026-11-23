@@ -13,6 +13,23 @@ export type C6BolepixReconciliation = {
   message: string;
 };
 
+export function readC6BolepixV2Payments(body: unknown): Array<C6BolepixV2Payment & { externalPaymentId: string | null }> {
+  const row = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+  const list = Array.isArray(row?.payments) ? row.payments : [];
+  return list.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const payment = item as Record<string, unknown>;
+    const paymentType = String(payment.payment_type || '');
+    if (paymentType !== 'BANK_SLIP' && paymentType !== 'PIX') return [];
+    return [{
+      amount: String(payment.amount || ''),
+      paymentType,
+      paymentDate: String(payment.payment_date || ''),
+      externalPaymentId: payment.external_payment_id ? String(payment.external_payment_id) : null,
+    }];
+  });
+}
+
 export function reconcileC6BolepixV2Query(input: {
   status?: string | null;
   billingType?: string | null;
