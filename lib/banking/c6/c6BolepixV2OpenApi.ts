@@ -51,6 +51,33 @@ export function isC6BolepixV2LiveRelease(companyId: string, integrationId: strin
   return C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === true && listed;
 }
 
+/** POST real só depois da parcela de teste e da liberação de uma integração. */
+export function evaluateC6BolepixV2ControlledEmission(input: {
+  companyId: string;
+  integrationId: string;
+  pixConfigured: boolean;
+  beneficiaryLinked: boolean;
+  integrationActive: boolean;
+  credentialsPresent: boolean;
+  migrationConfirmed: boolean;
+  reservationReady: boolean;
+  adminAuthorized: boolean;
+  testParcelNamed: boolean;
+}): { postAllowed: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (!input.pixConfigured) missing.push('EVP cadastrada');
+  if (!input.beneficiaryLinked) missing.push('conta beneficiária');
+  if (!input.integrationActive) missing.push('integração ativa');
+  if (!input.credentialsPresent) missing.push('credenciais válidas');
+  if (!input.migrationConfirmed) missing.push('migration confirmada');
+  if (!input.reservationReady) missing.push('reserva idempotente');
+  if (!input.adminAuthorized) missing.push('permissão administrativa');
+  if (!input.testParcelNamed) missing.push('parcela de teste indicada');
+  const released = isC6BolepixV2LiveRelease(input.companyId, input.integrationId);
+  if (!released) missing.push('liberação individual da integração');
+  return { postAllowed: missing.length === 0 && released, missing };
+}
+
 export const C6_BOLEPIX_V2_STATUS_MEANING = {
   CREATED: 'Cobrança criada. O contrato não afirma registro na rede bancária.',
   PAID: 'Pagamento liquidado.',

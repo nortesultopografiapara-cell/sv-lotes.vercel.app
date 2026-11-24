@@ -864,6 +864,130 @@ async function main() {
   agent.destroy();
   assert(agent instanceof (await import('node:https')).Agent, 'o agente reutiliza o certificado mTLS');
 
+  const readiness = (await import('../lib/banking/c6/c6BolepixV2OpenApi')).evaluateC6BolepixV2ControlledEmission({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    pixConfigured: true,
+    beneficiaryLinked: true,
+    integrationActive: true,
+    credentialsPresent: true,
+    migrationConfirmed: true,
+    reservationReady: true,
+    adminAuthorized: true,
+    testParcelNamed: true,
+  });
+  assert(readiness.postAllowed === false, 'o POST continua desligado sem liberação individual');
+  const unnamed = (await import('../lib/banking/c6/c6BolepixV2OpenApi')).evaluateC6BolepixV2ControlledEmission({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    pixConfigured: true,
+    beneficiaryLinked: true,
+    integrationActive: true,
+    credentialsPresent: true,
+    migrationConfirmed: true,
+    reservationReady: true,
+    adminAuthorized: true,
+    testParcelNamed: false,
+  });
+  assert(unnamed.missing.includes('parcela de teste indicada'), 'sem parcela indicada a emissão não abre');
+
+  const creds = {
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    environment: 'SANDBOX' as const,
+    clientId: 'client',
+    clientSecret: 'secret',
+    certificatePem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
+    privateKeyPem: '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----',
+  };
+  let readCalls = 0;
+  const read = await transport.readC6BolepixV2Charge({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    environment: 'SANDBOX',
+    externalReferenceId: REFERENCE,
+    ownedByCompany: true,
+    credentials: creds,
+    requestFn: async (plan) => {
+      readCalls += 1;
+      assert(plan.method === 'GET', 'a consulta oficial é GET');
+      assert(plan.url.endsWith(`/${REFERENCE}`), 'a consulta usa a referência da própria cobrança');
+      assert(!plan.url.includes('/v1/bank_slips/'), 'a consulta nova não usa o POST v1');
+      return {
+        status: 200,
+        bodyText: JSON.stringify({ id: 'charge', external_reference_id: REFERENCE, status: 'CREATED' }),
+        contentType: 'application/json',
+      };
+    },
+  });
+  assert(read.ok && readCalls === 1 && read.fields?.status === 'CREATED', 'a consulta v2 lê o JSON oficial');
+  let foreignReads = 0;
+  let foreignReadBlocked = false;
+  try {
+    await transport.readC6BolepixV2Charge({
+      companyId: 'company-a',
+      integrationId: 'integration-a',
+      environment: 'SANDBOX',
+      externalReferenceId: REFERENCE,
+      ownedByCompany: true,
+      credentials: { ...creds, companyId: 'company-b' },
+      requestFn: async () => {
+        foreignReads += 1;
+        return { status: 200, bodyText: '{}', contentType: 'application/json' };
+      },
+    });
+  } catch (error) {
+    foreignReadBlocked = error instanceof Error && error.message.includes('outra empresa');
+  }
+  assert(foreignReadBlocked && foreignReads === 0, 'referência de outra empresa não consulta o banco');
+  let unownedReads = 0;
+  let unownedBlocked = false;
+  try {
+    await transport.readC6BolepixV2Charge({
+      companyId: 'company-a',
+      integrationId: 'integration-a',
+      environment: 'SANDBOX',
+      externalReferenceId: REFERENCE,
+      credentials: creds,
+      requestFn: async () => {
+        unownedReads += 1;
+        return { status: 200, bodyText: '{}', contentType: 'application/json' };
+      },
+    });
+  } catch (error) {
+    unownedBlocked = error instanceof Error && error.message.includes('desta empresa');
+  }
+  assert(unownedBlocked && unownedReads === 0, 'sem prova de posse a consulta não sai');
+  const officialPdf = await transport.readC6BolepixV2Charge({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    environment: 'SANDBOX',
+    externalReferenceId: REFERENCE,
+    pdf: true,
+    ownedByCompany: true,
+    credentials: creds,
+    requestFn: async (plan) => {
+      assert(plan.url.endsWith(`/${REFERENCE}/pdf`), 'o PDF oficial usa a referência e /pdf');
+      assert(plan.headers.Accept === 'application/pdf', 'o PDF pede o arquivo do banco');
+      return { status: 200, bodyText: '%PDF-1.4 oficial', contentType: 'application/pdf' };
+    },
+  });
+  assert(officialPdf.ok && officialPdf.pdfBody?.startsWith('%PDF'), 'o download devolve o PDF original');
+  const inventedPdf = await transport.readC6BolepixV2Charge({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    environment: 'SANDBOX',
+    externalReferenceId: REFERENCE,
+    pdf: true,
+    ownedByCompany: true,
+    credentials: creds,
+    requestFn: async () => ({ status: 200, bodyText: 'boleto ficticio', contentType: 'text/plain' }),
+  });
+  assert(!inventedPdf.ok && inventedPdf.pdfBody == null, 'arquivo que não é o PDF do banco é recusado');
+  assert(panel.includes('financialAccountId'), 'o cadastro da chave continua exigindo a conta');
+  assert(panel.includes('A emissão real permanece desligada'), 'o painel não promete emissão ligada');
+  assert(!panel.includes('emissionEnabled || !pixKey'), 'a chave não fica bloqueada pela emissão desligada');
+
   if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;
 

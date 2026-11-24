@@ -261,6 +261,46 @@ export async function postC6BolepixV2Charge(params: {
   }
 }
 
+function fromGetResponse(status: number, bodyText: string): C6BolepixV2CallResult {
+  let parsed: unknown = null;
+  try {
+    parsed = bodyText ? JSON.parse(bodyText) : null;
+  } catch {
+    parsed = null;
+  }
+  const fields = readC6BolepixV2OfficialFields(parsed);
+  const ok = status === 200 && Boolean(fields);
+  return {
+    ok,
+    httpStatus: status,
+    disposition: ok ? 'succeeded' : status >= 500 ? 'uncertain' : 'rejected',
+    fields,
+    pdfBytes: null,
+    pdfBody: null,
+    responseBody: parsed,
+    specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
+  };
+}
+
+function fromPdfResponse(
+  status: number,
+  bodyText: string,
+  contentType: string | null,
+): C6BolepixV2CallResult {
+  const type = String(contentType || '').toLowerCase();
+  const official = status === 200 && type.includes('application/pdf') && bodyText.startsWith('%PDF');
+  return {
+    ok: official,
+    httpStatus: status,
+    disposition: official ? 'succeeded' : status >= 500 ? 'uncertain' : 'rejected',
+    fields: null,
+    pdfBytes: official ? bodyText.length : null,
+    pdfBody: official ? bodyText : null,
+    responseBody: null,
+    specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
+  };
+}
+
 export async function readC6BolepixV2Charge(params: {
   companyId: string;
   integrationId: string;
@@ -269,6 +309,11 @@ export async function readC6BolepixV2Charge(params: {
   pdf?: boolean;
   allowSimulatedHttp?: boolean;
   fetchFn?: FetchFn;
+  credentials?: C6AuthCredentials | null;
+  ownedByCompany?: boolean;
+  requestFn?: (
+    plan: C6BolepixV2HttpPlan,
+  ) => Promise<{ status: number; bodyText: string; contentType: string | null }>;
 }): Promise<C6BolepixV2CallResult> {
   if (params.allowSimulatedHttp === true && typeof params.fetchFn === 'function') {
     return params.pdf
@@ -285,8 +330,45 @@ export async function readC6BolepixV2Charge(params: {
           allowSimulatedHttp: true,
         });
   }
-  if (!isC6BolepixV2LiveRelease(params.companyId, params.integrationId)) {
-    throw new C6BolepixV2LiveDisabledError();
+  if (params.ownedByCompany !== true) {
+    throw new Error('Consulta Bolepix só da cobrança desta empresa.');
   }
-  throw new C6BolepixV2LiveDisabledError();
+  const creds = params.credentials;
+  if (!creds) throw new Error('Credenciais C6 ausentes para esta empresa.');
+  if (creds.companyId !== params.companyId || creds.environment !== params.environment) {
+    throw new Error('Integração de outra empresa.');
+  }
+  if (creds.integrationId && creds.integrationId !== params.integrationId) {
+    throw new Error('Integração de outra empresa.');
+  }
+  const accessToken = params.requestFn
+    ? 'token-de-teste'
+    : await (async () => {
+        const token = await requestC6AccessToken(creds, {
+          allowProduction: creds.environment === 'PRODUCTION',
+        });
+        if (!token.ok) throw new Error('Não foi possível autenticar no C6.');
+        return token.accessToken;
+      })();
+  const plan = planC6BolepixV2Request({
+    companyId: params.companyId,
+    integrationId: params.integrationId,
+    creds,
+    operation: params.pdf ? 'pdf' : 'get',
+    accessToken,
+    externalReferenceId: params.externalReferenceId,
+  });
+  const response = params.requestFn
+    ? await params.requestFn(plan)
+    : await (async () => {
+        const agent = createC6BolepixMtlsAgent(creds);
+        try {
+          return await httpsOnce(plan, agent);
+        } finally {
+          agent.destroy();
+        }
+      })();
+  return params.pdf
+    ? fromPdfResponse(response.status, response.bodyText, response.contentType)
+    : fromGetResponse(response.status, response.bodyText);
 }

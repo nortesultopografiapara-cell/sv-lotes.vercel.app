@@ -50,6 +50,7 @@ export async function GET(request: Request) {
         id: String(row.id),
         name: String(row.name || ''),
         provider: integrationId ? providerById.get(integrationId) || null : null,
+        integrationId: integrationId || null,
       };
     });
 

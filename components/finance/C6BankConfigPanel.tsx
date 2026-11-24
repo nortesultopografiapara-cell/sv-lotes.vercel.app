@@ -12,7 +12,12 @@ import { inspectC6BolepixPixKey } from '@/lib/banking/c6/c6BolepixV2Validation';
 
 type LocalFile = { name: string; content: string };
 
-type AccountOption = { id: string; name: string; provider: string | null };
+type AccountOption = {
+  id: string;
+  name: string;
+  provider: string | null;
+  integrationId?: string | null;
+};
 
 async function readTextFile(file: File): Promise<LocalFile> {
   return { name: file.name, content: await file.text() };
@@ -62,9 +67,16 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       setKeyFile(null);
       setBoletoIntent(cfg.boletoIntent === true);
       setBolepixIntent(cfg.bolepixIntent === true);
-      setFinancialAccountId(cfg.financialAccountId || '');
-      setAccounts((data.financialAccounts as AccountOption[]) || []);
-      await loadPixStatus(cfg.id, cfg.financialAccountId || '');
+      const rows = (data.financialAccounts as AccountOption[]) || [];
+      setAccounts(rows);
+      const linkedToThisIntegration = rows.filter(
+        (account) => account.integrationId && account.integrationId === cfg.id,
+      );
+      const selectedAccount =
+        cfg.financialAccountId ||
+        (linkedToThisIntegration.length === 1 ? linkedToThisIntegration[0].id : '');
+      setFinancialAccountId(selectedAccount);
+      await loadPixStatus(cfg.id, selectedAccount);
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Erro ao carregar');
     } finally {
@@ -537,8 +549,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
           {pixMask ? ` · ${pixMask}` : ''}.
         </p>
         <p>
-          A integração Bolepix não está operacional. Cadastrar a chave não ativa a emissão e não altera
-          Client ID, segredo ou certificado.
+          Cadastrar a chave não ativa a emissão e não altera Client ID, segredo ou certificado. A emissão real permanece desligada até o administrador indicar a parcela de teste.
         </p>
         <input
           type="password"
@@ -557,6 +568,11 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
         >
           {pixSaving ? 'Salvando' : pixConfigured ? 'Substituir chave Pix' : 'Salvar chave Pix'}
         </button>
+        {!financialAccountId ? (
+          <p>Selecione a conta C6 desta integração. O cadastro da chave não depende da emissão.</p>
+        ) : !pixKey.trim() ? (
+          <p>Digite a chave Pix aleatória. Ela será cifrada e a emissão continua desligada.</p>
+        ) : null}
       </div>
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
       {info ? <p className="text-sm text-emerald-300">{info}</p> : null}

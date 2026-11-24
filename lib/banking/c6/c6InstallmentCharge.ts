@@ -16,6 +16,7 @@ import {
   type C6BoletoFetchFn,
 } from '@/lib/banking/c6/c6BoletoClient';
 import { executeC6BolepixV2Get, executeC6BolepixV2Pdf, C6BolepixV2LiveDisabledError } from '@/lib/banking/c6/c6BolepixV2Client';
+import { readC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
 import { postC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
 import { isC6BolepixV2LiveRelease } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { C6BolepixPixKeyRequiredError, c6BolepixV2ReferenceForInstallment } from '@/lib/banking/c6/c6BolepixV2Emission';
@@ -490,6 +491,68 @@ async function loadBolepixV2Reference(
   };
 }
 
+async function consultOwnedBolepix(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentId: string,
+  options: C6InstallmentChargeOptions | undefined,
+  pdf: boolean,
+  missingMessage: string,
+) {
+  const bolepix = await loadBolepixV2Reference(admin, companyId, installmentId);
+  if (!bolepix) throw new Error(missingMessage);
+  if (simulated(options)) {
+    if (!c6BolepixV2MayCallBank(companyId, bolepix.integrationId, true)) {
+      throw new C6BolepixV2LiveDisabledError();
+    }
+    const result = pdf
+      ? await executeC6BolepixV2Pdf({
+          environment: bolepix.environment,
+          externalReferenceId: bolepix.reference,
+          fetchFn: options?.fetchFn,
+          allowSimulatedHttp: options?.allowSimulatedHttp,
+        })
+      : await executeC6BolepixV2Get({
+          environment: bolepix.environment,
+          externalReferenceId: bolepix.reference,
+          fetchFn: options?.fetchFn,
+          allowSimulatedHttp: options?.allowSimulatedHttp,
+        });
+    return { result, integrationId: bolepix.integrationId };
+  }
+  const supplied = options?.credentials;
+  if (supplied && (supplied.companyId !== companyId || supplied.integrationId !== bolepix.integrationId)) {
+    throw new Error('Integração de outra empresa.');
+  }
+  const secrets =
+    supplied || (await loadC6SecretsForGrantedOperation(admin, companyId, 'connection'));
+  if (
+    !secrets ||
+    secrets.integrationId !== bolepix.integrationId ||
+    secrets.environment !== bolepix.environment
+  ) {
+    throw new Error('Integração de outra empresa.');
+  }
+  const result = await readC6BolepixV2Charge({
+    companyId,
+    integrationId: bolepix.integrationId,
+    environment: bolepix.environment,
+    externalReferenceId: bolepix.reference,
+    pdf,
+    ownedByCompany: true,
+    credentials: {
+      companyId,
+      integrationId: bolepix.integrationId,
+      environment: secrets.environment,
+      clientId: secrets.clientId,
+      clientSecret: secrets.clientSecret,
+      certificatePem: secrets.certificatePem,
+      privateKeyPem: secrets.privateKeyPem,
+    },
+  });
+  return { result, integrationId: bolepix.integrationId };
+}
+
 export async function queryC6InstallmentBoleto(
   admin: SupabaseClient,
   companyId: string,
@@ -500,37 +563,34 @@ export async function queryC6InstallmentBoleto(
   settlement: C6SettlementResult | null;
   bolepix?: { writesFinance: false; settleCash: boolean; message: string };
 }> {
-  const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
-  if (!emissionActivated) {
-    throw new C6EmissionNotHomologatedError();
-  }
   await loadReceipt(admin, companyId, installmentId);
   const charge = await existingCharge(admin, companyId, installmentId);
   const bankSlipId = clean(charge?.external_id);
   if (!charge || !bankSlipId) {
-    const bolepix = await loadBolepixV2Reference(admin, companyId, installmentId);
-    if (!bolepix) throw new Error('Parcela sem boleto C6.');
-    if (!c6BolepixV2MayCallBank(companyId, bolepix.integrationId, simulated(options))) {
-      throw new C6BolepixV2LiveDisabledError();
-    }
-    const result = await executeC6BolepixV2Get({
-      environment: bolepix.environment,
-      externalReferenceId: bolepix.reference,
-      fetchFn: options?.fetchFn,
-      allowSimulatedHttp: options?.allowSimulatedHttp,
-    });
-    const decision = reconcileC6BolepixV2Query({
-      status: result.fields?.status,
-      billingType: result.fields?.billingType,
-      payments: readC6BolepixV2Payments(result.responseBody),
+    const owned = await consultOwnedBolepix(
+      admin,
       companyId,
-      integrationId: bolepix.integrationId,
+      installmentId,
+      options,
+      false,
+      'Parcela sem boleto C6.',
+    );
+    const decision = reconcileC6BolepixV2Query({
+      status: owned.result.fields?.status,
+      billingType: owned.result.fields?.billingType,
+      payments: readC6BolepixV2Payments(owned.result.responseBody),
+      companyId,
+      integrationId: owned.integrationId,
       receiptId: installmentId,
       expectedCompanyId: companyId,
-      expectedIntegrationId: bolepix.integrationId,
+      expectedIntegrationId: owned.integrationId,
       expectedReceiptId: installmentId,
     });
     return { slip: null, settlement: null, bolepix: decision };
+  }
+  const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
+  if (!emissionActivated) {
+    throw new C6EmissionNotHomologatedError();
   }
   if (clean(charge.company_id) !== companyId) throw new Error('Cobrança de outra empresa.');
 
@@ -572,29 +632,29 @@ export async function fetchC6InstallmentPdf(
   installmentId: string,
   options?: C6InstallmentChargeOptions,
 ): Promise<{ ok: boolean; httpStatus: number | null; bytes: Buffer | null }> {
-  const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
-  if (!emissionActivated) {
-    throw new C6EmissionNotHomologatedError();
-  }
   const charge = await existingCharge(admin, companyId, installmentId);
   const bankSlipId = clean(charge?.external_id);
   if (!charge || !bankSlipId || clean(charge.company_id) !== companyId) {
-    const bolepix = await loadBolepixV2Reference(admin, companyId, installmentId);
-    if (!bolepix) throw new Error('Parcela sem boleto C6 desta empresa.');
-    if (!c6BolepixV2MayCallBank(companyId, bolepix.integrationId, simulated(options))) {
-      throw new C6BolepixV2LiveDisabledError();
-    }
-    const result = await executeC6BolepixV2Pdf({
-      environment: bolepix.environment,
-      externalReferenceId: bolepix.reference,
-      fetchFn: options?.fetchFn,
-      allowSimulatedHttp: options?.allowSimulatedHttp,
-    });
+    const owned = await consultOwnedBolepix(
+      admin,
+      companyId,
+      installmentId,
+      options,
+      true,
+      'Parcela sem boleto C6 desta empresa.',
+    );
     return {
-      ok: result.ok && Boolean(result.pdfBody?.startsWith('%PDF')),
-      httpStatus: result.httpStatus,
-      bytes: result.ok && result.pdfBody?.startsWith('%PDF') ? Buffer.from(result.pdfBody, 'latin1') : null,
+      ok: owned.result.ok && Boolean(owned.result.pdfBody?.startsWith('%PDF')),
+      httpStatus: owned.result.httpStatus,
+      bytes:
+        owned.result.ok && owned.result.pdfBody?.startsWith('%PDF')
+          ? Buffer.from(owned.result.pdfBody, 'latin1')
+          : null,
     };
+  }
+  const emissionActivated = simulated(options) || (await isC6EmissionActivated(admin, companyId));
+  if (!emissionActivated) {
+    throw new C6EmissionNotHomologatedError();
   }
   const secrets =
     options?.credentials ||
