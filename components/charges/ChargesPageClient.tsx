@@ -1015,7 +1015,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       if (!res.ok || !json.prepared) {
         throw new Error(json.error || json.message || 'A nova tentativa não foi preparada.');
       }
-      showToast(json.message || 'Nova tentativa preparada. Nenhum boleto foi emitido.', true);
+      showToast(json.message || 'Nova tentativa preparada. Aguardando confirmação técnica do C6 Bank.');
+      await loadC6ChargeMap([installmentId]);
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Falha ao preparar a nova tentativa.', true);
     } finally {

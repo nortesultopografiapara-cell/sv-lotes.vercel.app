@@ -248,7 +248,9 @@ export function ChargeInstallmentActions({
         charge?.c6Attempt?.kind === 'waiting',
       attemptLocked: Boolean(charge?.c6Attempt),
       preparedAttempt: charge?.c6Attempt?.prepared === true,
-      rejectionMessage: c6Notice?.message || charge?.c6Attempt?.message,
+      rejectionMessage: charge?.c6Attempt?.prepared
+        ? null
+        : c6Notice?.message || charge?.c6Attempt?.message,
       bolepix,
     });
     const qrMime = bolepix?.pixMimeType === 'image/png' || bolepix?.pixMimeType === 'image/jpeg'
@@ -395,7 +397,14 @@ export function ChargeInstallmentActions({
             Emissão bloqueada nesta homologação.
           </p>
         ) : null}
-        {c6SituationLines(c6Notice?.bankDiagnostic).length ? (
+        {charge?.c6Attempt?.prepared ? (
+          <div className="max-w-md text-right text-[10px] leading-snug text-[var(--text-muted)]">
+            <p>{c6.notice}</p>
+            {charge.c6Attempt.httpStatus != null ? (
+              <p>Histórico da tentativa anterior: HTTP {charge.c6Attempt.httpStatus}.</p>
+            ) : null}
+          </div>
+        ) : c6SituationLines(c6Notice?.bankDiagnostic).length ? (
           <div className="max-w-md text-right text-[10px] leading-snug text-red-700">
             {c6SituationLines(c6Notice?.bankDiagnostic).map((line) => (
               <p key={line}>{line}</p>

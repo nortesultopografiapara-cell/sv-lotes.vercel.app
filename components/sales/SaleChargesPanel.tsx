@@ -310,7 +310,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       if (!res.ok || !json.prepared) {
         throw new Error(json.error || json.message || 'A nova tentativa não foi preparada.');
       }
-      setError(json.message || 'Nova tentativa preparada. Nenhum boleto foi emitido.');
+      setInfo(json.message || 'Nova tentativa preparada. Aguardando confirmação técnica do C6 Bank.');
       await loadSummary();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Falha ao preparar a nova tentativa.');

@@ -187,7 +187,7 @@ export async function prepareC6BolepixAttempt(
     prepared: true,
     emitted: false,
     reason: 'prepared',
-    message: 'Nova tentativa preparada com referência inédita. Nenhum boleto foi emitido.',
+    message: 'Nova tentativa preparada. Aguardando confirmação técnica do C6 Bank.',
     externalReference: nextReference,
     attemptNumber: Number(prepared.data?.attempt_number) || nextNumber,
     consultHttp: 404,

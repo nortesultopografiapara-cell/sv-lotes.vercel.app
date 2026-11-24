@@ -38,6 +38,14 @@ export const C6_BOLEPIX_V2_REFERENCE_PATTERN = /^[A-Z0-9]{26}$/;
 export const C6_BOLEPIX_V2_LIVE_CALLS_ENABLED = true as const;
 export const C6_BOLEPIX_V2_CONFIG_WRITES_ENABLED = false as const;
 
+/**
+ * A tentativa preparada permanece RESERVED.
+ * O POST só volta quando o diagnóstico oficial do C6 autorizar a emissão.
+ */
+export const C6_BOLEPIX_PREPARED_EMISSION_HELD = true as const;
+export const C6_BOLEPIX_PREPARED_HOLD_MESSAGE =
+  'Nova tentativa preparada. Aguardando confirmação técnica do C6 Bank.' as const;
+
 /** Única empresa e integração da homologação. Não libera as parcelas dessa integração. */
 export const C6_BOLEPIX_V2_RELEASED_INTEGRATIONS: readonly {
   companyId: string;

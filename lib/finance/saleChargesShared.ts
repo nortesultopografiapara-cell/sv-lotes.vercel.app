@@ -347,11 +347,12 @@ export function buildSaleChargesSummaryFromRows(params: {
 
     totalPending += amount;
 
-    if (charge?.status === 'FAILED') {
+    const archivedC6Attempt = Boolean(charge?.c6Attempt) && !String(charge?.asaasPaymentId || '').trim();
+    if (charge?.status === 'FAILED' && !archivedC6Attempt) {
       failed += 1;
       errorIds.push(String(row.id));
     }
-    if (charge && isRegeneratableCompanyAsaasChargeStatus(charge.status)) {
+    if (charge && isRegeneratableCompanyAsaasChargeStatus(charge.status) && !archivedC6Attempt) {
       cancelled += 1;
     }
 

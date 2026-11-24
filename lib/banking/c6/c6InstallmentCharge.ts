@@ -21,6 +21,8 @@ import {
 import { executeC6BolepixV2Get, executeC6BolepixV2Pdf, C6BolepixV2LiveDisabledError } from '@/lib/banking/c6/c6BolepixV2Client';
 import { postC6BolepixV2Charge, readC6BolepixV2Charge, type C6BolepixV2HttpPlan } from '@/lib/banking/c6/c6BolepixV2Transport';
 import {
+  C6_BOLEPIX_PREPARED_EMISSION_HELD,
+  C6_BOLEPIX_PREPARED_HOLD_MESSAGE,
   isC6BolepixV2LiveReceipt,
   isC6BolepixV2ReceiptCandidate,
 } from '@/lib/banking/c6/c6BolepixV2OpenApi';
@@ -380,6 +382,25 @@ export async function emitC6InstallmentBoleto(
       installmentId,
       companyId,
       message: 'Boleto C6 já vinculado a esta parcela.',
+    };
+  }
+
+  if (preparedAttempt && C6_BOLEPIX_PREPARED_EMISSION_HELD) {
+    return {
+      emitted: false,
+      reused: false,
+      duplicate: false,
+      needsReconciliation: false,
+      bankSlipId: null,
+      digitableLine: null,
+      barCode: null,
+      pixCopyPaste: null,
+      bolepixSpecInRepo: C6_BOLEPIX_OFFICIAL_SPEC_IN_REPO,
+      amount,
+      dueDate,
+      installmentId,
+      companyId,
+      message: C6_BOLEPIX_PREPARED_HOLD_MESSAGE,
     };
   }
 

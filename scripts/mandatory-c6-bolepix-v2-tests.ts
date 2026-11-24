@@ -1832,6 +1832,95 @@ async function proveAttemptPrepare() {
   const actions = fs.readFileSync(path.join(process.cwd(), 'components/charges/ChargeInstallmentActions.tsx'), 'utf8');
   assert(actions.includes('Preparar nova tentativa C6'), 'a ação de preparação aparece na parcela');
   assert(panel.includes('/api/banking/c6/charges/attempt'), 'a preparação passa pelo servidor');
+  assert(panel.includes('setInfo(json.message'), 'a confirmação da preparação não usa o aviso de erro');
+  assert(actions.includes('Histórico da tentativa anterior: HTTP'), 'o HTTP anterior fica como histórico');
+
+  const openApi = await import('../lib/banking/c6/c6BolepixV2OpenApi');
+  assert(openApi.C6_BOLEPIX_PREPARED_EMISSION_HELD === true, 'a tentativa preparada permanece bloqueada');
+  const chargeActions = await import('../lib/charges/c6ChargeActions');
+  const held = chargeActions.resolveC6ChargeActions({
+    externalId: '',
+    status: 'FAILED',
+    installmentPaid: false,
+    ownerReadOnly: false,
+    uncertain: false,
+    attemptLocked: true,
+    preparedAttempt: true,
+    rejectionMessage: 'O C6 recusou a cobrança (HTTP 400).',
+  });
+  assert(held.showGenerate === false, 'Gerar boleto fica desabilitado durante a espera');
+  assert(
+    held.notice === 'Nova tentativa preparada. Aguardando confirmação técnica do C6 Bank.',
+    'a mensagem da nova tentativa substitui a recusa anterior',
+  );
+  assert(held.noticeTone === 'info', 'a espera não é apresentada como erro da nova tentativa');
+  const emit = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6InstallmentCharge.ts'), 'utf8');
+  const holdAt = emit.indexOf('if (preparedAttempt && C6_BOLEPIX_PREPARED_EMISSION_HELD)');
+  const postAt = emit.indexOf('postC6BolepixV2Charge(');
+  assert(holdAt > 0 && postAt > holdAt, 'o servidor recusa a tentativa preparada antes do POST');
+
+  const shared = await import('../lib/finance/saleChargesShared');
+  const context = {
+    customerName: null,
+    customerEmail: null,
+    customerPhone: null,
+    projectName: null,
+    quadra: null,
+    lote: null,
+    lotLabel: null,
+    contractNumber: null,
+    financialAccountId: null,
+  };
+  const archived = shared.buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'company-1',
+    context,
+    financialAccountName: null,
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+    installments: [
+      {
+        id: 'r1',
+        sale_id: 'sale-1',
+        installment_number: 0,
+        due_date: '2026-11-26',
+        amount: 10,
+        status: 'pendente',
+      },
+    ],
+    charges: [
+      {
+        installmentId: 'r1',
+        status: 'FAILED',
+        asaasPaymentId: '',
+        c6Attempt: { kind: 'rejected', message: 'HTTP 400', httpStatus: 400, prepared: true },
+      } as never,
+    ],
+  });
+  assert(
+    archived.chargesCancelled === 0 && archived.chargesFailed === 0,
+    'a reserva recusada não entra em canceladas nem em erro',
+  );
+  const cancelledCharge = shared.buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'company-1',
+    context,
+    financialAccountName: null,
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+    installments: [
+      {
+        id: 'r2',
+        sale_id: 'sale-1',
+        installment_number: 1,
+        due_date: '2026-12-26',
+        amount: 10,
+        status: 'pendente',
+      },
+    ],
+    charges: [{ installmentId: 'r2', status: 'CANCELLED', asaasPaymentId: 'pay-1' } as never],
+  });
+  assert(cancelledCharge.chargesCancelled === 1, 'cobrança realmente cancelada continua no contador');
 }
 
 main().catch((error) => {

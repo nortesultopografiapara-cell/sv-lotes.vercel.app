@@ -1,3 +1,7 @@
+import {
+  C6_BOLEPIX_PREPARED_EMISSION_HELD,
+  C6_BOLEPIX_PREPARED_HOLD_MESSAGE,
+} from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { c6BolepixV2CanShare } from '@/lib/banking/c6/c6BolepixV2Status';
 
 export type C6BolepixActionInput = {
@@ -85,7 +89,10 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
   const barcode = String(input.barCode || '').replace(/\D/g, '');
   const v2 = input.bolepix?.api === 'v2';
   const rejection = input.rejectionMessage?.trim() || '';
-  const notice = input.uncertain
+  const preparedHold = input.preparedAttempt === true && C6_BOLEPIX_PREPARED_EMISSION_HELD;
+  const notice = preparedHold
+    ? C6_BOLEPIX_PREPARED_HOLD_MESSAGE
+    : input.uncertain
     ? rejection || 'Resultado bancário incerto. Nova emissão bloqueada até a consulta.'
     : v2 && !paid
       ? input.bolepix?.statusMessage?.trim() ||
@@ -93,7 +100,9 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
       : registered && !paid
         ? 'O C6 confirmou a emissão. A consulta oficial não informa se o boleto já pode ser pago na rede bancária.'
         : rejection || null;
-  const noticeTone = input.uncertain
+  const noticeTone = preparedHold
+    ? 'info'
+    : input.uncertain
     ? 'warning'
     : !paid && !v2 && !registered && rejection
       ? 'error'
@@ -103,7 +112,7 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
 
   return {
     showGenerate:
-      v2 || (input.attemptLocked && !input.preparedAttempt)
+      v2 || preparedHold || (input.attemptLocked && !input.preparedAttempt)
         ? false
         : !input.ownerReadOnly && !paid && !registered && !input.uncertain,
     showView: pdfReady,
