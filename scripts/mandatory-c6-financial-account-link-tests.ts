@@ -13,9 +13,12 @@ import {
 import { applySaveCompanyC6BankConfig } from '../lib/banking/c6/c6ConfigAtomic';
 import { redactC6ErrorMessage } from '../lib/banking/c6/c6ConfigRepository';
 import {
+  captureC6BankDiagnostic,
   describeC6BolepixV2Outcome,
   readSanitizedC6BankError,
 } from '../lib/banking/c6/c6BolepixV2Issue';
+import { c6BankDiagnosticLines } from '../lib/charges/c6ChargeActions';
+import { buildC6BolepixV2CreateBody } from '../lib/banking/c6/c6BolepixV2Validation';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -275,6 +278,75 @@ async function main() {
   assert(waiting.kind === 'waiting', 'confirmação pendente não é pagamento');
   assert(secret.code === 'INVALID_PAYER' && secret.traceId === 'trace-123', 'código e rastreio permanecem');
   assert(!secret.message?.includes('52998224725') && !secret.message?.includes('123e4567'), 'a mensagem não guarda CPF nem EVP');
+
+  const detailed = captureC6BankDiagnostic({
+    httpStatus: 400,
+    contentType: 'application/json; charset=utf-8',
+    bodyText: JSON.stringify({
+      code: 'INVALID_ADDRESS',
+      message: 'Endereço recusado',
+      errors: [{ field: 'payer.address.zip_code', message: 'CEP do pagador 52998224725 inválido' }],
+      trace_id: 'trace-400',
+      access_token: 'segredo-nao-pode-aparecer',
+    }),
+    stage: 'bank_slip_post',
+    externalReference: '979ED9478CCAFCE5B66C4B3FAD',
+    recordedAt: '2026-11-24T18:00:00.000Z',
+  });
+  const plain = captureC6BankDiagnostic({
+    httpStatus: 400,
+    contentType: 'text/plain',
+    bodyText: 'Bearer abc.def.ghi falha de validação CPF 52998224725',
+    stage: 'bank_slip_post',
+    externalReference: '979ED9478CCAFCE5B66C4B3FAD',
+  });
+  const conflict = describeC6BolepixV2Outcome({ status: 'FAILED', httpStatus: 409, chargeId: null, bankMessage: 'Referência já usada' });
+  const server = describeC6BolepixV2Outcome({ status: 'UNKNOWN', httpStatus: 500 });
+  const createdDiagnostic = captureC6BankDiagnostic({
+    httpStatus: 201,
+    contentType: 'application/json',
+    bodyText: JSON.stringify({ id: '01HVSBSTN8CCTCTEQT6MC7TD4B', amount: 10 }),
+    stage: 'bank_slip_post',
+    externalReference: '979ED9478CCAFCE5B66C4B3FAD',
+  });
+  const lines = c6BankDiagnosticLines({
+    httpStatus: detailed.httpStatus,
+    code: detailed.code,
+    message: detailed.message,
+    field: detailed.fields.join(', '),
+  });
+  assert(detailed.code === 'INVALID_ADDRESS' && detailed.fields.join() === 'payer.address.zip_code', 'JSON detalhado guarda código e campo');
+  assert(detailed.traceId === 'trace-400' && detailed.recordedAt === '2026-11-24T18:00:00.000Z', 'rastreio e horário ficam no diagnóstico');
+  assert(detailed.contentType?.includes('json') && detailed.externalReference === '979ED9478CCAFCE5B66C4B3FAD', 'content-type e referência ficam no diagnóstico');
+  assert(!JSON.stringify(detailed).includes('segredo-nao-pode-aparecer'), 'token fora dos campos previstos não entra no diagnóstico');
+  assert(!JSON.stringify(detailed).includes('52998224725'), 'o diagnóstico não guarda CPF');
+  assert(plain.message && !plain.message.includes('52998224725') && !/bearer/i.test(plain.message), 'texto simples é sanitizado');
+  assert(conflict.kind === 'rejected' && conflict.message.includes('HTTP 409'), 'HTTP 409 é conflito da referência');
+  assert(denied.kind === 'authentication' && forbidden.kind === 'authentication', 'HTTP 401 e 403 seguem como autorização');
+  assert(server.kind === 'uncertain' && server.message.includes('HTTP 500'), 'HTTP 500 fica incerto');
+  assert(createdDiagnostic.httpStatus === 201 && !createdDiagnostic.message, 'HTTP 201 sem mensagem de erro não inventa motivo');
+  assert(lines[0] === 'C6 Bank — HTTP 400' && lines.some((line) => line.startsWith('Código:')) && lines.some((line) => line.startsWith('Campo:')), 'a interface recebe as linhas do banco');
+  const payload = buildC6BolepixV2CreateBody({
+    environment: 'PRODUCTION',
+    externalReferenceId: '979ED9478CCAFCE5B66C4B3FAD',
+    amount: 10,
+    dueDate: '2026-11-26',
+    description: 'Parcela 0',
+    payer: {
+      name: 'Pagador Teste',
+      taxId: '52998224725',
+      address: 'Rua A, 10',
+      neighborhood: 'Centro',
+      city: 'Sao Paulo',
+      state: 'SP',
+      zipCode: '01310100',
+    },
+    pixKey: '123e4567-e89b-12d3-a456-426614174000',
+  }, new Date('2026-11-24T12:00:00-03:00'));
+  const payment = payload.payment_method as { bank_slip: { billing_scheme: string }; pix: { type: string; key: string } };
+  assert(payload.amount === 10 && payload.due_date === '2026-11-26', 'valor em reais e vencimento AAAA-MM-DD');
+  assert(payment.bank_slip.billing_scheme === '15' && payment.pix.type === 'EVP', 'carteira 15 e Pix EVP');
+  assert(!Object.prototype.hasOwnProperty.call(payload, 'origin'), 'o payload não inventa origin');
 
   const root = path.resolve(__dirname, '..');
   const repository = fs.readFileSync(path.join(root, 'lib/finance/companyFinancialAccountRepository.ts'), 'utf8');

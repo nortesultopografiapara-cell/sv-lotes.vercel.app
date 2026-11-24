@@ -34,7 +34,7 @@ import {
   resolveInterIssuedChargeActions,
 } from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
-import { resolveC6ChargeActions } from '@/lib/charges/c6ChargeActions';
+import { c6BankDiagnosticLines, resolveC6ChargeActions } from '@/lib/charges/c6ChargeActions';
 
 const btnClass =
   'inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50';
@@ -53,7 +53,16 @@ export type ChargeInstallmentActionsProps = {
   companyAsaasEnabled: boolean;
   /** Provider da conta financeira da parcela. */
   chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
-  c6Notice?: { uncertain: boolean; message: string } | null;
+  c6Notice?: {
+    uncertain: boolean;
+    message: string;
+    bankDiagnostic?: {
+      httpStatus: number | null;
+      code: string | null;
+      message: string | null;
+      field: string | null;
+    } | null;
+  } | null;
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
@@ -336,7 +345,13 @@ export function ChargeInstallmentActions({
             Emissão bloqueada nesta homologação.
           </p>
         ) : null}
-        {c6.notice ? (
+        {c6BankDiagnosticLines(c6Notice?.bankDiagnostic).length ? (
+          <div className="max-w-md text-right text-[10px] leading-snug text-red-700">
+            {c6BankDiagnosticLines(c6Notice?.bankDiagnostic).map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        ) : c6.notice ? (
           <p
             className={`max-w-md text-right text-[10px] leading-snug ${
               c6.noticeTone === 'error'

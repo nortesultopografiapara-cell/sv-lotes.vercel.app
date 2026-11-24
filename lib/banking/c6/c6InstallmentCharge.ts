@@ -29,8 +29,9 @@ import {
   c6BolepixV2MayCallBank,
   c6BolepixV2PayloadFromSealedKey,
   completionForC6BolepixV2,
+  captureC6BankDiagnostic,
   describeC6BolepixV2Outcome,
-  readSanitizedC6BankError,
+  type C6BankDiagnostic,
 } from '@/lib/banking/c6/c6BolepixV2Issue';
 import { officialC6BolepixFromResponse } from '@/lib/banking/c6/c6BolepixV2Official';
 import { c6BolepixRequestFingerprint } from '@/lib/banking/c6/c6BolepixV2Reservation';
@@ -67,6 +68,7 @@ export type C6InstallmentEmitResult = {
   stage?: string | null;
   externalReference?: string | null;
   traceId?: string | null;
+  bankDiagnostic?: C6BankDiagnostic | null;
 };
 
 export type C6InstallmentChargeOptions = {
@@ -554,30 +556,41 @@ export async function emitC6InstallmentBoleto(
       });
     }
   }
-  const bankError = readSanitizedC6BankError(created.responseBody);
+  const stage = created.transportCode
+    ? 'transport'
+    : created.httpStatus === 401 || created.httpStatus === 403
+      ? 'bank_slip_authorization'
+      : 'bank_slip_post';
+  const bankDiagnostic = captureC6BankDiagnostic({
+    httpStatus: created.httpStatus,
+    contentType: created.contentType,
+    bodyText: created.bodyText,
+    stage,
+    externalReference: bolepixReference,
+    traceId: created.traceId,
+  });
   const described = describeC6BolepixV2Outcome({
     status: finished.status,
     httpStatus: created.httpStatus,
     chargeId: finished.chargeId,
     transportCode: created.transportCode || null,
-    bankCode: bankError.code,
-    bankMessage: bankError.message,
+    bankCode: bankDiagnostic.code,
+    bankMessage: bankDiagnostic.message,
   });
-  const stage = created.transportCode
-    ? 'transport'
-    : described.kind === 'authentication'
-      ? 'bank_slip_authorization'
-      : 'bank_slip_post';
   if (described.kind !== 'succeeded') {
     console.info(
       JSON.stringify({
         source: 'c6_bolepix_v2',
-        stage,
-        httpStatus: created.httpStatus,
-        bankCode: bankError.code,
-        message: described.message,
-        externalReference: bolepixReference,
-        traceId: bankError.traceId,
+        stage: bankDiagnostic.stage,
+        httpStatus: bankDiagnostic.httpStatus,
+        contentType: bankDiagnostic.contentType,
+        bankCode: bankDiagnostic.code,
+        message: bankDiagnostic.message,
+        details: bankDiagnostic.details,
+        fields: bankDiagnostic.fields,
+        recordedAt: bankDiagnostic.recordedAt,
+        externalReference: bankDiagnostic.externalReference,
+        traceId: bankDiagnostic.traceId,
       }),
     );
   }
@@ -598,10 +611,11 @@ export async function emitC6InstallmentBoleto(
     message: described.message,
     outcome: described.kind,
     httpStatus: created.httpStatus,
-    bankCode: bankError.code,
+    bankCode: bankDiagnostic.code,
     stage,
     externalReference: bolepixReference,
-    traceId: bankError.traceId,
+    traceId: bankDiagnostic.traceId,
+    bankDiagnostic,
   };
 }
 

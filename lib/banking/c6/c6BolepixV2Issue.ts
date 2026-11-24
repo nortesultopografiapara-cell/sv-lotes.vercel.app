@@ -142,6 +142,98 @@ function bankText(row: Record<string, unknown> | null, keys: string[]): string |
   return null;
 }
 
+export type C6BankDiagnostic = {
+  httpStatus: number | null;
+  contentType: string | null;
+  code: string | null;
+  message: string | null;
+  details: string | null;
+  fields: string[];
+  traceId: string | null;
+  recordedAt: string;
+  externalReference: string | null;
+  stage: string;
+};
+
+const BANK_FIELD = /^[A-Za-z0-9_.]{1,80}$/;
+
+function safeTrace(value: string | null): string | null {
+  const trace = String(value || '').trim();
+  return /^[A-Za-z0-9._:-]{6,80}$/.test(trace) ? trace : null;
+}
+
+function pushIssue(entry: unknown, fields: string[], messages: string[]) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    if (typeof entry === 'string' && entry.trim()) messages.push(entry.trim());
+    return;
+  }
+  const row = entry as Record<string, unknown>;
+  const field = bankText(row, ['field', 'path', 'property', 'name']);
+  if (field && BANK_FIELD.test(field) && !fields.includes(field)) fields.push(field);
+  const detail = bankText(row, ['message', 'detail', 'reason']);
+  if (detail) messages.push(field && BANK_FIELD.test(field) ? `${field}: ${detail}` : detail);
+}
+
+function collectIssues(value: unknown, fields: string[], messages: string[]) {
+  if (Array.isArray(value)) {
+    for (const entry of value.slice(0, 8)) pushIssue(entry, fields, messages);
+    return;
+  }
+  pushIssue(value, fields, messages);
+}
+
+/** Lê JSON ou texto simples. O resultado não contém o corpo cru nem segredo. */
+export function captureC6BankDiagnostic(input: {
+  httpStatus: number | null;
+  contentType?: string | null;
+  bodyText?: string | null;
+  stage: string;
+  externalReference?: string | null;
+  traceId?: string | null;
+  recordedAt?: string;
+}): C6BankDiagnostic {
+  const contentType = clipBankText(input.contentType || null, 80);
+  const limited = String(input.bodyText || '').slice(0, 4000);
+  const trimmed = limited.trim();
+  let parsed: unknown = null;
+  if (!contentType || /json|\+json/i.test(contentType) || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      parsed = trimmed ? JSON.parse(trimmed) : null;
+    } catch {
+      parsed = null;
+    }
+  }
+  const fields: string[] = [];
+  const messages: string[] = [];
+  let code: string | null = null;
+  let traceId = safeTrace(input.traceId || null);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const row = parsed as Record<string, unknown>;
+    code = clipBankText(bankText(row, ['code', 'error', 'type', 'error_code']), 40);
+    traceId = traceId || safeTrace(bankText(row, ['trace_id', 'traceId', 'correlation_id', 'request_id']));
+    const top = bankText(row, ['message', 'detail', 'title', 'error_description']);
+    if (top) messages.push(top);
+    collectIssues(row.errors, fields, messages);
+    collectIssues(row.violations, fields, messages);
+    collectIssues(row.details, fields, messages);
+  } else if (trimmed && !/pdf/i.test(contentType || '')) {
+    messages.push(trimmed);
+  }
+  const reference = String(input.externalReference || '').trim().toUpperCase();
+  return {
+    httpStatus: input.httpStatus,
+    contentType,
+    code,
+    message: clipBankText(messages[0] || null, 240),
+    details: clipBankText(messages.slice(1).join(' '), 400),
+    fields: fields.slice(0, 8),
+    traceId,
+    recordedAt: input.recordedAt || new Date().toISOString(),
+    externalReference: /^[A-Z0-9]{26}$/.test(reference) ? reference : null,
+    stage: clipBankText(input.stage, 40) || 'bank_slip_post',
+  };
+}
+
 /** Lê só código, mensagem e rastreio. Não devolve o corpo cru do banco. */
 export function readSanitizedC6BankError(body: unknown): {
   code: string | null;
@@ -199,15 +291,31 @@ export function describeC6BolepixV2Outcome(input: {
       message: 'O C6 criou a cobrança. CREATED não confirma pagamento.',
     };
   }
+  if (http === 409 && !chargeId) {
+    const reason = clipBankText(input.bankMessage || null, 180);
+    return {
+      kind: 'rejected',
+      message: `O C6 informou conflito na referência (HTTP 409). Nenhuma nova emissão automática foi feita.${
+        reason ? ` Motivo informado pelo banco: ${reason}.` : ''
+      }`,
+    };
+  }
+  if (http != null && http >= 500) {
+    return {
+      kind: 'uncertain',
+      message: `O C6 não confirmou a cobrança (HTTP ${http}). O resultado ficou incerto e nenhuma nova emissão foi feita.`,
+    };
+  }
   if (
     status === 'UNKNOWN' ||
     status === 'PROCESSING' ||
     input.transportCode === 'NETWORK' ||
     Boolean(chargeId)
   ) {
+    const httpLabel = http != null ? ` (HTTP ${http})` : '';
     return {
       kind: 'uncertain',
-      message: 'O resultado da cobrança ficou incerto. Nenhuma nova emissão foi feita.',
+      message: `O resultado da cobrança ficou incerto${httpLabel}. Nenhuma nova emissão foi feita.`,
     };
   }
   if (http === 401 || http === 403) {

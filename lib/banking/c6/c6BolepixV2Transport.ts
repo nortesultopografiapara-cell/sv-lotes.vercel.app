@@ -157,6 +157,7 @@ function httpsOnce(plan: C6BolepixV2HttpPlan, agent: https.Agent): Promise<C6Bol
           const pdf = buf.length >= 4 && buf.subarray(0, 4).toString('latin1') === '%PDF';
           resolve({
             status: res.statusCode || 0,
+            traceId: responseTrace(res.headers as Record<string, string | string[] | undefined>),
             bodyText: pdf || /pdf/i.test(contentType) ? buf.toString('latin1') : buf.toString('utf8'),
             contentType,
           });
@@ -173,14 +174,34 @@ function httpsOnce(plan: C6BolepixV2HttpPlan, agent: https.Agent): Promise<C6Bol
   });
 }
 
+function responseTrace(headers: Record<string, string | string[] | undefined> | undefined): string | null {
+  if (!headers) return null;
+  for (const name of ['x-request-id', 'x-correlation-id', 'x-trace-id']) {
+    const value = headers[name];
+    const text = Array.isArray(value) ? value[0] : value;
+    if (text && /^[A-Za-z0-9._:-]{6,80}$/.test(text)) return text;
+  }
+  return null;
+}
+
 function fromCreateResponse(
   status: number,
   bodyText: string,
   officialBody: Record<string, unknown>,
-): C6BolepixV2CallResult & { body: Record<string, unknown>; responseBody: unknown } {
+  contentType?: string | null,
+  traceId?: string | null,
+): C6BolepixV2CallResult & {
+  body: Record<string, unknown>;
+  responseBody: unknown;
+  bodyText: string;
+  contentType: string | null;
+  traceId: string | null;
+} {
+  const safeType = String(contentType || '').slice(0, 80);
+  const keepText = /pdf/i.test(safeType) ? '' : String(bodyText || '').slice(0, 4000);
   let parsed: unknown = null;
   try {
-    parsed = bodyText ? JSON.parse(bodyText) : null;
+    parsed = keepText ? JSON.parse(keepText) : null;
   } catch {
     parsed = null;
   }
@@ -193,6 +214,9 @@ function fromCreateResponse(
     pdfBytes: null,
     pdfBody: null,
     responseBody: parsed,
+    bodyText: keepText,
+    contentType: safeType || null,
+    traceId: traceId || null,
     specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
     body: officialBody,
   };
@@ -214,6 +238,9 @@ export async function postC6BolepixV2Charge(params: {
   C6BolepixV2CallResult & {
     body?: Record<string, unknown>;
     responseBody: unknown;
+    bodyText?: string;
+    contentType?: string | null;
+    traceId?: string | null;
     transportCode?: 'TIMEOUT' | 'NETWORK' | 'UNEXPECTED' | null;
   }
 > {
@@ -258,7 +285,7 @@ export async function postC6BolepixV2Charge(params: {
   if (params.requestFn) {
     try {
       const response = await params.requestFn(plan);
-      return fromCreateResponse(response.status, response.bodyText, officialBody);
+      return fromCreateResponse(response.status, response.bodyText, officialBody, response.contentType);
     } catch (error) {
       const transportCode = error instanceof C6BoletoTransportError ? error.code : 'NETWORK';
       return {
@@ -278,7 +305,13 @@ export async function postC6BolepixV2Charge(params: {
   const agent = createC6BolepixMtlsAgent(creds);
   try {
     const response = await httpsOnce(plan, agent);
-    return fromCreateResponse(response.status, response.bodyText, officialBody);
+    return fromCreateResponse(
+      response.status,
+      response.bodyText,
+      officialBody,
+      response.contentType,
+      response.traceId,
+    );
   } catch (error) {
     const transportCode = error instanceof C6BoletoTransportError ? error.code : 'NETWORK';
     return {

@@ -156,7 +156,19 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     Record<string, CompanyAsaasChargeResponse>
   >({});
   const [c6NoticeByInstallment, setC6NoticeByInstallment] = useState<
-    Record<string, { uncertain: boolean; message: string }>
+    Record<
+      string,
+      {
+        uncertain: boolean;
+        message: string;
+        bankDiagnostic?: {
+          httpStatus: number | null;
+          code: string | null;
+          message: string | null;
+          field: string | null;
+        } | null;
+      }
+    >
   >({});
   const c6ChargesByInstallmentRef = useRef(c6ChargesByInstallment);
   c6ChargesByInstallmentRef.current = c6ChargesByInstallment;
@@ -1063,6 +1075,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           emitted?: boolean;
           reused?: boolean;
           needsReconciliation?: boolean;
+          bankDiagnostic?: {
+            httpStatus: number | null;
+            code: string | null;
+            message: string | null;
+            fields?: string[];
+          } | null;
         };
         if (!res.ok) throw new Error(json.error || 'Falha ao emitir o boleto C6.');
         const uncertain =
@@ -1088,6 +1106,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           [installmentId]: {
             uncertain,
             message: String(json.message || 'C6 não confirmou o boleto.'),
+            bankDiagnostic: json.bankDiagnostic
+              ? {
+                  httpStatus: json.bankDiagnostic.httpStatus,
+                  code: json.bankDiagnostic.code,
+                  message: json.bankDiagnostic.message,
+                  field: json.bankDiagnostic.fields?.filter(Boolean).join(', ') || null,
+                }
+              : null,
           },
         }));
         showToast(String(json.message || 'C6 não confirmou o boleto.'), true);

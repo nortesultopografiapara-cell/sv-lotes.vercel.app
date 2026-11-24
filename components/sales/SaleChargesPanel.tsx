@@ -110,7 +110,21 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [c6Charges, setC6Charges] = useState<CompanyAsaasChargeResponse[]>([]);
   const [c6AuthorizedIds, setC6AuthorizedIds] = useState<string[]>([]);
   const [c6ActionId, setC6ActionId] = useState<string | null>(null);
-  const [c6Notices, setC6Notices] = useState<Record<string, { uncertain: boolean; message: string }>>({});
+  const [c6Notices, setC6Notices] = useState<
+    Record<
+      string,
+      {
+        uncertain: boolean;
+        message: string;
+        bankDiagnostic?: {
+          httpStatus: number | null;
+          code: string | null;
+          message: string | null;
+          field: string | null;
+        } | null;
+      }
+    >
+  >({});
 
   const loadSummary = useCallback(async () => {
     if (!saleId) return;
@@ -230,6 +244,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         emitted?: boolean;
         reused?: boolean;
         needsReconciliation?: boolean;
+        bankDiagnostic?: {
+          httpStatus: number | null;
+          code: string | null;
+          message: string | null;
+          fields?: string[];
+        } | null;
       };
       if (!res.ok) throw new Error(json.error || 'Falha ao emitir o boleto C6.');
       const uncertain =
@@ -247,6 +267,14 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           [installmentId]: {
             uncertain,
             message: json.message || 'A emissão precisa de conferência antes de uma nova tentativa.',
+            bankDiagnostic: json.bankDiagnostic
+              ? {
+                  httpStatus: json.bankDiagnostic.httpStatus,
+                  code: json.bankDiagnostic.code,
+                  message: json.bankDiagnostic.message,
+                  field: json.bankDiagnostic.fields?.filter(Boolean).join(', ') || null,
+                }
+              : null,
           },
         };
       });

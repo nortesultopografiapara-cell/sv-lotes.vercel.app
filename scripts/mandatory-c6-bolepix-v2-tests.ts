@@ -1587,12 +1587,29 @@ async function proveAuthorizedReceiptReachesTransport() {
     now,
     transportRequest: async () => {
       rejectedCalls += 1;
-      return { status: 422, bodyText: '{}', contentType: 'application/json' };
+      return {
+        status: 422,
+        contentType: 'application/json',
+        bodyText: JSON.stringify({
+          code: 'INVALID_PAYER',
+          message: 'Documento recusado',
+          errors: [{ field: 'payer.tax_id', message: 'CPF 52998224725 inválido' }],
+          trace_id: 'trace-422',
+        }),
+      };
     },
   });
   assert(
     !rejectedResult.emitted && rejectedResult.message.includes('recusou') && rejectedCalls === 1,
     'rejeição bancária não dispara outra emissão',
+  );
+  assert(rejectedResult.bankDiagnostic?.httpStatus === 422, 'o HTTP 422 fica no diagnóstico');
+  assert(rejectedResult.bankDiagnostic?.code === 'INVALID_PAYER', 'o código bancário fica no diagnóstico');
+  assert(rejectedResult.bankDiagnostic?.fields.join() === 'payer.tax_id', 'o campo rejeitado fica no diagnóstico');
+  assert(rejectedResult.bankDiagnostic?.traceId === 'trace-422', 'o rastreio curto fica no diagnóstico');
+  assert(
+    !JSON.stringify(rejectedResult.bankDiagnostic).includes('52998224725'),
+    'o diagnóstico não guarda o CPF',
   );
 }
 

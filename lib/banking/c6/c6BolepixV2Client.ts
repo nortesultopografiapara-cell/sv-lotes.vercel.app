@@ -26,6 +26,7 @@ export type C6BolepixV2FetchResult = {
   status: number;
   bodyText: string;
   contentType?: string | null;
+  traceId?: string | null;
 };
 
 export type C6BolepixV2OfficialFields = {

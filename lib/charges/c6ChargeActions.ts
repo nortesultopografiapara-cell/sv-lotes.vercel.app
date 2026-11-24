@@ -10,6 +10,22 @@ export type C6BolepixActionInput = {
   statusMessage?: string | null;
 };
 
+export type C6BankDiagnosticView = {
+  httpStatus: number | null;
+  code: string | null;
+  message: string | null;
+  field: string | null;
+};
+
+export function c6BankDiagnosticLines(view: C6BankDiagnosticView | null | undefined): string[] {
+  if (!view || (view.httpStatus == null && !view.code && !view.message && !view.field)) return [];
+  const lines = [`C6 Bank — HTTP ${view.httpStatus ?? 'sem resposta'}`];
+  if (view.code) lines.push(`Código: ${view.code}`);
+  if (view.message) lines.push(`Motivo: ${view.message}`);
+  if (view.field) lines.push(`Campo: ${view.field}`);
+  return lines;
+}
+
 export type C6ChargeActionInput = {
   externalId?: string | null;
   status?: string | null;
