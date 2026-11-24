@@ -175,16 +175,25 @@ export async function executeC6BolepixV2Get(params: {
     },
     params.allowSimulatedHttp === true,
   );
-  const parsed = response.bodyText ? JSON.parse(response.bodyText) : null;
+  let parsed: unknown = null;
+  try {
+    parsed = response.bodyText ? JSON.parse(response.bodyText) : null;
+  } catch {
+    parsed = null;
+  }
   const fields = readC6BolepixV2OfficialFields(parsed);
+  const located = response.status === 200 && Boolean(fields?.id);
   return {
-    ok: response.status === 200 && Boolean(fields),
+    ok: located,
     httpStatus: response.status,
-    disposition: response.status === 200 && fields ? 'succeeded' : response.status >= 500 ? 'uncertain' : 'rejected',
+    disposition: located ? 'succeeded' : response.status >= 500 ? 'uncertain' : 'rejected',
     fields,
     pdfBytes: null,
     pdfBody: null,
     responseBody: parsed,
+    bodyText: String(response.bodyText || '').slice(0, 4000),
+    contentType: response.contentType || null,
+    traceId: response.traceId || null,
     specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
   };
 }

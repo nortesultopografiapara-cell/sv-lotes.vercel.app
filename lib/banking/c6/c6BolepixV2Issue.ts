@@ -103,7 +103,7 @@ export function completionForC6BolepixV2(result: {
     DEFINITIVE.has(result.httpStatus) &&
     !chargeId
   ) {
-    return { status: 'FAILED', retryAllowed: true, chargeId: null, automaticRetry: false };
+    return { status: 'FAILED', retryAllowed: false, chargeId: null, automaticRetry: false };
   }
   if (result.disposition === 'rejected') {
     return { status: 'FAILED', retryAllowed: false, chargeId: null, automaticRetry: false };

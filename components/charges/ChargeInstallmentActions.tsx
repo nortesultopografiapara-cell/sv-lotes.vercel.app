@@ -34,7 +34,7 @@ import {
   resolveInterIssuedChargeActions,
 } from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
-import { c6BankDiagnosticLines, resolveC6ChargeActions } from '@/lib/charges/c6ChargeActions';
+import { c6BankDiagnosticLines, c6SituationLines, resolveC6ChargeActions } from '@/lib/charges/c6ChargeActions';
 
 const btnClass =
   'inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50';
@@ -61,6 +61,11 @@ export type ChargeInstallmentActionsProps = {
       code: string | null;
       message: string | null;
       field: string | null;
+      externalReference?: string | null;
+      bankStatus?: string | null;
+      bankId?: string | null;
+      traceId?: string | null;
+      titleFound?: boolean;
     } | null;
   } | null;
   ownerReadOnly: boolean;
@@ -78,6 +83,7 @@ export type ChargeInstallmentActionsProps = {
   hasPaidChargeHistory?: boolean;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshStatus: () => void;
+  onConsultSituation?: () => void;
   onCancel: () => void;
   onRegenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onCopyPix: () => void;
@@ -140,6 +146,7 @@ export function ChargeInstallmentActions({
   hasPaidChargeHistory = false,
   onGenerate,
   onRefreshStatus,
+  onConsultSituation,
   onCancel,
   onRegenerate,
   onCopyPix,
@@ -235,6 +242,7 @@ export function ChargeInstallmentActions({
         charge?.c6Attempt?.kind === 'uncertain' ||
         charge?.c6Attempt?.kind === 'timeout' ||
         charge?.c6Attempt?.kind === 'waiting',
+      attemptLocked: Boolean(charge?.c6Attempt),
       rejectionMessage: c6Notice?.message || charge?.c6Attempt?.message,
       bolepix,
     });
@@ -247,6 +255,18 @@ export function ChargeInstallmentActions({
     return (
       <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
         <div className="flex flex-wrap justify-end gap-1.5">
+          {charge?.c6Attempt && onConsultSituation ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onConsultSituation}
+              className={btnClass}
+              title="Consulta oficial do título no C6. Não emite, não cancela e não baixa o financeiro."
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Consultar situação no C6
+            </button>
+          ) : null}
           {c6.showGenerate && c6EmitAuthorized ? (
             <button
               type="button"
@@ -345,9 +365,9 @@ export function ChargeInstallmentActions({
             Emissão bloqueada nesta homologação.
           </p>
         ) : null}
-        {c6BankDiagnosticLines(c6Notice?.bankDiagnostic).length ? (
+        {c6SituationLines(c6Notice?.bankDiagnostic).length ? (
           <div className="max-w-md text-right text-[10px] leading-snug text-red-700">
-            {c6BankDiagnosticLines(c6Notice?.bankDiagnostic).map((line) => (
+            {c6SituationLines(c6Notice?.bankDiagnostic).map((line) => (
               <p key={line}>{line}</p>
             ))}
           </div>

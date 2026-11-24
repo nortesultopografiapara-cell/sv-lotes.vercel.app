@@ -166,6 +166,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           code: string | null;
           message: string | null;
           field: string | null;
+          externalReference?: string | null;
+          bankStatus?: string | null;
+          bankId?: string | null;
+          traceId?: string | null;
+          titleFound?: boolean;
         } | null;
       }
     >
@@ -996,6 +1001,55 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
     return charge;
   };
+
+  async function consultC6Situation(installmentId: string) {
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch(
+        `/api/banking/c6/charges?installmentId=${encodeURIComponent(installmentId)}&purpose=situation`,
+        { credentials: 'include' },
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        titleFound?: boolean;
+        externalReference?: string;
+        bankStatus?: string | null;
+        bankId?: string | null;
+        bankDiagnostic?: {
+          httpStatus: number | null;
+          code: string | null;
+          message: string | null;
+          fields?: string[];
+          traceId?: string | null;
+        } | null;
+      };
+      if (!res.ok) throw new Error(json.error || 'Falha ao consultar a situação no C6.');
+      setC6NoticeByInstallment((current) => ({
+        ...current,
+        [installmentId]: {
+          uncertain: !json.titleFound,
+          message: json.message || 'Consulta C6 concluída.',
+          bankDiagnostic: {
+            httpStatus: json.bankDiagnostic?.httpStatus ?? null,
+            code: json.bankDiagnostic?.code ?? null,
+            message: json.bankDiagnostic?.message ?? null,
+            field: json.bankDiagnostic?.fields?.filter(Boolean).join(', ') || null,
+            externalReference: json.externalReference || null,
+            bankStatus: json.bankStatus,
+            bankId: json.bankId,
+            traceId: json.bankDiagnostic?.traceId,
+            titleFound: json.titleFound,
+          },
+        },
+      }));
+      showToast(json.message || 'Consulta C6 concluída.', true);
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Falha ao consultar a situação no C6.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  }
 
   const createInterChargeRequest = async (
     installmentId: string,
@@ -2271,6 +2325,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                               Boolean(charge?.asaasPaymentId)
                         }
                         c6Notice={provider === 'C6' ? c6NoticeByInstallment[installmentId] || null : null}
+                        onConsultSituation={
+                          provider === 'C6' ? () => void consultC6Situation(installmentId) : undefined
+                        }
                         onGenerate={(billingType) =>
                           void handleCreateCharge(installmentId, billingType)
                         }

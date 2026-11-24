@@ -1,0 +1,59 @@
+-- PROPOSTA. NÃO APLICAR sem autorização específica.
+-- Não executar este arquivo em Production nesta fase.
+--
+-- Objetivo: uma referência inédita por tentativa, sem apagar nem sobrescrever
+-- 979ED9478CCAFCE5B66C4B3FAD e sem enfraquecer a unicidade atual
+-- (company_id, integration_id, finance_receipt_id).
+--
+-- A constraint atual impede uma segunda linha na mesma parcela. A reserva FAILED
+-- permanece nessa tabela. Tentativas futuras, se autorizadas, nascem na tabela nova.
+
+-- BEGIN;
+
+-- CREATE TABLE public.c6_bolepix_reservation_attempts (
+--   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+--   company_id uuid NOT NULL,
+--   integration_id uuid NOT NULL,
+--   finance_receipt_id uuid NOT NULL,
+--   external_reference_id text NOT NULL,
+--   environment text NOT NULL,
+--   status text NOT NULL,
+--   attempt_count integer NOT NULL DEFAULT 1,
+--   last_http_status integer,
+--   c6_charge_id text,
+--   retry_allowed boolean NOT NULL DEFAULT false,
+--   prior_reservation_id uuid NOT NULL,
+--   created_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now()),
+--   updated_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now()),
+--   CONSTRAINT c6_bolepix_attempts_reference_unique UNIQUE (company_id, external_reference_id),
+--   CONSTRAINT c6_bolepix_attempts_reference_chk CHECK (external_reference_id ~ '^[A-Z0-9]{26}$'),
+--   CONSTRAINT c6_bolepix_attempts_status_chk CHECK (status IN ('RESERVED', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'UNKNOWN')),
+--   CONSTRAINT c6_bolepix_attempts_retry_chk CHECK (retry_allowed = false),
+--   CONSTRAINT c6_bolepix_attempts_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT,
+--   CONSTRAINT c6_bolepix_attempts_integration_fk FOREIGN KEY (integration_id) REFERENCES public.bank_integrations(id) ON DELETE RESTRICT,
+--   CONSTRAINT c6_bolepix_attempts_receipt_fk FOREIGN KEY (finance_receipt_id) REFERENCES public.finance_receipts(id) ON DELETE RESTRICT,
+--   CONSTRAINT c6_bolepix_attempts_prior_fk FOREIGN KEY (prior_reservation_id) REFERENCES public.c6_bolepix_reservations(id) ON DELETE RESTRICT
+-- );
+--
+-- CREATE UNIQUE INDEX uq_c6_bolepix_attempts_one_open
+--   ON public.c6_bolepix_reservation_attempts (company_id, finance_receipt_id)
+--   WHERE status IN ('RESERVED', 'PROCESSING', 'SUCCEEDED', 'UNKNOWN');
+--
+-- A reserva antiga não é atualizada. O índice parcial impede duas cobranças
+-- válidas ao mesmo tempo. UNKNOWN também ocupa a vaga, então resultado incerto
+-- bloqueia outra tentativa até a reconciliação.
+--
+-- Concorrência prevista, ainda não executada:
+-- duas transações simultâneas tomam pg_advisory_xact_lock no par empresa+parcela
+-- antes do INSERT. A segunda espera, vê a linha RESERVED/PROCESSING e não insere.
+-- O UNIQUE da referência recusa a mesma referência em outra parcela.
+--
+-- Rollback, se a tabela tiver sido criada e ainda estiver vazia:
+-- DROP TABLE IF EXISTS public.c6_bolepix_reservation_attempts;
+--
+-- A função reserve_c6_bolepix em Production ainda reabre FAILED com retry_allowed.
+-- O aplicativo não chama essa reabertura. A troca da função também fica para
+-- uma autorização própria e deve copiar o corpo atual antes de remover o ramo
+-- status = 'FAILED' AND retry_allowed IS TRUE.
+
+-- ROLLBACK;

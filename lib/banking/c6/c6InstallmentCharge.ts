@@ -251,14 +251,13 @@ export async function emitC6InstallmentBoleto(
       reservedStatus === 'UNKNOWN' ||
       reservedStatus === 'PROCESSING' ||
       Boolean(chargeId && reservedStatus !== 'SUCCEEDED');
-    const retryable = reservedStatus === 'FAILED' && bolepixReservation.data.retry_allowed === true && !chargeId;
     const unsent = reservedStatus === 'RESERVED' && !chargeId && httpStatus == null;
-    if (!retryable && !unsent) {
+    if (!unsent) {
       return {
         emitted: false,
         reused: reservedStatus === 'SUCCEEDED',
         duplicate: true,
-        needsReconciliation: uncertain || reservedStatus === 'UNKNOWN',
+        needsReconciliation: uncertain || reservedStatus === 'FAILED' || reservedStatus === 'UNKNOWN',
         bankSlipId: chargeId || null,
         digitableLine: null,
         barCode: null,
@@ -268,9 +267,12 @@ export async function emitC6InstallmentBoleto(
         dueDate,
         installmentId,
         companyId,
-        message: uncertain
-          ? 'O resultado desta cobrança está incerto. Nenhuma nova emissão foi feita.'
-          : 'Esta parcela já tem reserva Bolepix v2.',
+        message:
+          reservedStatus === 'FAILED'
+            ? 'A referência desta tentativa não pode ser reutilizada. Consulte a situação no C6. Nenhuma nova emissão foi feita.'
+            : uncertain
+              ? 'O resultado desta cobrança está incerto. Nenhuma nova emissão foi feita.'
+              : 'Esta parcela já tem reserva Bolepix v2.',
       };
     }
     if (unsent) resumeUnsent = true;
@@ -706,6 +708,157 @@ async function consultOwnedBolepix(
     },
   });
   return { result, integrationId: bolepix.integrationId };
+}
+
+export async function consultC6BolepixSituation(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentId: string,
+  options?: C6InstallmentChargeOptions,
+): Promise<{
+  consulted: true;
+  emitted: false;
+  settled: false;
+  emissionBlocked: true;
+  referenceReusable: false;
+  titleFound: boolean;
+  httpStatus: number | null;
+  bankStatus: string | null;
+  bankId: string | null;
+  externalReference: string;
+  message: string;
+  bankDiagnostic: C6BankDiagnostic;
+}> {
+  await loadReceipt(admin, companyId, installmentId);
+  const { data: reservation, error } = await admin
+    .from('c6_bolepix_reservations')
+    .select('company_id, integration_id, finance_receipt_id, external_reference_id, environment, status')
+    .eq('company_id', companyId)
+    .eq('finance_receipt_id', installmentId)
+    .maybeSingle();
+  if (error) throw new Error('Não foi possível verificar a reserva Bolepix.');
+  const reference = clean(reservation?.external_reference_id);
+  const environment = clean(reservation?.environment).toUpperCase();
+  const integrationId = clean(reservation?.integration_id);
+  if (!reservation || !reference || (environment !== 'SANDBOX' && environment !== 'PRODUCTION')) {
+    throw new Error('Parcela sem reserva Bolepix desta empresa.');
+  }
+  const { data: account, error: accountError } = await admin
+    .from('finance_receipts')
+    .select('financial_account_id')
+    .eq('id', installmentId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (accountError) throw new Error(accountError.message);
+  const { data: financial, error: financialError } = await admin
+    .from('company_financial_accounts')
+    .select('id, company_id, bank_integration_id')
+    .eq('id', clean(account?.financial_account_id))
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (financialError) throw new Error(financialError.message);
+  if (clean(financial?.bank_integration_id) !== integrationId) {
+    throw new Error('Integração de outra empresa.');
+  }
+  const simulatedCall = simulated(options);
+  const supplied = options?.credentials;
+  if (supplied && (supplied.companyId !== companyId || supplied.integrationId !== integrationId)) {
+    throw new Error('Integração de outra empresa.');
+  }
+  const secrets = simulatedCall
+    ? null
+    : supplied || (await loadC6SecretsForIntegration(admin, companyId, integrationId));
+  if (!simulatedCall && (!secrets || secrets.integrationId !== integrationId || secrets.environment !== environment)) {
+    throw new Error('Integração de outra empresa.');
+  }
+  let result;
+  try {
+    result = await readC6BolepixV2Charge({
+    companyId,
+    integrationId,
+    environment: environment as BankEnvironment,
+    externalReferenceId: reference,
+    pdf: false,
+    allowSimulatedHttp: options?.allowSimulatedHttp,
+    fetchFn: options?.fetchFn,
+    ownedByCompany: true,
+    credentials: secrets
+      ? {
+          companyId,
+          integrationId,
+          environment: secrets.environment,
+          clientId: secrets.clientId,
+          clientSecret: secrets.clientSecret,
+          certificatePem: secrets.certificatePem,
+          privateKeyPem: secrets.privateKeyPem,
+        }
+      : supplied || null,
+  });
+  } catch (error) {
+    if (error instanceof C6BolepixV2LiveDisabledError) throw error;
+    const bankDiagnostic = captureC6BankDiagnostic({
+      httpStatus: null,
+      stage: 'bank_slip_get',
+      externalReference: reference,
+      bodyText: '',
+    });
+    return {
+      consulted: true,
+      emitted: false,
+      settled: false,
+      emissionBlocked: true,
+      referenceReusable: false,
+      titleFound: false,
+      httpStatus: null,
+      bankStatus: null,
+      bankId: null,
+      externalReference: reference,
+      message: 'O C6 não respondeu à consulta. Nova emissão permanece bloqueada.',
+      bankDiagnostic,
+    };
+  }
+  const raw = result as typeof result & {
+    bodyText?: string;
+    contentType?: string | null;
+    traceId?: string | null;
+  };
+  const bankDiagnostic = captureC6BankDiagnostic({
+    httpStatus: result.httpStatus,
+    contentType: raw.contentType,
+    bodyText: raw.bodyText || (result.responseBody ? JSON.stringify(result.responseBody) : ''),
+    stage: 'bank_slip_get',
+    externalReference: reference,
+    traceId: raw.traceId,
+  });
+  const bankId = clean(result.fields?.id) || null;
+  const titleFound = result.httpStatus === 200 && Boolean(bankId);
+  const http = result.httpStatus;
+  const message =
+    titleFound
+      ? 'O C6 localizou o título. Nova emissão bloqueada até a reconciliação.'
+      : http === 404
+        ? 'O C6 não localizou o título. A referência não foi autorizada para reutilização.'
+        : http === 401 || http === 403
+          ? `O C6 não autorizou a consulta (HTTP ${http}).`
+          : http != null && http >= 500
+            ? `O C6 não confirmou a consulta (HTTP ${http}). Nova emissão permanece bloqueada.`
+            : http == null
+              ? 'O C6 não respondeu à consulta. Nova emissão permanece bloqueada.'
+              : bankDiagnostic.message || `O C6 respondeu HTTP ${http}.`;
+  return {
+    consulted: true,
+    emitted: false,
+    settled: false,
+    emissionBlocked: true,
+    referenceReusable: false,
+    titleFound,
+    httpStatus: http,
+    bankStatus: clean(result.fields?.status) || null,
+    bankId,
+    externalReference: reference,
+    message,
+    bankDiagnostic,
+  };
 }
 
 export async function queryC6InstallmentBoleto(

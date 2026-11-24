@@ -331,15 +331,22 @@ export async function postC6BolepixV2Charge(params: {
   }
 }
 
-function fromGetResponse(status: number, bodyText: string): C6BolepixV2CallResult {
+function fromGetResponse(
+  status: number,
+  bodyText: string,
+  contentType?: string | null,
+  traceId?: string | null,
+): C6BolepixV2CallResult & { bodyText: string; contentType: string | null; traceId: string | null } {
+  const safeType = String(contentType || '').slice(0, 80);
+  const keepText = /pdf/i.test(safeType) ? '' : String(bodyText || '').slice(0, 4000);
   let parsed: unknown = null;
   try {
-    parsed = bodyText ? JSON.parse(bodyText) : null;
+    parsed = keepText ? JSON.parse(keepText) : null;
   } catch {
     parsed = null;
   }
   const fields = readC6BolepixV2OfficialFields(parsed);
-  const ok = status === 200 && Boolean(fields);
+  const ok = status === 200 && Boolean(fields?.id);
   return {
     ok,
     httpStatus: status,
@@ -348,6 +355,9 @@ function fromGetResponse(status: number, bodyText: string): C6BolepixV2CallResul
     pdfBytes: null,
     pdfBody: null,
     responseBody: parsed,
+    bodyText: keepText,
+    contentType: safeType || null,
+    traceId: traceId || null,
     specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
   };
 }
@@ -440,5 +450,10 @@ export async function readC6BolepixV2Charge(params: {
       })();
   return params.pdf
     ? fromPdfResponse(response.status, response.bodyText, response.contentType)
-    : fromGetResponse(response.status, response.bodyText);
+    : fromGetResponse(
+        response.status,
+        response.bodyText,
+        response.contentType,
+        'traceId' in response ? response.traceId : null,
+      );
 }

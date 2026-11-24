@@ -28,8 +28,6 @@ export type C6BolepixReserveResult = {
   rows: C6BolepixReservationRow[];
 };
 
-const DEFINITIVE = new Set([400, 401, 403, 404, 422]);
-
 export function c6BolepixRequestFingerprint(parts: {
   amount: string;
   dueDate: string;
@@ -102,19 +100,8 @@ export function reserveC6Bolepix(
   if (sameReceipt.externalReferenceId !== reference) {
     return { accepted: false, reason: 'blocked', rows: next };
   }
-  if (
-    sameReceipt.status === 'FAILED' &&
-    sameReceipt.retryAllowed &&
-    !sameReceipt.c6ChargeId &&
-    sameReceipt.lastHttpStatus != null &&
-    DEFINITIVE.has(sameReceipt.lastHttpStatus)
-  ) {
-    sameReceipt.status = 'RESERVED';
-    sameReceipt.retryAllowed = false;
-    sameReceipt.lastHttpStatus = null;
-    sameReceipt.requestFingerprint = input.requestFingerprint;
-    sameReceipt.attemptCount += 1;
-    return { accepted: true, reason: 'retry', rows: next };
+  if (sameReceipt.status === 'FAILED') {
+    return { accepted: false, reason: 'blocked', rows: next };
   }
   if (sameReceipt.status === 'UNKNOWN') {
     return { accepted: false, reason: 'needs_reconciliation', rows: next };
@@ -147,17 +134,8 @@ export function completeC6Bolepix(
   }
   let status = input.status;
   let chargeId = String(input.c6ChargeId || '').trim() || null;
-  let retry = false;
+  const retry = false;
   if (status === 'SUCCEEDED' && (input.httpStatus !== 201 || !chargeId)) status = 'UNKNOWN';
-  if (
-    status === 'FAILED' &&
-    input.retryAllowed === true &&
-    !chargeId &&
-    input.httpStatus != null &&
-    DEFINITIVE.has(input.httpStatus)
-  ) {
-    retry = true;
-  }
   if (status === 'FAILED') chargeId = null;
   row.status = status;
   row.c6ChargeId = chargeId;

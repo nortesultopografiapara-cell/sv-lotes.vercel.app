@@ -17,6 +17,28 @@ export type C6BankDiagnosticView = {
   field: string | null;
 };
 
+export type C6SituationView = C6BankDiagnosticView & {
+  externalReference?: string | null;
+  bankStatus?: string | null;
+  bankId?: string | null;
+  traceId?: string | null;
+  titleFound?: boolean;
+};
+
+export function c6SituationLines(view: C6SituationView | null | undefined): string[] {
+  const lines = c6BankDiagnosticLines(view);
+  if (!view) return lines;
+  if (view.externalReference) lines.push(`Referência: ${view.externalReference}`);
+  if (view.bankStatus) lines.push(`Status bancário: ${view.bankStatus}`);
+  if (view.bankId) lines.push(`Identificador: ${view.bankId}`);
+  if (view.traceId) lines.push(`Rastreio: ${view.traceId}`);
+  if (view.httpStatus === 404) {
+    lines.push('O título não foi localizado. A referência não foi autorizada para reutilização.');
+  }
+  if (view.titleFound) lines.push('Título localizado. Nova emissão bloqueada até a reconciliação.');
+  return lines;
+}
+
 export function c6BankDiagnosticLines(view: C6BankDiagnosticView | null | undefined): string[] {
   if (!view || (view.httpStatus == null && !view.code && !view.message && !view.field)) return [];
   const lines = [`C6 Bank — HTTP ${view.httpStatus ?? 'sem resposta'}`];
@@ -34,6 +56,7 @@ export type C6ChargeActionInput = {
   installmentPaid: boolean;
   ownerReadOnly: boolean;
   uncertain: boolean;
+  attemptLocked?: boolean;
   rejectionMessage?: string | null;
   bolepix?: C6BolepixActionInput | null;
 };
@@ -78,7 +101,10 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
   const pdfReady = v2 ? Boolean(input.bolepix?.pdfAvailable) : registered;
 
   return {
-    showGenerate: v2 ? false : !input.ownerReadOnly && !paid && !registered && !input.uncertain,
+    showGenerate:
+      v2 || input.attemptLocked
+        ? false
+        : !input.ownerReadOnly && !paid && !registered && !input.uncertain,
     showView: pdfReady,
     showDownload: pdfReady,
     showCopyLine: copyLine,

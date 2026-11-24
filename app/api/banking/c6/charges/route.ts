@@ -4,6 +4,7 @@ import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization'
 import { isC6BolepixV2CompanyReleased, isC6BolepixV2ReceiptCandidate } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import {
+  consultC6BolepixSituation,
   emitC6InstallmentBoleto,
   queryC6InstallmentBoleto,
 } from '@/lib/banking/c6/c6InstallmentCharge';
@@ -52,11 +53,16 @@ export async function GET(request: Request) {
   ) {
     return denied();
   }
-  const installmentId = new URL(request.url).searchParams.get('installmentId')?.trim() || '';
+  const url = new URL(request.url);
+  const installmentId = url.searchParams.get('installmentId')?.trim() || '';
   if (!installmentId) {
     return NextResponse.json({ error: 'installmentId obrigatório.' }, { status: 400 });
   }
   try {
+    if (url.searchParams.get('purpose') === 'situation') {
+      const result = await consultC6BolepixSituation(auth.admin, auth.tenantId, installmentId);
+      return NextResponse.json(result);
+    }
     const result = await queryC6InstallmentBoleto(auth.admin, auth.tenantId, installmentId);
     return NextResponse.json(result);
   } catch (error) {

@@ -319,7 +319,13 @@ async function main() {
     externalReferenceId: REFERENCE,
     requestFingerprint: fingerprint,
   });
-  assert(retried.reason === 'retry' && retried.rows[0].attemptCount === 2, 'rejeição definitiva permite uma nova tentativa');
+  assert(
+    !retried.accepted &&
+      retried.rows[0].attemptCount === 1 &&
+      retried.rows[0].externalReferenceId === REFERENCE &&
+      retried.rows[0].retryAllowed === false,
+    'HTTP 422 não reabre a mesma referência',
+  );
   const uncertainReserve = reservation.completeC6Bolepix(first.rows, {
     companyId: 'company-a',
     integrationId: 'integration-a',
@@ -796,7 +802,7 @@ async function main() {
   });
   assert(uncertain.status === 'UNKNOWN' && uncertain.automaticRetry === false, 'timeout não dispara outra emissão');
   const refused = issue.completionForC6BolepixV2({ disposition: 'rejected', httpStatus: 422, chargeId: null });
-  assert(refused.status === 'FAILED' && refused.retryAllowed && refused.automaticRetry === false, 'rejeição definitiva não repete sozinha');
+  assert(refused.status === 'FAILED' && refused.retryAllowed === false && refused.automaticRetry === false, 'rejeição definitiva não reabre a referência');
   const htmlPdf = await executeC6BolepixV2Pdf({
     environment: 'PRODUCTION',
     externalReferenceId: REFERENCE,
@@ -1210,6 +1216,7 @@ async function main() {
   });
   assert(configured.phase === 'evp_configurada' && configured.postAllowed === false, 'EVP configurada não é emissão operacional');
   await proveAuthorizedReceiptReachesTransport();
+  await proveSituationConsult();
 
   if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;
@@ -1611,6 +1618,140 @@ async function proveAuthorizedReceiptReachesTransport() {
     !JSON.stringify(rejectedResult.bankDiagnostic).includes('52998224725'),
     'o diagnóstico não guarda o CPF',
   );
+  const rejectedAgain = await emitC6InstallmentBoleto(rejected.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      rejectedCalls += 1;
+      return { status: 201, bodyText: officialResponse(), contentType: 'application/json' };
+    },
+  });
+  assert(
+    !rejectedAgain.emitted && rejectedAgain.needsReconciliation && rejectedCalls === 1,
+    'a referência recusada não é reenviada',
+  );
+}
+
+async function proveSituationConsult() {
+  const { consultC6BolepixSituation } = await import('../lib/banking/c6/c6InstallmentCharge');
+  const companyId = 'f26f2331-1885-4ac6-8d0e-4131cc8a8014';
+  const integrationId = 'b5cc1de3-172b-4926-a528-36cebc14db51';
+  const receiptId = '693281b1-4d61-4209-adcc-0b378968aed3';
+  const reference = '979ED9478CCAFCE5B66C4B3FAD';
+  const tables: Record<string, Array<Record<string, unknown>>> = {
+    finance_receipts: [
+      {
+        id: receiptId,
+        company_id: companyId,
+        tenant_id: companyId,
+        financial_account_id: 'fa-1',
+        amount: 10,
+        due_date: '2026-11-26',
+        status: 'pendente',
+        customer_id: 'customer-1',
+        installment_number: 0,
+      },
+    ],
+    company_financial_accounts: [{ id: 'fa-1', company_id: companyId, bank_integration_id: integrationId }],
+    c6_bolepix_reservations: [
+      {
+        company_id: companyId,
+        integration_id: integrationId,
+        finance_receipt_id: receiptId,
+        external_reference_id: reference,
+        environment: 'PRODUCTION',
+        status: 'FAILED',
+      },
+    ],
+  };
+  let writes = 0;
+  const admin = {
+    from(table: string) {
+      const state: { filters: Array<[string, unknown]> } = { filters: [] };
+      const api = {
+        select() {
+          return api;
+        },
+        eq(key: string, value: unknown) {
+          state.filters.push([key, value]);
+          return api;
+        },
+        insert() {
+          writes += 1;
+          return api;
+        },
+        update() {
+          writes += 1;
+          return api;
+        },
+        maybeSingle() {
+          const rows = (tables[table] || []).filter((row) =>
+            state.filters.every(([key, value]) => row[key] === value),
+          );
+          return Promise.resolve({ data: rows[0] || null, error: null });
+        },
+      };
+      return api;
+    },
+    rpc() {
+      writes += 1;
+      return Promise.resolve({ data: null, error: { message: 'rpc' } });
+    },
+  };
+  const responses = [
+    { status: 400, contentType: 'application/json', bodyText: JSON.stringify({ code: 'INVALID_ADDRESS', message: 'Endereço recusado', errors: [{ field: 'payer.address.zip_code' }] }) },
+    { status: 400, contentType: 'text/plain', bodyText: 'Bearer segredo falha CPF 52998224725' },
+    { status: 422, contentType: 'application/json', bodyText: JSON.stringify({ code: 'INVALID', message: 'Campo recusado' }) },
+    { status: 401, contentType: 'application/json', bodyText: JSON.stringify({ message: 'Não autorizado' }) },
+    { status: 403, contentType: 'application/json', bodyText: JSON.stringify({ message: 'Proibido' }) },
+    { status: 409, contentType: 'application/json', bodyText: JSON.stringify({ code: 'CONFLICT', message: 'Referência já usada' }) },
+    { status: 500, contentType: 'text/plain', bodyText: 'erro interno' },
+    { status: 404, contentType: 'application/json', bodyText: JSON.stringify({ message: 'Não encontrado' }) },
+    { status: 200, contentType: 'application/json', bodyText: JSON.stringify({ id: '01HVSBSTN8CCTCTEQT6MC7TD4B', status: 'CREATED', external_reference_id: reference }) },
+  ];
+  for (const response of responses) {
+    let method = '';
+    let url = '';
+    const result = await consultC6BolepixSituation(admin as never, companyId, receiptId, {
+      allowSimulatedHttp: true,
+      fetchFn: async (calledUrl, init) => {
+        method = init.method;
+        url = calledUrl;
+        return response;
+      },
+    });
+    assert(method === 'GET' && url.endsWith(`/${reference}`), 'a consulta usa o GET da referência da reserva');
+    assert(result.emitted === false && result.settled === false && result.referenceReusable === false, 'a consulta não emite nem libera a referência');
+    assert(result.externalReference === reference && result.httpStatus === response.status, 'o HTTP consultado fica no resultado');
+    assert(!JSON.stringify(result).includes('52998224725') && !/bearer/i.test(JSON.stringify(result.bankDiagnostic)), 'a consulta não devolve segredo');
+  }
+  let thrown = false;
+  try {
+    await consultC6BolepixSituation(admin as never, companyId, receiptId, {
+      allowSimulatedHttp: true,
+      fetchFn: async () => {
+        throw new Error('timeout');
+      },
+    });
+  } catch {
+    thrown = true;
+  }
+  assert(!thrown, 'timeout da consulta não escapa como emissão');
+  const foreign = await consultC6BolepixSituation(admin as never, '00000000-0000-0000-0000-000000000000', receiptId, {
+    allowSimulatedHttp: true,
+    fetchFn: async () => responses[0],
+  }).then(
+    () => false,
+    (error: unknown) => error instanceof Error && error.message.includes('outra empresa'),
+  );
+  assert(foreign === true, 'outra empresa não consulta a reserva');
+  assert(writes === 0, 'a consulta não grava reserva, financeiro nem cobrança');
+  const route = fs.readFileSync(path.join(process.cwd(), 'app/api/banking/c6/charges/route.ts'), 'utf8');
+  const panel = fs.readFileSync(path.join(process.cwd(), 'components/sales/SaleChargesPanel.tsx'), 'utf8');
+  const page = fs.readFileSync(path.join(process.cwd(), 'components/charges/ChargesPageClient.tsx'), 'utf8');
+  const actions = fs.readFileSync(path.join(process.cwd(), 'components/charges/ChargeInstallmentActions.tsx'), 'utf8');
+  assert(route.includes("purpose') === 'situation'") && route.includes('consultC6BolepixSituation'), 'a rota existente faz a consulta de situação');
+  assert(panel.includes('purpose=situation') && page.includes('purpose=situation'), 'mapa e cobranças chamam a consulta no servidor');
+  assert(actions.includes('Consultar situação no C6'), 'o botão de consulta aparece na parcela');
 }
 
 main().catch((error) => {

@@ -121,6 +121,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           code: string | null;
           message: string | null;
           field: string | null;
+          externalReference?: string | null;
+          bankStatus?: string | null;
+          bankId?: string | null;
+          traceId?: string | null;
+          titleFound?: boolean;
         } | null;
       }
     >
@@ -286,6 +291,56 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       await loadSummary();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Falha ao emitir o boleto C6.');
+    } finally {
+      setC6ActionId(null);
+    }
+  }
+
+  async function consultSaleC6Situation(installmentId: string) {
+    setC6ActionId(installmentId);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/banking/c6/charges?installmentId=${encodeURIComponent(installmentId)}&purpose=situation`,
+        { credentials: 'include' },
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        titleFound?: boolean;
+        externalReference?: string;
+        bankStatus?: string | null;
+        bankId?: string | null;
+        bankDiagnostic?: {
+          httpStatus: number | null;
+          code: string | null;
+          message: string | null;
+          fields?: string[];
+          traceId?: string | null;
+        } | null;
+      };
+      if (!res.ok) throw new Error(json.error || 'Falha ao consultar a situação no C6.');
+      setC6Notices((current) => ({
+        ...current,
+        [installmentId]: {
+          uncertain: !json.titleFound,
+          message: json.message || 'Consulta C6 concluída.',
+          bankDiagnostic: {
+            httpStatus: json.bankDiagnostic?.httpStatus ?? null,
+            code: json.bankDiagnostic?.code ?? null,
+            message: json.bankDiagnostic?.message ?? null,
+            field: json.bankDiagnostic?.fields?.filter(Boolean).join(', ') || null,
+            externalReference: json.externalReference || json.bankDiagnostic ? json.externalReference : null,
+            bankStatus: json.bankStatus,
+            bankId: json.bankId,
+            traceId: json.bankDiagnostic?.traceId,
+            titleFound: json.titleFound,
+          },
+        },
+      }));
+      setError(json.message || 'Consulta C6 concluída a partir da reserva desta parcela.');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao consultar a situação no C6.');
     } finally {
       setC6ActionId(null);
     }
@@ -972,6 +1027,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
                             c6ChargesLoaded
                             c6EmitAuthorized={c6AuthorizedIds.includes(view.id)}
                             onGenerate={() => void emitSaleC6Boleto(view.id)}
+                            onConsultSituation={() => void consultSaleC6Situation(view.id)}
                             onRefreshStatus={() => void refreshSaleC6Charge(view.id)}
                             onCancel={() =>
                               setInfo('O cancelamento C6 permanece fora desta homologação.')
