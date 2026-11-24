@@ -1156,6 +1156,19 @@ async function main() {
     testParcelNamed: true,
   });
   assert(waitingAdmin.postAllowed === false, 'sem o pedido do administrador o POST fica fechado');
+  assert(
+    waitingAdmin.label === 'Emissão desativada' && waitingAdmin.detail.includes('senha do administrador'),
+    'a tela pede a senha em vez de dizer que o POST está desligado',
+  );
+  assert(
+    !waitingAdmin.detail.includes('POST real continua desligado'),
+    'a parcela já liberada não é apresentada como POST desligado',
+  );
+  assert(
+    operational.label === 'Emissão autorizada para homologação' &&
+      operational.detail.includes('lote continuam bloqueados'),
+    'a autorização não é anunciada como emissão global',
+  );
   const reference = (await import('../lib/banking/c6/c6BolepixV2Emission')).c6BolepixV2ReferenceForInstallment(
     releasedReceipt.receiptId,
   );
@@ -1163,6 +1176,28 @@ async function main() {
   const batch = fs.readFileSync(path.join(process.cwd(), 'lib/finance/saleChargesService.ts'), 'utf8');
   assert(batch.includes('Emissão C6 em lote permanece bloqueada'), 'a emissão em lote continua bloqueada');
   assert(!batch.includes('emitC6InstallmentBoleto'), 'o lote não chama a emissão individual');
+  const pendingBatch = await import('../lib/banking/c6/c6PendingBoletoBatch');
+  assert(pendingBatch.C6_BOLEPIX_V2_BATCH_ENABLED === false, 'o lote preparado continua desligado');
+  let batchCalls = 0;
+  let batchRefused = false;
+  try {
+    await pendingBatch.emitC6PendingBoletosWhenReleased({
+      admin: {} as never,
+      companyId: releasedReceipt.companyId,
+      installmentIds: [releasedReceipt.receiptId],
+    });
+  } catch (error) {
+    batchRefused = error instanceof Error && error.message.includes('em lote permanece bloqueada');
+    batchCalls += 1;
+  }
+  assert(batchRefused && batchCalls === 1, 'o lote preparado recusa antes de emitir');
+  assert(
+    pendingBatch.planC6PendingBoletoInstallments({
+      installmentIds: [releasedReceipt.receiptId, 'ja-emitida'],
+      alreadyIssuedIds: ['ja-emitida'],
+    }).join() === releasedReceipt.receiptId,
+    'o plano exclui a parcela já emitida',
+  );
   const configured = openApiState.describeC6BolepixPanel({
     companyId: 'company-a',
     integrationId: 'integration-a',

@@ -9,6 +9,7 @@ import {
   readC6EmissionEnabled,
   requestC6BolepixCompanyActivation,
   setC6CompanyEmissionEnabled,
+  filterC6BolepixAuthorizedReceipts,
 } from '../lib/banking/c6/c6EmissionAuthorization';
 import { throwIfC6EmissionAttempt } from '../lib/banking/c6/c6EmitGuard';
 
@@ -155,6 +156,53 @@ async function main() {
     readC6BolepixActivationRequested(requested.tables.bank_integrations[1].metadata) === false,
     'a solicitação não atravessa empresa',
   );
+
+  const companyId = 'f26f2331-1885-4ac6-8d0e-4131cc8a8014';
+  const integrationId = 'b5cc1de3-172b-4926-a528-36cebc14db51';
+  const entrada = '693281b1-4d61-4209-adcc-0b378968aed3';
+  const siblings = [
+    '25c9d7c7-fd95-43b1-97ba-8a1953469e0e',
+    '4f1f6dea-53c1-4a96-91d3-c31d1dd1dca3',
+    '10c81966-7ced-4e09-9f45-df04496dcefe',
+    'fb76a549-399c-4f08-975a-0b0191b096b3',
+  ];
+  const homolog = memory();
+  homolog.tables.bank_integrations.splice(0, homolog.tables.bank_integrations.length, {
+    id: integrationId,
+    company_id: companyId,
+    provider: 'C6',
+    status: 'DRAFT',
+    client_id: 'client-homolog',
+    metadata: { c6: { emission_enabled: false, webhook_enabled: false, settlement_enabled: false } },
+  });
+  homolog.tables.bank_credentials.splice(
+    0,
+    homolog.tables.bank_credentials.length,
+    { integration_id: integrationId, credential_type: 'oauth' },
+    { integration_id: integrationId, credential_type: 'certificate' },
+  );
+  homolog.tables.company_financial_accounts.splice(0, homolog.tables.company_financial_accounts.length, {
+    id: '7b8663bb-8520-42d5-aa62-f2a30ec84464',
+    company_id: companyId,
+    bank_integration_id: integrationId,
+    active: true,
+  });
+  homolog.tables.c6_bolepix_pix_keys.push({
+    company_id: companyId,
+    integration_id: integrationId,
+    key_fingerprint: 'abc123def456',
+  });
+  const before = await filterC6BolepixAuthorizedReceipts(homolog as never, companyId, [entrada, ...siblings]);
+  assert(before.length === 0, 'sem a senha confirmada nenhuma parcela fica autorizada');
+  await requestC6BolepixCompanyActivation(homolog as never, companyId);
+  const stored = homolog.tables.bank_integrations[0];
+  assert(stored.status === 'DRAFT', 'o status DRAFT permanece');
+  assert(readC6BolepixActivationRequested(stored.metadata) === true, 'a autorização permanece gravada');
+  assert(readC6EmissionEnabled(stored.metadata) === false, 'a autorização não liga emission_enabled');
+  const after = await filterC6BolepixAuthorizedReceipts(homolog as never, companyId, [entrada, ...siblings]);
+  assert(after.length === 1 && after[0] === entrada, 'depois da autorização só a entrada habilita o botão');
+  const otherCompany = await filterC6BolepixAuthorizedReceipts(homolog as never, COMPANY_B, [entrada]);
+  assert(otherCompany.length === 0, 'outra empresa não herda a autorização');
 
   console.log('C6_COMPANY_EMISSION_AUTH_OK');
 }

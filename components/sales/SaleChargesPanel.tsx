@@ -1009,7 +1009,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
                   Gerar boletos pendentes
                 </button>
                 <p className="w-full text-xs text-gray-600">
-                  Emissão em lote permanece bloqueada. O boleto individual usa o botão da parcela autorizada.
+                  Emissão em lote permanece bloqueada até a aprovação do primeiro boleto real. O boleto individual usa o botão da parcela autorizada.
                 </p>
               </>
             ) : (

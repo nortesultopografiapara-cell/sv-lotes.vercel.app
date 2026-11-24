@@ -231,7 +231,7 @@ export async function requestC6BolepixCompanyActivation(
       module: 'FINANCE',
       action: 'C6_BOLEPIX_ACTIVATION_REQUESTED',
       reference_id: row.id,
-      description: 'Administrador solicitou a ativação Bolepix desta empresa. O POST real permanece desligado.',
+      description: 'Administrador autorizou a entrada de homologação desta empresa. As demais parcelas continuam bloqueadas.',
     });
   } catch (auditError) {
     console.warn('[c6 emission] audit', auditError);

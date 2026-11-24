@@ -212,9 +212,9 @@ export function describeC6BolepixPanel(input: {
   if (decision.postAllowed) {
     return {
       phase: 'emissao_operacional',
-      label: 'Parcela autorizada',
+      label: 'Emissão autorizada para homologação',
       postAllowed: true,
-      detail: 'Somente a entrada autorizada pode ser emitida. As demais parcelas continuam bloqueadas.',
+      detail: 'Somente a entrada autorizada pode ser emitida. As demais parcelas e o lote continuam bloqueados.',
     };
   }
   if (released && !input.testParcelNamed) {
@@ -239,6 +239,15 @@ export function describeC6BolepixPanel(input: {
       label: 'EVP configurada',
       postAllowed: false,
       detail: 'Emissão bloqueada por segurança.',
+    };
+  }
+  if (released && input.testParcelNamed && !input.activationRequested) {
+    return {
+      phase: 'aguardando_autorizacao',
+      label: 'Emissão desativada',
+      postAllowed: false,
+      detail:
+        'Informe a senha do administrador principal e clique em Ativar emissão desta empresa. A autorização vale só para a entrada de homologação.',
     };
   }
   if (input.activationRequested) {

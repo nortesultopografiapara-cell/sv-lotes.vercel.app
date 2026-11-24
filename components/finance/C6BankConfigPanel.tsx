@@ -251,8 +251,8 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       setPassword('');
       setInfo(
         enabled
-          ? 'Solicitação registrada somente para esta empresa. A emissão real continua bloqueada por segurança.'
-          : 'Solicitação cancelada. A emissão real continua bloqueada por segurança.',
+          ? 'Autorização registrada para a entrada de homologação desta empresa. As outras parcelas e a emissão em lote continuam bloqueadas.'
+          : 'Autorização cancelada. A entrada de homologação volta a ficar bloqueada.',
       );
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a emissão');
@@ -380,7 +380,9 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
             Status {config?.status || 'DRAFT'}
           </span>
           <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-200">
-            Emissão DESATIVADA
+            {config?.bolepixActivationRequested && bolepixPanel.postAllowed
+              ? 'Emissão autorizada para homologação'
+              : 'Emissão DESATIVADA'}
           </span>
         </div>
       </div>
@@ -583,7 +585,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
           {pixMask ? ` · ${pixMask}` : ''}.
         </p>
         <p>
-          Cadastrar a chave não ativa a emissão e não altera Client ID, segredo ou certificado. A emissão real permanece desligada até o administrador indicar a parcela de teste.
+          Cadastrar a chave não ativa a emissão e não altera Client ID, segredo ou certificado. A emissão real permanece desligada até o administrador confirmar a senha da parcela de teste.
         </p>
         <input
           type="password"
