@@ -69,6 +69,11 @@ export type SaleCarnePdfInput = {
   agencyCedente?: string | null;
   /** Omitido = identidade Asaas atual (não alterar o carnê Asaas). */
   brand?: SaleCarneBrandConfig | null;
+  /**
+   * `undefined` mantém o aviso parcial do Asaas e do Inter.
+   * `null` omite o aviso. Texto substitui o aviso padrão.
+   */
+  partialNotice?: string | null;
 };
 
 const PAGE_W = SALE_CARNE_PAGE_W_MM;
@@ -561,11 +566,13 @@ export async function buildSaleCarnePdfBytes(input: SaleCarnePdfInput): Promise<
       items[0]?.totalParcels ||
       items.length,
   );
-  const partialNotice =
+  const defaultPartialNotice =
     buildSaleCarnePartialNotice(items.length, contractTotal) ||
     (input.summary.chargesMissing > 0
       ? `Carnê parcial — contém ${items.length} cobrança${items.length === 1 ? '' : 's'} atualmente emitida${items.length === 1 ? '' : 's'}.`
       : null);
+  const partialNotice =
+    input.partialNotice !== undefined ? input.partialNotice : defaultPartialNotice;
 
   for (let i = 0; i < items.length; i++) {
     if (saleCarneNeedsNewPage(i)) doc.addPage();

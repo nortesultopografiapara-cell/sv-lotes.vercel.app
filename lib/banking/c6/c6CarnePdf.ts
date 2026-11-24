@@ -41,6 +41,13 @@ function bankCodeFromOfficial(digits: string): string {
   return digits.slice(0, 3);
 }
 
+export function c6CarneIncompleteNotice(included: number, total: number): string | null {
+  const printed = Math.max(0, Math.floor(included));
+  const expected = Math.max(0, Math.floor(total));
+  if (printed <= 0 || expected <= 0 || printed >= expected) return null;
+  return `CARNÊ INCOMPLETO — ${printed} de ${expected} boletos emitidos pelo C6. As demais parcelas não foram emitidas.`;
+}
+
 export async function buildC6CarnePdfBytes(params: {
   items: C6CarneItem[];
   totalParcels: number;
@@ -81,6 +88,7 @@ export async function buildC6CarnePdfBytes(params: {
       missingArtifactsMessage:
         'Boleto C6 sem linha digitável ou código de barras confirmados pelo banco.',
     },
+    partialNotice: c6CarneIncompleteNotice(printable.length, params.totalParcels),
   });
   const pageCount = saleCarneBoletoSheetCount(printable.length);
   return {

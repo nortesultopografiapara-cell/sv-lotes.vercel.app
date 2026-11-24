@@ -620,8 +620,13 @@ function testPartialCarneUiAndRoutes() {
   assert(panel.includes('disabled={!canMutate || !kpi.carneReady}'), 'botões usam carneReady');
   assert(!pdfRoute.includes('chargesMissing > 0'), 'pdf não bloqueia por missing');
   assert(!emailRoute.includes('chargesMissing > 0'), 'email não bloqueia por missing');
-  assert(pdfRoute.includes('formatSaleCarneParcelLabel'), 'pdf usa rótulo contrato');
-  assert(emailRoute.includes('formatSaleCarneParcelLabel'), 'email usa rótulo contrato');
+  assert(pdfRoute.includes('buildSaleCarnePdfBytes'), 'pdf delega ao gerador do carnê');
+  assert(emailRoute.includes('buildSaleCarnePdfBytes'), 'email delega ao gerador do carnê');
+  const pdfBuilder = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/saleCarnePdf.ts'),
+    'utf8',
+  );
+  assert(pdfBuilder.includes('formatSaleCarneParcelLabel'), 'o gerador usa o rótulo do contrato');
   assert(panel.includes('kpi.carneReady ?'), 'mostra aviso parcial mesmo ready');
   console.log('OK testPartialCarneUiAndRoutes');
 }

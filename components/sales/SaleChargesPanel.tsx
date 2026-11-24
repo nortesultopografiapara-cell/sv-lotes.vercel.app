@@ -550,8 +550,21 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     setInfo('');
     try {
       if (chargeProvider === 'C6') {
+        const issued = c6Charges.filter((charge) => String(charge.asaasPaymentId || '').trim());
+        for (const charge of issued) {
+          const res = await fetch(
+            `/api/banking/c6/charges?installmentId=${encodeURIComponent(charge.installmentId)}`,
+            { credentials: 'include' },
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Falha ao consultar a cobrança C6.');
+        }
         await loadSummary();
-        setInfo('Situação C6 atualizada a partir dos boletos já registrados. Nenhuma cobrança nova foi emitida.');
+        setInfo(
+          issued.length > 0
+            ? 'Situação C6 atualizada pela consulta oficial. Nenhuma cobrança nova foi emitida.'
+            : 'Nenhum boleto C6 emitido para consultar. Nenhuma cobrança nova foi emitida.',
+        );
         return;
       }
       if (chargeProvider === 'INTER') {
@@ -593,7 +606,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     }
   }
 
-  async function fetchCarneBlob(): Promise<{ blob: Blob; filename: string }> {
+  async function fetchCarneBlob(): Promise<{ blob: Blob; filename: string; incomplete: boolean }> {
     if (!saleId) throw new Error('Venda não identificada');
     const path =
       chargeProvider === 'INTER'
@@ -615,21 +628,26 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     const disposition = res.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
     const filename = match?.[1] || 'carne.pdf';
-    return { blob, filename };
+    const incomplete = res.headers.get('X-Carne-Incomplete') === '1';
+    return { blob, filename, incomplete };
   }
 
   async function downloadCarne() {
     setPdfBusy(true);
     setError('');
     try {
-      const { blob, filename } = await fetchCarneBlob();
+      const { blob, filename, incomplete } = await fetchCarneBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      setInfo('PDF do carnê baixado.');
+      setInfo(
+        incomplete
+          ? 'Carnê incompleto baixado, somente com os boletos C6 já emitidos. Nenhuma cobrança nova foi emitida.'
+          : 'PDF do carnê baixado. Nenhuma cobrança nova foi emitida.',
+      );
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao baixar PDF');
     } finally {
@@ -705,13 +723,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     setEmailBusy(true);
     setError('');
     try {
-      if (chargeProvider === 'C6') {
-        throw new Error('O envio do carnê C6 por e-mail ainda não está disponível. Baixe o PDF.');
-      }
       const path =
         chargeProvider === 'INTER'
           ? '/api/finance/inter/sale-charges/carne-email'
-          : '/api/finance/asaas/sale-charges/carne-email';
+          : chargeProvider === 'C6'
+            ? '/api/finance/c6/sale-charges/carne-email'
+            : '/api/finance/asaas/sale-charges/carne-email';
       const res = await fetch(path, {
         method: 'POST',
         credentials: 'include',
@@ -982,9 +999,19 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
           <div className="flex flex-wrap gap-2">
             {chargeProvider === 'C6' ? (
-              <p className="w-full text-xs text-gray-600">
-                Emissão em lote permanece bloqueada. O botão de cada parcela usa o mesmo fluxo do módulo Cobranças.
-              </p>
+              <>
+                <button
+                  type="button"
+                  disabled
+                  title="A emissão em lote permanece bloqueada nesta homologação. Use o botão da parcela autorizada."
+                  className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                >
+                  Gerar boletos pendentes
+                </button>
+                <p className="w-full text-xs text-gray-600">
+                  Emissão em lote permanece bloqueada. O boleto individual usa o botão da parcela autorizada.
+                </p>
+              </>
             ) : (
             <button
               type="button"
@@ -1034,13 +1061,19 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
           </div>
 
-          {kpi.carneBlockReason ? (
+          {chargeProvider === 'C6' && !kpi.carneReady ? (
+            <p className="text-xs text-amber-800">
+              Nenhum boleto C6 emitido. Emita a parcela autorizada nesta lista. Depois use Gerar carnê em PDF. O download, a impressão e o e-mail não emitem boleto. A capa continua na aba Capa do Carnê.
+            </p>
+          ) : kpi.carneBlockReason ? (
             <p
               className={`text-xs ${
                 kpi.carneReady ? 'text-slate-700' : 'text-amber-800'
               }`}
             >
-              {kpi.carneBlockReason}
+              {chargeProvider === 'C6' && kpi.carneReady
+                ? `${kpi.carneBlockReason} Carnê incompleto: o PDF leva só os boletos já emitidos e não emite os demais.`
+                : kpi.carneBlockReason}
             </p>
           ) : null}
 
