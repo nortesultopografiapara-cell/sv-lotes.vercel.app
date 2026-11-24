@@ -6,7 +6,7 @@ import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Resolve ASAAS_COMPANY vs INTER para a venda (conta financeira). */
+/** Identifica Asaas, Banco Inter ou C6 da conta da venda. A leitura não exige emissão. */
 export async function GET(request: Request) {
   const auth = await authorizeBankingRoute(request);
   if ('error' in auth) return auth.error;

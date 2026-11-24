@@ -26,6 +26,14 @@ import {
 import { normalizeWhatsAppPhone, openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import { ChargeRevenueSplitDistribution, invalidateSaleRevenueSplitView } from '@/components/finance/ChargeRevenueSplitDistribution';
 import { AssistantSaleChargesUiBridge } from '@/components/assistant/AssistantSaleChargesUiBridge';
+import { ChargeInstallmentActions } from '@/components/charges/ChargeInstallmentActions';
+import {
+  buildChargeInstallmentView,
+  computeInstallmentStatus,
+  type ChargeInstallmentView,
+} from '@/lib/charges/chargeInstallmentHelpers';
+import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import type { SaleChargeInstallmentRow } from '@/lib/finance/saleChargesShared';
 
 type SaleChargesPanelProps = {
   saleId: string | null | undefined;
@@ -98,6 +106,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [splitTick, setSplitTick] = useState(0);
   const [resumeJob, setResumeJob] = useState<InterResumeJobView | null>(null);
   const [resumeBusy, setResumeBusy] = useState(false);
+  const [c6Installments, setC6Installments] = useState<SaleChargeInstallmentRow[]>([]);
+  const [c6Charges, setC6Charges] = useState<CompanyAsaasChargeResponse[]>([]);
+  const [c6AuthorizedIds, setC6AuthorizedIds] = useState<string[]>([]);
+  const [c6ActionId, setC6ActionId] = useState<string | null>(null);
+  const [c6Notices, setC6Notices] = useState<Record<string, { uncertain: boolean; message: string }>>({});
 
   const loadSummary = useCallback(async () => {
     if (!saleId) return;
@@ -108,11 +121,17 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         `/api/finance/sale-charges/provider?saleId=${encodeURIComponent(saleId)}`,
         { credentials: 'include' },
       );
-      const providerData = await providerRes.json().catch(() => ({}));
+      const providerData = (await providerRes.json().catch(() => ({}))) as {
+        provider?: string;
+        error?: string;
+      };
+      if (!providerRes.ok) {
+        throw new Error(providerData.error || 'Falha ao identificar a conta recebedora.');
+      }
       const provider =
-        providerRes.ok && providerData.provider === 'INTER'
+        providerData.provider === 'INTER'
           ? 'INTER'
-          : providerRes.ok && providerData.provider === 'C6'
+          : providerData.provider === 'C6'
             ? 'C6'
             : 'ASAAS_COMPANY';
       setChargeProvider(provider);
@@ -120,11 +139,26 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       const summaryPath =
         provider === 'INTER'
           ? `/api/finance/inter/sale-charges?saleId=${encodeURIComponent(saleId)}`
-          : `/api/finance/asaas/sale-charges?saleId=${encodeURIComponent(saleId)}`;
+          : provider === 'C6'
+            ? `/api/finance/c6/sale-charges?saleId=${encodeURIComponent(saleId)}`
+            : `/api/finance/asaas/sale-charges?saleId=${encodeURIComponent(saleId)}`;
       const res = await fetch(summaryPath, { credentials: 'include' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar cobranças');
       setSummary(data.summary as SaleChargesSummary);
+      if (provider === 'C6') {
+        setC6Installments(Array.isArray(data.installments) ? data.installments : []);
+        setC6Charges(Array.isArray(data.charges) ? data.charges : []);
+        setC6AuthorizedIds(
+          Array.isArray(data.emitAuthorizedReceiptIds)
+            ? data.emitAuthorizedReceiptIds.map((id: unknown) => String(id))
+            : [],
+        );
+      } else {
+        setC6Installments([]);
+        setC6Charges([]);
+        setC6AuthorizedIds([]);
+      }
       setResumeJob((data.job as InterResumeJobView | null) || null);
       if (data.summary?.customerEmail) {
         setEmailTo(String(data.summary.customerEmail));
@@ -132,6 +166,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar');
       setSummary(null);
+      setC6Installments([]);
+      setC6Charges([]);
+      setC6AuthorizedIds([]);
     } finally {
       setLoading(false);
     }
@@ -141,7 +178,154 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     void loadSummary();
   }, [loadSummary]);
 
-  const canMutate = !disabled && !generating && !syncing && !pdfBusy && !emailBusy && !resumeBusy;
+  const canMutate = !disabled && !generating && !syncing && !pdfBusy && !emailBusy && !resumeBusy && !c6ActionId;
+
+  const c6OverdueCount = useMemo(() => {
+    if (chargeProvider !== 'C6') return 0;
+    const today = new Date().toISOString().slice(0, 10);
+    return c6Installments.filter((row) => computeInstallmentStatus(row, today) === 'atrasado').length;
+  }, [chargeProvider, c6Installments]);
+
+  const c6Views = useMemo(() => {
+    if (chargeProvider !== 'C6' || !summary) return [] as ChargeInstallmentView[];
+    const today = new Date().toISOString().slice(0, 10);
+    const labels = summary.financialAccountId
+      ? { [summary.financialAccountId]: summary.financialAccountName || 'C6 Bank' }
+      : {};
+    const byInstallment = new Map(c6Charges.map((charge) => [String(charge.installmentId), charge]));
+    return c6Installments.map((row) =>
+      buildChargeInstallmentView(
+        {
+          ...row,
+          customers: summary.customerName ? { name: summary.customerName } : null,
+          projects: summary.projectName ? { name: summary.projectName } : null,
+          blocks: { block_name: summary.quadra, number: summary.lote },
+        },
+        byInstallment.get(String(row.id)) || null,
+        today,
+        labels,
+        { chargeProvider: 'C6' },
+      ),
+    );
+  }, [c6Charges, c6Installments, chargeProvider, summary]);
+
+  function c6ChargeFor(installmentId: string): CompanyAsaasChargeResponse | null {
+    return c6Charges.find((charge) => String(charge.installmentId) === installmentId) || null;
+  }
+
+  async function emitSaleC6Boleto(installmentId: string) {
+    setC6ActionId(installmentId);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/c6/charges', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        emitted?: boolean;
+        reused?: boolean;
+        needsReconciliation?: boolean;
+      };
+      if (!res.ok) throw new Error(json.error || 'Falha ao emitir o boleto C6.');
+      const uncertain =
+        Boolean(json.needsReconciliation) ||
+        /bloqueada|ambígua|segunda emissão/i.test(String(json.message || ''));
+      if (uncertain) {
+        setC6Notices((prev) => ({
+          ...prev,
+          [installmentId]: {
+            uncertain: true,
+            message: json.message || 'A emissão precisa de conferência antes de uma nova tentativa.',
+          },
+        }));
+      } else {
+        setC6Notices((prev) => {
+          const next = { ...prev };
+          delete next[installmentId];
+          return next;
+        });
+      }
+      setInfo(json.message || (json.reused ? 'Boleto C6 já existente reutilizado.' : 'Boleto C6 registrado.'));
+      await loadSummary();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao emitir o boleto C6.');
+    } finally {
+      setC6ActionId(null);
+    }
+  }
+
+  async function refreshSaleC6Charge(installmentId: string) {
+    setC6ActionId(installmentId);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/banking/c6/charges?installmentId=${encodeURIComponent(installmentId)}`,
+        { credentials: 'include' },
+      );
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) throw new Error(json.error || 'Falha ao consultar a cobrança C6.');
+      setInfo(json.message || 'Consulta C6 concluída a partir dos dados oficiais.');
+      await loadSummary();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao consultar a cobrança C6.');
+    } finally {
+      setC6ActionId(null);
+    }
+  }
+
+  async function openSaleC6Pdf(installmentId: string, openInline: boolean) {
+    setC6ActionId(installmentId);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/banking/c6/charges/pdf?installmentId=${encodeURIComponent(installmentId)}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error || 'PDF oficial do C6 indisponível.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (openInline) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `boleto-c6-${installmentId.slice(0, 8)}.pdf`;
+        anchor.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setInfo('PDF devolvido pelo C6. Isso não confirma pagamento nem baixa o caixa.');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao obter o PDF C6.');
+    } finally {
+      setC6ActionId(null);
+    }
+  }
+
+  async function copySaleC6Text(installmentId: string, kind: 'pix' | 'line') {
+    const charge = c6ChargeFor(installmentId);
+    const value =
+      kind === 'pix'
+        ? String(charge?.pixCopyPaste || '').trim()
+        : String(charge?.bankSlipIdentification || '').trim();
+    if (!value) {
+      setError(kind === 'pix' ? 'O C6 ainda não devolveu o código Pix.' : 'O C6 ainda não devolveu a linha digitável.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      setInfo(kind === 'pix' ? 'Código Pix copiado dos dados oficiais do C6.' : 'Linha digitável copiada dos dados oficiais do C6.');
+    } catch {
+      setError('Não foi possível copiar neste navegador.');
+    }
+  }
 
   async function postInterResume(action: 'start' | 'pause' | 'tick', confirmed = true) {
     if (!saleId) return null;
@@ -256,6 +440,10 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }, [summary]);
 
   function openGenerateModal() {
+    if (chargeProvider === 'C6') {
+      setInfo('Emissão em lote permanece bloqueada. Use o botão da parcela autorizada.');
+      return;
+    }
     if (!summary || summary.chargesMissing <= 0) return;
     const defaultQty = clampGenerateMissingChargesQuantity(
       6,
@@ -270,6 +458,10 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }
 
   async function runGenerateMissing() {
+    if (chargeProvider === 'C6') {
+      setError('Emissão C6 em lote permanece bloqueada. Use o botão da parcela autorizada.');
+      return;
+    }
     if (!saleId || !summary || generating) return;
     const quantity = clampGenerateMissingChargesQuantity(
       quantityMode === 'custom' ? customQuantity : Number(quantityMode),
@@ -560,7 +752,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           <h4 className="text-sm font-bold text-gray-900">Cobranças da venda</h4>
           <p className="text-xs text-gray-500">
             Somente parcelas desta venda ·{' '}
-            {chargeProvider === 'INTER' ? 'Banco Inter' : chargeProvider === 'C6' ? 'Banco C6' : 'Asaas Company'}
+            {chargeProvider === 'INTER' ? 'Banco Inter' : chargeProvider === 'C6' ? 'C6 Bank' : 'Asaas Company'}
           </p>
         </div>
         <button
@@ -663,7 +855,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
                         : 'bg-sky-100 text-sky-900'
                   }`}
                 >
-                  {chargeProvider === 'INTER' ? 'Banco Inter' : chargeProvider === 'C6' ? 'Banco C6' : 'Asaas'}
+                  {chargeProvider === 'INTER' ? 'Banco Inter' : chargeProvider === 'C6' ? 'C6 Bank' : 'Asaas'}
                 </span>
               </div>
             </div>
@@ -672,8 +864,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
             <Kpi label="Parcelas" value={String(kpi.totalInstallments)} />
             <Kpi label="Pagas" value={String(kpi.paidInstallments)} />
-            <Kpi label="Cobranças geradas" value={String(kpi.chargesGenerated)} />
-            <Kpi label="Faltantes" value={String(kpi.chargesMissing)} />
+            <Kpi label="Boletos emitidos" value={String(kpi.chargesGenerated)} />
+            <Kpi label="Sem boleto" value={String(kpi.chargesMissing)} />
+            {chargeProvider === 'C6' ? <Kpi label="Vencidas" value={String(c6OverdueCount)} /> : null}
             <Kpi label="Com erro" value={String(kpi.chargesFailed)} />
             <Kpi label="Canceladas" value={String(kpi.chargesCancelled)} />
             <Kpi
@@ -681,13 +874,78 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
               value={kpi.firstDueDate || '—'}
             />
             <Kpi label="Último venc." value={kpi.lastDueDate || '—'} />
-            <Kpi label="Total parcelas" value={formatCurrencyBRL(kpi.totalAmount)} />
-            <Kpi label="Já pago" value={formatCurrencyBRL(kpi.totalPaid)} />
-            <Kpi label="Pendente" value={formatCurrencyBRL(kpi.totalPending)} />
+            <Kpi label="Valor total" value={formatCurrencyBRL(kpi.totalAmount)} />
+            <Kpi label="Valor recebido" value={formatCurrencyBRL(kpi.totalPaid)} />
+            <Kpi label="Saldo a receber" value={formatCurrencyBRL(kpi.totalPending)} />
             <Kpi label="Elegíveis" value={String(kpi.eligibleInstallments)} />
           </div>
 
           <ChargeRevenueSplitDistribution key={splitTick} saleId={saleId} compact />
+
+          {chargeProvider === 'C6' && c6Views.length > 0 ? (
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full text-left text-xs text-gray-800">
+                <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-2 py-2">Parcela</th>
+                    <th className="px-2 py-2">Vencimento</th>
+                    <th className="px-2 py-2">Valor</th>
+                    <th className="px-2 py-2">Conta</th>
+                    <th className="px-2 py-2">Financeiro</th>
+                    <th className="px-2 py-2">Cobrança</th>
+                    <th className="px-2 py-2">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {c6Views.map((view) => {
+                    const charge = c6ChargeFor(view.id);
+                    const paid =
+                      view.installmentStatus === 'pago' || view.installmentStatus === 'paid';
+                    return (
+                      <tr key={view.id} className="border-t border-gray-100 align-top">
+                        <td className="px-2 py-2 font-semibold">{view.parcelLabel}</td>
+                        <td className="px-2 py-2">{view.dueDateLabel}</td>
+                        <td className="px-2 py-2">{formatCurrencyBRL(view.amount)}</td>
+                        <td className="px-2 py-2">{view.financialAccountLabel || kpi.financialAccountName || 'C6 Bank'}</td>
+                        <td className="px-2 py-2">{view.installmentStatusLabel}</td>
+                        <td className="px-2 py-2">{view.chargeStatusLabel}</td>
+                        <td className="px-2 py-2">
+                          <ChargeInstallmentActions
+                            view={view}
+                            charge={charge}
+                            installmentPaid={paid}
+                            integrationActive={kpi.hasFinancialAccount}
+                            companyAsaasEnabled={false}
+                            chargeProvider="C6"
+                            c6Notice={c6Notices[view.id] || null}
+                            ownerReadOnly={disabled}
+                            busy={c6ActionId === view.id}
+                            c6ChargesLoaded
+                            c6EmitAuthorized={c6AuthorizedIds.includes(view.id)}
+                            onGenerate={() => void emitSaleC6Boleto(view.id)}
+                            onRefreshStatus={() => void refreshSaleC6Charge(view.id)}
+                            onCancel={() =>
+                              setInfo('O cancelamento C6 permanece fora desta homologação.')
+                            }
+                            onRegenerate={() =>
+                              setInfo('A segunda emissão permanece bloqueada. Consulte a cobrança já registrada.')
+                            }
+                            onCopyPix={() => void copySaleC6Text(view.id, 'pix')}
+                            onCopyBarcodeLine={() => void copySaleC6Text(view.id, 'line')}
+                            onWhatsApp={() =>
+                              setInfo('O envio do boleto C6 por WhatsApp permanece no carnê, depois da emissão oficial.')
+                            }
+                            onViewPdf={() => void openSaleC6Pdf(view.id, true)}
+                            onDownloadPdf={() => void openSaleC6Pdf(view.id, false)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
 
           {generating && progress ? (
             <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">
@@ -723,6 +981,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           ) : null}
 
           <div className="flex flex-wrap gap-2">
+            {chargeProvider === 'C6' ? (
+              <p className="w-full text-xs text-gray-600">
+                Emissão em lote permanece bloqueada. O botão de cada parcela usa o mesmo fluxo do módulo Cobranças.
+              </p>
+            ) : (
             <button
               type="button"
               disabled={!canMutate || !kpi.hasFinancialAccount || kpi.chargesMissing <= 0}
@@ -731,6 +994,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             >
               {generating ? 'Gerando…' : 'Gerar cobranças faltantes'}
             </button>
+            )}
             {chargeProvider === 'INTER' ? (
               <>
                 <button

@@ -3,9 +3,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
 import { listC6ChargesForInstallments } from '@/lib/banking/c6/c6ChargeList';
-import { C6EmissionNotHomologatedError, isC6ProviderCode } from '@/lib/banking/c6/c6EmitGuard';
+import { isC6ProviderCode } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 import {
   isMissingScheduleGroupColumn,
@@ -272,9 +271,20 @@ export async function getSaleChargesSummary(
       'Esta venda não possui conta financeira configurada. Defina a conta recebedora na aba Dados (ou conta padrão da empresa) antes de gerar cobranças.';
   }
 
-  if (isC6ProviderCode(resolvedProvider) && !(await isC6EmissionActivated(admin, companyId))) {
-    throw new C6EmissionNotHomologatedError();
+  if (!isC6ProviderCode(resolvedProvider)) {
+    try {
+      const identified = await resolveSaleChargesProvider(admin, companyId, saleId);
+      if (identified.provider === 'C6') {
+        resolvedProvider = 'C6';
+        financialAccountName = financialAccountName || identified.financialAccountName;
+        resolvedAccountId = resolvedAccountId || identified.financialAccountId;
+        hasFinancialAccount = hasFinancialAccount || Boolean(identified.financialAccountId);
+      }
+    } catch {
+      // Conta Asaas ou Inter já resolvida acima. A falha de identificação não apaga a leitura.
+    }
   }
+
   if (isC6ProviderCode(resolvedProvider)) {
     charges = await listC6ChargesForInstallments(admin, companyId, installmentIds);
   }
