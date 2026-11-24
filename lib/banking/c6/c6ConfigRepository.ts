@@ -640,3 +640,46 @@ export async function loadC6SecretsForGrantedOperation(
     financialAccountId: resolved.financialAccountId,
   };
 }
+
+/** Credenciais da integração já autorizada. Não exige emission_enabled. */
+export async function loadC6SecretsForIntegration(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+): Promise<{
+  clientId: string;
+  clientSecret: string;
+  certificatePem: string;
+  privateKeyPem: string;
+  environment: BankEnvironment;
+  integrationId: string;
+} | null> {
+  const company = String(companyId || '').trim();
+  const integration = String(integrationId || '').trim();
+  if (!company || !integration) return null;
+  const { data, error } = await admin
+    .from('bank_integrations')
+    .select('id, client_id, environment')
+    .eq('id', integration)
+    .eq('company_id', company)
+    .eq('provider', 'C6')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.id) return null;
+  const environment = String(data.environment || '').toUpperCase();
+  if (environment !== 'SANDBOX' && environment !== 'PRODUCTION') return null;
+  const map = await loadCredentialMap(admin, String(data.id));
+  const oauth = map.get('oauth');
+  const cert = map.get('certificate');
+  if (!oauth || !cert) return null;
+  const parsed = parseC6CertificateCredential(decryptBankingSecret(cert));
+  if (!parsed) return null;
+  return {
+    clientId: String(data.client_id || ''),
+    clientSecret: decryptBankingSecret(oauth),
+    certificatePem: parsed.certificatePem,
+    privateKeyPem: parsed.privateKeyPem,
+    environment,
+    integrationId: String(data.id),
+  };
+}

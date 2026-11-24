@@ -19,8 +19,7 @@ import {
   type C6BoletoFetchFn,
 } from '@/lib/banking/c6/c6BoletoClient';
 import { executeC6BolepixV2Get, executeC6BolepixV2Pdf, C6BolepixV2LiveDisabledError } from '@/lib/banking/c6/c6BolepixV2Client';
-import { readC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
-import { postC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
+import { postC6BolepixV2Charge, readC6BolepixV2Charge, type C6BolepixV2HttpPlan } from '@/lib/banking/c6/c6BolepixV2Transport';
 import {
   isC6BolepixV2LiveReceipt,
   isC6BolepixV2ReceiptCandidate,
@@ -36,7 +35,7 @@ import { c6BolepixRequestFingerprint } from '@/lib/banking/c6/c6BolepixV2Reserva
 import { reconcileC6BolepixV2Query, readC6BolepixV2Payments } from '@/lib/banking/c6/c6BolepixV2Reconcile';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import type { C6AuthCredentials, C6AuthFetchFn } from '@/lib/banking/c6/c6AuthClient';
-import { loadC6SecretsForGrantedOperation } from '@/lib/banking/c6/c6ConfigRepository';
+import { loadC6SecretsForGrantedOperation, loadC6SecretsForIntegration } from '@/lib/banking/c6/c6ConfigRepository';
 import {
   C6_BOLEPIX_OFFICIAL_SPEC_IN_REPO,
   c6PixCopyPasteFromBankSlip,
@@ -67,6 +66,7 @@ export type C6InstallmentChargeOptions = {
   fetchFn?: C6BoletoFetchFn;
   authFetchFn?: C6AuthFetchFn;
   credentials?: C6AuthCredentials;
+  transportRequest?: (plan: C6BolepixV2HttpPlan) => Promise<{ status: number; bodyText: string; contentType?: string | null }>;
   now?: Date;
 };
 
@@ -100,6 +100,43 @@ function dueDateOf(value: unknown): string {
 
 function simulated(options?: C6InstallmentChargeOptions): boolean {
   return options?.allowSimulatedHttp === true && typeof options.fetchFn === 'function';
+}
+
+async function claimUnsentBolepixReservation(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+  installmentId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from('c6_bolepix_reservations')
+    .update({ status: 'PROCESSING', updated_at: new Date().toISOString() })
+    .eq('company_id', companyId)
+    .eq('integration_id', integrationId)
+    .eq('finance_receipt_id', installmentId)
+    .eq('status', 'RESERVED')
+    .is('c6_charge_id', null)
+    .is('last_http_status', null)
+    .select('id');
+  if (error) throw new Error('Não foi possível reservar o Bolepix.');
+  return Array.isArray(data) && data.length === 1;
+}
+
+async function releaseUnsentBolepixReservation(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+  installmentId: string,
+): Promise<void> {
+  await admin
+    .from('c6_bolepix_reservations')
+    .update({ status: 'RESERVED', updated_at: new Date().toISOString() })
+    .eq('company_id', companyId)
+    .eq('integration_id', integrationId)
+    .eq('finance_receipt_id', installmentId)
+    .eq('status', 'PROCESSING')
+    .is('c6_charge_id', null)
+    .is('last_http_status', null);
 }
 
 async function loadReceipt(admin: SupabaseClient, companyId: string, installmentId: string) {
@@ -184,9 +221,10 @@ export async function emitC6InstallmentBoleto(
   const zip = clean(customer.cep || customer.zip_code).replace(/\D/g, '');
 
   const current = await existingCharge(admin, companyId, installmentId);
+  let resumeUnsent = false;
   const bolepixReservation = await admin
     .from('c6_bolepix_reservations')
-    .select('id, status, c6_charge_id, retry_allowed, external_reference_id')
+    .select('id, status, c6_charge_id, retry_allowed, external_reference_id, last_http_status')
     .eq('company_id', companyId)
     .eq('finance_receipt_id', installmentId)
     .maybeSingle();
@@ -197,15 +235,21 @@ export async function emitC6InstallmentBoleto(
     }
   } else if (bolepixReservation.data?.id) {
     const reservedStatus = clean(bolepixReservation.data.status).toUpperCase();
-    const uncertain = reservedStatus === 'UNKNOWN' || Boolean(clean(bolepixReservation.data.c6_charge_id) && reservedStatus !== 'SUCCEEDED');
-    const retryable = reservedStatus === 'FAILED' && bolepixReservation.data.retry_allowed === true && !clean(bolepixReservation.data.c6_charge_id);
-    if (!retryable) {
+    const chargeId = clean(bolepixReservation.data.c6_charge_id);
+    const httpStatus = bolepixReservation.data.last_http_status;
+    const uncertain =
+      reservedStatus === 'UNKNOWN' ||
+      reservedStatus === 'PROCESSING' ||
+      Boolean(chargeId && reservedStatus !== 'SUCCEEDED');
+    const retryable = reservedStatus === 'FAILED' && bolepixReservation.data.retry_allowed === true && !chargeId;
+    const unsent = reservedStatus === 'RESERVED' && !chargeId && httpStatus == null;
+    if (!retryable && !unsent) {
       return {
         emitted: false,
         reused: reservedStatus === 'SUCCEEDED',
         duplicate: true,
         needsReconciliation: uncertain || reservedStatus === 'UNKNOWN',
-        bankSlipId: clean(bolepixReservation.data.c6_charge_id) || null,
+        bankSlipId: chargeId || null,
         digitableLine: null,
         barCode: null,
         pixCopyPaste: null,
@@ -219,6 +263,7 @@ export async function emitC6InstallmentBoleto(
           : 'Esta parcela já tem reserva Bolepix v2.',
       };
     }
+    if (unsent) resumeUnsent = true;
   }
   if (clean(current?.external_id)) {
     return {
@@ -324,6 +369,24 @@ export async function emitC6InstallmentBoleto(
   if (live && !activationGranted) {
     throw new C6EmissionNotHomologatedError();
   }
+  let credentials = options?.credentials
+    ? { ...options.credentials, integrationId: clean(integration.id) }
+    : null;
+  if (live && !credentials) {
+    const secrets = await loadC6SecretsForIntegration(admin, companyId, clean(integration.id));
+    if (!secrets || secrets.environment !== environment || !secrets.clientId || !secrets.clientSecret) {
+      throw new C6BolepixV2LiveDisabledError();
+    }
+    credentials = {
+      companyId,
+      integrationId: secrets.integrationId,
+      environment: secrets.environment,
+      clientId: secrets.clientId,
+      clientSecret: secrets.clientSecret,
+      certificatePem: secrets.certificatePem,
+      privateKeyPem: secrets.privateKeyPem,
+    };
+  }
   const fingerprint = c6BolepixRequestFingerprint({
     amount: amount.toFixed(2),
     dueDate,
@@ -331,21 +394,50 @@ export async function emitC6InstallmentBoleto(
     reference: bolepixReference,
     receiptId: installmentId,
   });
-  const reserved = await admin.rpc('reserve_c6_bolepix', {
-    p_company_id: companyId,
-    p_integration_id: integration.id,
-    p_finance_receipt_id: installmentId,
-    p_external_reference_id: bolepixReference,
-    p_request_fingerprint: fingerprint,
-  });
-  if (reserved.error) throw new Error('Não foi possível reservar o Bolepix.');
-  const reserveReason = clean(reserved.data?.reason);
-  if (reserved.data?.accepted !== true) {
+  if (!resumeUnsent) {
+    const reserved = await admin.rpc('reserve_c6_bolepix', {
+      p_company_id: companyId,
+      p_integration_id: integration.id,
+      p_finance_receipt_id: installmentId,
+      p_external_reference_id: bolepixReference,
+      p_request_fingerprint: fingerprint,
+    });
+    if (reserved.error) throw new Error('Não foi possível reservar o Bolepix.');
+    const reserveReason = clean(reserved.data?.reason);
+    if (reserved.data?.accepted !== true) {
+      return {
+        emitted: false,
+        reused: false,
+        duplicate: reserveReason !== 'needs_reconciliation',
+        needsReconciliation: reserveReason === 'needs_reconciliation',
+        bankSlipId: null,
+        digitableLine: null,
+        barCode: null,
+        pixCopyPaste: null,
+        bolepixSpecInRepo: C6_BOLEPIX_OFFICIAL_SPEC_IN_REPO,
+        amount,
+        dueDate,
+        installmentId,
+        companyId,
+        message:
+          reserveReason === 'needs_reconciliation'
+            ? 'O resultado desta cobrança está incerto. Nenhuma nova emissão foi feita.'
+            : 'Esta parcela já tem reserva Bolepix v2.',
+      };
+    }
+  }
+  const claimed = await claimUnsentBolepixReservation(
+    admin,
+    companyId,
+    clean(integration.id),
+    installmentId,
+  );
+  if (!claimed) {
     return {
       emitted: false,
       reused: false,
-      duplicate: reserveReason !== 'needs_reconciliation',
-      needsReconciliation: reserveReason === 'needs_reconciliation',
+      duplicate: true,
+      needsReconciliation: false,
       bankSlipId: null,
       digitableLine: null,
       barCode: null,
@@ -355,43 +447,45 @@ export async function emitC6InstallmentBoleto(
       dueDate,
       installmentId,
       companyId,
-      message:
-        reserveReason === 'needs_reconciliation'
-          ? 'O resultado desta cobrança está incerto. Nenhuma nova emissão foi feita.'
-          : 'Esta parcela já tem reserva Bolepix v2.',
+      message: 'Outra emissão desta parcela já está em andamento.',
     };
   }
-  const created = await postC6BolepixV2Charge({
-    companyId,
-    integrationId: clean(integration.id),
-    receiptId: installmentId,
-    activationGranted,
-    environment,
-    input: {
+  let created;
+  try {
+    created = await postC6BolepixV2Charge({
+      companyId,
+      integrationId: clean(integration.id),
+      receiptId: installmentId,
+      activationGranted,
       environment,
-      externalReferenceId: bolepixReference,
-      amount,
-      dueDate,
-      description: `Parcela ${clean(receipt.installment_number) || ''}`.trim().slice(0, 100),
-      payer: {
-        name: payer.name,
-        taxId: payer.documentDigits,
-        email: clean(customer.email) || undefined,
-        address: addressLine,
-        neighborhood: clean(customer.neighborhood),
-        city: clean(customer.city),
-        state,
-        zipCode: zip,
+      input: {
+        environment,
+        externalReferenceId: bolepixReference,
+        amount,
+        dueDate,
+        description: `Parcela ${clean(receipt.installment_number) || ''}`.trim().slice(0, 100),
+        payer: {
+          name: payer.name,
+          taxId: payer.documentDigits,
+          email: clean(customer.email) || undefined,
+          address: addressLine,
+          neighborhood: clean(customer.neighborhood),
+          city: clean(customer.city),
+          state,
+          zipCode: zip,
+        },
+        pixKey: prepared.pixKey,
       },
-      pixKey: prepared.pixKey,
-    },
-    fetchFn: options?.fetchFn,
-    allowSimulatedHttp: options?.allowSimulatedHttp,
-    credentials: options?.credentials
-      ? { ...options.credentials, integrationId: clean(integration.id) }
-      : null,
-    now: options?.now,
-  });
+      fetchFn: options?.fetchFn,
+      allowSimulatedHttp: options?.allowSimulatedHttp,
+      credentials,
+      requestFn: options?.transportRequest,
+      now: options?.now,
+    });
+  } catch (error) {
+    await releaseUnsentBolepixReservation(admin, companyId, clean(integration.id), installmentId);
+    throw error;
+  }
   const finished = completionForC6BolepixV2({
     disposition: created.disposition,
     httpStatus: created.httpStatus,

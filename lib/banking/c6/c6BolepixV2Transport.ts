@@ -1,8 +1,7 @@
 /**
  * Transporte HTTPS/mTLS do Bolepix v2.
  * Reutiliza o certificado e o OAuth já usados pelo C6.
- * A chamada real só ocorre com a liberação da empresa e da integração.
- * Nesta fase essa liberação está vazia: a rota não abre socket.
+ * A chamada real só ocorre para a parcela autorizada, com credenciais da própria integração.
  */
 
 import https from 'node:https';
@@ -209,6 +208,7 @@ export async function postC6BolepixV2Charge(params: {
   allowSimulatedHttp?: boolean;
   fetchFn?: FetchFn;
   credentials?: C6AuthCredentials | null;
+  requestFn?: (plan: C6BolepixV2HttpPlan) => Promise<C6BolepixV2FetchResult>;
   now?: Date;
 }): Promise<C6BolepixV2CallResult & { body?: Record<string, unknown>; responseBody: unknown }> {
   if (params.allowSimulatedHttp === true && typeof params.fetchFn === 'function') {
@@ -233,18 +233,40 @@ export async function postC6BolepixV2Charge(params: {
     throw new Error('Integração de outra empresa.');
   }
   const officialBody = buildC6BolepixV2CreateBody(params.input, params.now);
-  const token = await requestC6AccessToken(creds, {
-    allowProduction: creds.environment === 'PRODUCTION',
-  });
-  if (!token.ok) throw new Error('Não foi possível autenticar no C6.');
+  let accessToken = 'token-de-teste';
+  if (!params.requestFn) {
+    const token = await requestC6AccessToken(creds, {
+      allowProduction: creds.environment === 'PRODUCTION',
+    });
+    if (!token.ok) throw new Error('Não foi possível autenticar no C6.');
+    accessToken = token.accessToken;
+  }
   const plan = planC6BolepixV2Request({
     companyId: params.companyId,
     integrationId: params.integrationId,
     creds,
     operation: 'create',
-    accessToken: token.accessToken,
+    accessToken,
     body: officialBody,
   });
+  if (params.requestFn) {
+    try {
+      const response = await params.requestFn(plan);
+      return fromCreateResponse(response.status, response.bodyText, officialBody);
+    } catch {
+      return {
+        ok: false,
+        httpStatus: null,
+        disposition: 'uncertain',
+        fields: null,
+        pdfBytes: null,
+        pdfBody: null,
+        responseBody: null,
+        specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
+        body: officialBody,
+      };
+    }
+  }
   const agent = createC6BolepixMtlsAgent(creds);
   try {
     const response = await httpsOnce(plan, agent);

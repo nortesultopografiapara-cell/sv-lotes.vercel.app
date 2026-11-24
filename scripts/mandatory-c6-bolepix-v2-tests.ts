@@ -1209,12 +1209,391 @@ async function main() {
     testParcelNamed: false,
   });
   assert(configured.phase === 'evp_configurada' && configured.postAllowed === false, 'EVP configurada não é emissão operacional');
+  await proveAuthorizedReceiptReachesTransport();
 
   if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;
 
   console.log('C6_BOLEPIX_V2_OK');
   console.log('SIMULADO: criação, Pix, PDF, consulta, baixa e bloqueio real. Nenhum HTTP ao banco.');
+}
+
+async function proveAuthorizedReceiptReachesTransport() {
+  const { emitC6InstallmentBoleto } = await import('../lib/banking/c6/c6InstallmentCharge');
+  const { C6EmissionNotHomologatedError } = await import('../lib/banking/c6/c6EmitGuard');
+  const { C6BoletoTransportError } = await import('../lib/banking/c6/c6BoletoClient');
+  const { sealC6BolepixPixKey, c6BolepixPixKeyFingerprint } = await import('../lib/banking/c6/c6BolepixV2PixKey');
+  const { serializeC6CertificateCredential } = await import('../lib/banking/c6/c6LocalValidation');
+  const { encryptBankingSecret } = await import('../lib/banking/credentialsCrypto');
+  const { c6BolepixV2ReferenceForInstallment } = await import('../lib/banking/c6/c6BolepixV2Emission');
+  const companyId = 'f26f2331-1885-4ac6-8d0e-4131cc8a8014';
+  const integrationId = 'b5cc1de3-172b-4926-a528-36cebc14db51';
+  const accountId = '7b8663bb-8520-42d5-aa62-f2a30ec84464';
+  const receiptId = '693281b1-4d61-4209-adcc-0b378968aed3';
+  const siblings = [
+    '25c9d7c7-fd95-43b1-97ba-8a1953469e0e',
+    '4f1f6dea-53c1-4a96-91d3-c31d1dd1dca3',
+    '10c81966-7ced-4e09-9f45-df04496dcefe',
+    'fb76a549-399c-4f08-975a-0b0191b096b3',
+  ];
+  const evp = '12345678-1234-4123-8123-1234567890ab';
+  const now = new Date('2026-11-24T15:00:00.000Z');
+  const reference = c6BolepixV2ReferenceForInstallment(receiptId);
+  const route = fs.readFileSync(path.join(process.cwd(), 'app/api/banking/c6/charges/route.ts'), 'utf8');
+  const motor = fs.readFileSync(path.join(process.cwd(), 'lib/banking/c6/c6InstallmentCharge.ts'), 'utf8');
+  assert(
+    route.includes('emitC6InstallmentBoleto(auth.admin, auth.tenantId, installmentId)'),
+    'a rota de produção chama o motor sem transporte simulado',
+  );
+  assert(!route.includes('allowSimulatedHttp'), 'a rota de produção não injeta HTTP simulado');
+  assert(
+    motor.indexOf('loadC6SecretsForIntegration') < motor.indexOf('reserve_c6_bolepix'),
+    'as credenciais são lidas antes da reserva',
+  );
+
+  type Row = Record<string, unknown> & { id?: string };
+  function memory(options: { activation: boolean; credentials: boolean; seedReserved?: boolean }) {
+    const tables: Record<string, Row[]> = {
+      finance_receipts: [
+        {
+          id: receiptId,
+          company_id: companyId,
+          tenant_id: companyId,
+          sale_id: 'sale-1',
+          customer_id: 'customer-1',
+          financial_account_id: accountId,
+          amount: 10,
+          due_date: '2026-11-26',
+          status: 'pendente',
+          installment_number: 0,
+        },
+      ],
+      customers: [
+        {
+          id: 'customer-1',
+          company_id: companyId,
+          name: 'Pagador Teste',
+          cpf_cnpj: '52998224725',
+          email: 'pagador@example.com',
+          address: 'Rua do Teste',
+          address_number: '50',
+          neighborhood: 'Centro',
+          city: 'Araguaina',
+          state_uf: 'TO',
+          cep: '01313000',
+        },
+      ],
+      company_financial_accounts: [
+        { id: accountId, company_id: companyId, bank_integration_id: integrationId, active: true },
+      ],
+      bank_integrations: [
+        {
+          id: integrationId,
+          company_id: companyId,
+          provider: 'C6',
+          environment: 'PRODUCTION',
+          status: 'DRAFT',
+          client_id: 'client-de-teste',
+          metadata: {
+            c6: {
+              emission_enabled: false,
+              bolepix_activation_requested: options.activation,
+            },
+          },
+        },
+      ],
+      bank_credentials: options.credentials
+        ? [
+            {
+              integration_id: integrationId,
+              credential_type: 'oauth',
+              encrypted_payload: encryptBankingSecret('segredo-de-teste'),
+            },
+            {
+              integration_id: integrationId,
+              credential_type: 'certificate',
+              encrypted_payload: encryptBankingSecret(
+                serializeC6CertificateCredential({
+                  certificatePem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
+                  privateKeyPem: '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----',
+                }),
+              ),
+            },
+          ]
+        : [],
+      c6_bolepix_pix_keys: [
+        {
+          company_id: companyId,
+          integration_id: integrationId,
+          encrypted_key: sealC6BolepixPixKey(evp),
+          key_fingerprint: c6BolepixPixKeyFingerprint(evp),
+        },
+      ],
+      c6_bolepix_reservations: options.seedReserved
+        ? [
+            {
+              id: 'res-seed',
+              company_id: companyId,
+              integration_id: integrationId,
+              finance_receipt_id: receiptId,
+              external_reference_id: reference,
+              environment: 'PRODUCTION',
+              status: 'RESERVED',
+              c6_charge_id: null,
+              last_http_status: null,
+              retry_allowed: false,
+            },
+          ]
+        : [],
+      c6_bolepix_official: [],
+      bank_charges: [],
+    };
+    function from(table: string) {
+      const state = {
+        op: 'select' as 'select' | 'insert' | 'update',
+        filters: [] as Array<[string, unknown]>,
+        nulls: [] as Array<[string, unknown]>,
+        payload: null as Row | Row[] | null,
+        one: false,
+      };
+      const matchesOf = () =>
+        (tables[table] || []).filter(
+          (row) =>
+            state.filters.every(([key, value]) => row[key] === value) &&
+            state.nulls.every(([key, value]) => (value === null ? row[key] == null : row[key] === value)),
+        );
+      const exec = () => {
+        const rows = tables[table] || (tables[table] = []);
+        const matches = matchesOf();
+        if (state.op === 'insert' && state.payload && !Array.isArray(state.payload)) {
+          const row = { id: `${table}-${rows.length + 1}`, ...state.payload };
+          rows.push(row);
+          return { data: state.one ? row : [row], error: null };
+        }
+        if (state.op === 'update' && state.payload && !Array.isArray(state.payload)) {
+          for (const row of matches) Object.assign(row, state.payload);
+          return { data: matches, error: null };
+        }
+        if (state.one) return { data: matches[0] || null, error: null };
+        return { data: matches, error: null };
+      };
+      const api = {
+        select() { return api; },
+        eq(key: string, value: unknown) { state.filters.push([key, value]); return api; },
+        is(key: string, value: unknown) { state.nulls.push([key, value]); return api; },
+        insert(payload: Row) { state.op = 'insert'; state.payload = payload; return api; },
+        update(payload: Row) { state.op = 'update'; state.payload = payload; return api; },
+        maybeSingle() { state.one = true; return exec(); },
+        then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+          return Promise.resolve(exec()).then(resolve, reject);
+        },
+      };
+      return api;
+    }
+    const admin = {
+      from,
+      async rpc(name: string, args: Record<string, unknown>) {
+        const rows = tables.c6_bolepix_reservations;
+        const found = rows.find(
+          (row) => row.company_id === args.p_company_id && row.finance_receipt_id === args.p_finance_receipt_id,
+        );
+        if (name === 'reserve_c6_bolepix') {
+          if (!found) {
+            rows.push({
+              id: 'res-1',
+              company_id: args.p_company_id,
+              integration_id: args.p_integration_id,
+              finance_receipt_id: args.p_finance_receipt_id,
+              external_reference_id: args.p_external_reference_id,
+              environment: 'PRODUCTION',
+              status: 'RESERVED',
+              c6_charge_id: null,
+              last_http_status: null,
+              retry_allowed: false,
+            });
+            return { data: { accepted: true, reason: 'reserved' }, error: null };
+          }
+          const retryable =
+            found.status === 'FAILED' &&
+            found.retry_allowed === true &&
+            !found.c6_charge_id &&
+            [400, 401, 403, 404, 422].includes(Number(found.last_http_status));
+          if (retryable) {
+            found.status = 'RESERVED';
+            found.last_http_status = null;
+            found.retry_allowed = false;
+            return { data: { accepted: true, reason: 'retry' }, error: null };
+          }
+          if (found.status === 'UNKNOWN') return { data: { accepted: false, reason: 'needs_reconciliation' }, error: null };
+          return { data: { accepted: false, reason: 'blocked' }, error: null };
+        }
+        if (!found || ['SUCCEEDED', 'FAILED', 'UNKNOWN'].includes(String(found.status))) {
+          return { data: { accepted: false, reason: 'blocked' }, error: null };
+        }
+        const status = String(args.p_status || '');
+        found.status = status;
+        found.last_http_status = args.p_http_status == null ? null : Number(args.p_http_status);
+        found.c6_charge_id = status === 'FAILED' ? null : args.p_c6_charge_id || null;
+        found.retry_allowed =
+          status === 'FAILED' &&
+          args.p_retry_allowed === true &&
+          [400, 401, 403, 404, 422].includes(Number(found.last_http_status));
+        return { data: { accepted: true, reason: status }, error: null };
+      },
+    };
+    return { admin, tables };
+  }
+
+  function officialResponse() {
+    return JSON.stringify({
+      id: 'slip-homologacao',
+      external_reference_id: reference,
+      status: 'CREATED',
+      amount: 10,
+      due_date: '2026-11-26',
+      payment_method: {
+        bank_slip: {
+          billing_scheme: '15',
+          digitable_line: '33690000000000000000000000000000000000000000000',
+          bar_code: '33690000000000000000000000000000000000000000',
+        },
+        pix: { type: 'EVP', qr_code: '00020126' },
+      },
+    });
+  }
+
+  const ready = memory({ activation: true, credentials: true });
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  const result = await emitC6InstallmentBoleto(ready.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async (plan) => {
+      calls.push({ url: plan.url, method: plan.method, body: plan.body || '' });
+      return { status: 201, bodyText: officialResponse(), contentType: 'application/json' };
+    },
+  });
+  assert(result.emitted && calls.length === 1, 'a entrada autorizada chega ao transporte');
+  const sent = JSON.parse(calls[0].body) as {
+    amount: number;
+    due_date: string;
+    payment_method: { bank_slip: { billing_scheme: string }; pix: { type: string; key: string } };
+  };
+  assert(calls[0].method === 'POST' && calls[0].url === 'https://baas-api.c6bank.info/v2/bank_slips/', 'o transporte usa POST /v2/bank_slips/');
+  assert(!calls[0].url.includes('/v1/'), 'o transporte não usa a API v1');
+  assert(
+    sent.amount === 10 &&
+      sent.due_date === '2026-11-26' &&
+      sent.payment_method.bank_slip.billing_scheme === '15' &&
+      sent.payment_method.pix.type === 'EVP' &&
+      sent.payment_method.pix.key === evp,
+    'o payload oficial leva valor, vencimento, carteira 15 e a EVP',
+  );
+  assert(ready.tables.finance_receipts[0].amount === 10, 'a parcela não é alterada');
+  const again = await emitC6InstallmentBoleto(ready.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      calls.push({ url: '', method: '', body: '' });
+      return { status: 201, bodyText: officialResponse(), contentType: 'application/json' };
+    },
+  });
+  assert(!again.emitted && calls.length === 1, 'a segunda tentativa não repete o POST');
+
+  const missingGrant = memory({ activation: false, credentials: true });
+  let missingGrantError = false;
+  try {
+    await emitC6InstallmentBoleto(missingGrant.admin as never, companyId, receiptId, {
+      now,
+      transportRequest: async () => {
+        throw new Error('transporte indevido');
+      },
+    });
+  } catch (error) {
+    missingGrantError = error instanceof C6EmissionNotHomologatedError;
+  }
+  assert(missingGrantError && missingGrant.tables.c6_bolepix_reservations.length === 0, 'sem autorização administrativa não há reserva nem transporte');
+
+  const missingSecrets = memory({ activation: true, credentials: false });
+  let missingSecretsError = false;
+  try {
+    await emitC6InstallmentBoleto(missingSecrets.admin as never, companyId, receiptId, {
+      now,
+      transportRequest: async () => {
+        throw new Error('transporte indevido');
+      },
+    });
+  } catch (error) {
+    missingSecretsError = error instanceof C6BolepixV2LiveDisabledError;
+  }
+  assert(missingSecretsError && missingSecrets.tables.c6_bolepix_reservations.length === 0, 'sem credencial a trava ocorre antes da reserva');
+
+  for (const sibling of siblings) {
+    let blocked = false;
+    try {
+      await emitC6InstallmentBoleto(ready.admin as never, companyId, sibling, { now });
+    } catch (error) {
+      blocked = error instanceof C6EmissionNotHomologatedError;
+    }
+    assert(blocked, 'as outras parcelas continuam bloqueadas');
+  }
+  let otherCompany = false;
+  try {
+    await emitC6InstallmentBoleto(ready.admin as never, '00000000-0000-4000-8000-000000000099', receiptId, { now });
+  } catch (error) {
+    otherCompany = error instanceof C6EmissionNotHomologatedError;
+  }
+  assert(otherCompany && calls.length === 1, 'outra empresa não chega ao transporte');
+
+  const raced = memory({ activation: true, credentials: true, seedReserved: true });
+  let raceCalls = 0;
+  const first = emitC6InstallmentBoleto(raced.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      raceCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { status: 201, bodyText: officialResponse(), contentType: 'application/json' };
+    },
+  });
+  const second = emitC6InstallmentBoleto(raced.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      raceCalls += 1;
+      return { status: 201, bodyText: officialResponse(), contentType: 'application/json' };
+    },
+  });
+  await Promise.all([first, second]);
+  assert(raceCalls === 1, 'duas tentativas simultâneas geram um único POST');
+
+  const timed = memory({ activation: true, credentials: true });
+  let timeoutCalls = 0;
+  const timedResult = await emitC6InstallmentBoleto(timed.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      timeoutCalls += 1;
+      throw new C6BoletoTransportError('TIMEOUT', 'Timeout ao contatar o C6 Bank (boleto).');
+    },
+  });
+  assert(timedResult.needsReconciliation && timeoutCalls === 1, 'timeout fica incerto e não repete');
+  const timedAgain = await emitC6InstallmentBoleto(timed.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      timeoutCalls += 1;
+      return { status: 201, bodyText: officialResponse(), contentType: 'application/json' };
+    },
+  });
+  assert(timedAgain.needsReconciliation && timeoutCalls === 1, 'resultado incerto bloqueia nova emissão');
+
+  const rejected = memory({ activation: true, credentials: true });
+  let rejectedCalls = 0;
+  const rejectedResult = await emitC6InstallmentBoleto(rejected.admin as never, companyId, receiptId, {
+    now,
+    transportRequest: async () => {
+      rejectedCalls += 1;
+      return { status: 422, bodyText: '{}', contentType: 'application/json' };
+    },
+  });
+  assert(
+    !rejectedResult.emitted && rejectedResult.message.includes('recusou') && rejectedCalls === 1,
+    'rejeição bancária não dispara outra emissão',
+  );
 }
 
 main().catch((error) => {
