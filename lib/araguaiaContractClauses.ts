@@ -27,6 +27,17 @@ import {
 
 const extenso = require('extenso');
 
+/** Redação autorizada para venda registrada como parcelas fixas. */
+export const ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE =
+  'As parcelas pactuadas são fixas, não estando sujeitas a reajuste monetário periódico durante o prazo contratual, ressalvados os encargos decorrentes de eventual inadimplemento, conforme previsto neste instrumento.';
+
+/**
+ * IPCA e INCC não têm cláusula homologada neste modelo.
+ * O gerador não improvisa periodicidade nem reutiliza o texto do IGP-M.
+ */
+export const ARAGUAIA_UNSUPPORTED_INSTALLMENT_CORRECTION_MESSAGE =
+  'O modelo ARAGUAIA não possui cláusula homologada de reajuste para IPCA ou INCC. O contrato não será gerado com o texto do IGP-M nem como parcelas fixas.';
+
 function esc(value: string): string {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -214,9 +225,30 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ? strong(vencimento)
       : vencimento;
 
-  // Redação literal do contrato original (itens 1 e 2). Item 3 permanece IGP-M/FGV.
+  if (
+    ctx.installmentCorrectionType === 'IPCA' ||
+    ctx.installmentCorrectionType === 'INCC'
+  ) {
+    throw new Error(
+      `${ARAGUAIA_UNSUPPORTED_INSTALLMENT_CORRECTION_MESSAGE} Modalidade registrada: ${ctx.installmentCorrectionType}.`,
+    );
+  }
+
+  // IGPM e modalidade ausente: redação literal homologada. FIXED omite o reajuste anual.
+  // Item 3 permanece a cláusula de mora, com multa e juros.
+  const fixedInstallments = ctx.installmentCorrectionType === 'FIXED';
   const igpmItem1 = 'Índice Geral de Preços de Mercado – IGP-M';
   const igpmItem2 = 'Índice Geral de Preços do Mercado – IGP-M';
+  const igpmAnnualItem1 = `, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
+    igpmItem1,
+  )}, ou outro que venha substituí-lo.`;
+  const igpmAnnualItem2 = `, sendo que as parcelas serão reajustadas anualmente mediante a aplicação da variação positiva do ${esc(
+    igpmItem2,
+  )}, ou outro que o substitua.`;
+  const item1Closing = fixedInstallments ? '.' : igpmAnnualItem1;
+  const item2Closing = fixedInstallments
+    ? `. ${ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE}`
+    : igpmAnnualItem2;
   const V = ctx.vendorInflection;
   const B = ctx.buyerInflection;
   const ciente = B.count === 1 ? 'ciente' : 'cientes';
@@ -286,9 +318,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
               ),
               parcelsCountPhrase: parcelsCountPhrase(ctx.qtdParcelas),
               schedulePhrase: ctx.titleTransferSchedulePhrase,
-              reajusteSuffix: `, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
-                igpmItem1,
-              )}, ou outro que venha substituí-lo.`,
+              reajusteSuffix: item1Closing,
               hasPaid: (ctx.titleTransferFinance?.total_paid || 0) > 0,
             })
           : hasLotSwapContractFinance(ctx.lotSwapFinance)
@@ -305,9 +335,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
               parcelsCountPhrase: parcelsCountPhrase(ctx.qtdParcelas),
               schedulePhrase: ctx.lotSwapSchedulePhrase,
               firstDueHtml: vencimentoHtml,
-              reajusteSuffix: `, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
-                igpmItem1,
-              )}, ou outro que venha substituí-lo.`,
+              reajusteSuffix: item1Closing,
               hasCreditedPayment: lotSwapContractUsesContinuityPayment(
                 ctx.lotSwapFinance,
               ),
@@ -323,9 +351,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
         )} parcelas mensais e consecutivas no valor de ${moneyPhrase(
           ctx.parcelaFmt,
           ctx.parcelaExtenso,
-        )}, vencendo a primeira em ${vencimentoHtml}, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
-          igpmItem1,
-        )}, ou outro que venha substituí-lo.`,
+        )}, vencendo a primeira em ${vencimentoHtml}${item1Closing}`,
       )}
       ${itemP(
         `<strong>1.1</strong> – O pagamento, contudo, por opção ${B.ofPhrase}, com anuência ${V.of} ${V.label}, também poderá ser feito em parcela única, mantendo-se as partes obrigadas às demais condições e encargos estabelecidos neste contrato.`,
@@ -340,9 +366,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
         ),
       )}
       ${itemP(
-        `<strong>2</strong> – O pagamento das parcelas descritas no item 1 desta cláusula será feito mediante a emissão de boletos bancários, sendo que as parcelas serão reajustadas anualmente mediante a aplicação da variação positiva do ${esc(
-          igpmItem2,
-        )}, ou outro que o substitua.`,
+        `<strong>2</strong> – O pagamento das parcelas descritas no item 1 desta cláusula será feito mediante a emissão de boletos bancários${item2Closing}`,
       )}
       ${itemP(
         `<strong>3</strong> – Ocorrendo impontualidade no pagamento de qualquer das parcelas do parcelamento descrito no item 2 deste contrato, a quantia a ser paga será atualizada monetariamente mediante a aplicação do Índice Geral de Preços de Mercado – IGP-M/FGV, desde a data do vencimento da parcela até a data de efetivo pagamento, acrescido ainda de multa moratória de <strong>2%</strong> (dois por cento) calculada sobre o valor total da parcela, acrescida de juros moratórios de <strong>1%</strong> (um por cento) ao mês <em>pro rata die</em>, calculados em <strong>0,0333%</strong> (zero vírgula trinta e três) por dia de atraso, aplicado sobre o valor da parcela devida.`,

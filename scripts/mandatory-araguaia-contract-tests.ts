@@ -22,9 +22,13 @@ import { formatAraguaiaAreaExtenso } from '../lib/araguaiaContractContext';
 import { formatAraguaiaMetersExtenso } from '../lib/araguaiaContractLot';
 import {
   ARAGUAIA_CONTRACT_TITLE,
+  ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE,
   ARAGUAIA_LEGAL_MARKER,
+  ARAGUAIA_UNSUPPORTED_INSTALLMENT_CORRECTION_MESSAGE,
   buildAraguaiaClausesHtml,
 } from '../lib/araguaiaContractClauses';
+import { resolvePersistInstallmentCorrectionType } from '../lib/saleFinanceConfig';
+import { splitInstallmentAmounts } from '../lib/saleInstallmentCalc';
 import { generateAraguaiaContract } from '../lib/araguaiaContractTemplate';
 import { buildAraguaiaContractContext } from '../lib/araguaiaContractContext';
 import { buildContractPdfChromeFromTenant } from '../lib/contractPdfPostProcess';
@@ -1220,6 +1224,112 @@ function testPartyInflection() {
   );
 }
 
+function contractFor(correction: unknown, projectExtra?: Record<string, unknown>) {
+  return generateContractHTML({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: { ...PROJECT, ...projectExtra },
+    block: BLOCK,
+    sale: { ...SALE, installment_correction_type: correction },
+    financeReceipts: RECEIPTS,
+  });
+}
+
+function testInstallmentCorrectionModalities() {
+  const fixed = contractFor('FIXED');
+  assert(fixed.includes(ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE), 'FIXED declara parcelas fixas');
+  assert(!fixed.includes('reajustadas anualmente'), 'FIXED sem reajuste anual do item 2');
+  assert(
+    !fixed.includes('reajustamento monetário aplicado anualmente'),
+    'FIXED sem reajuste anual do item 1',
+  );
+  assert(!fixed.includes('12 meses antecedentes'), 'FIXED sem periodicidade anual');
+  assert(fixed.includes('multa moratória'), 'FIXED preserva multa');
+  assert(fixed.includes('juros moratórios'), 'FIXED preserva juros');
+  assert(fixed.includes('<strong>2%</strong>'), 'FIXED multa de 2%');
+  assert(fixed.includes('<strong>1%</strong>'), 'FIXED juros de 1% ao mês');
+  assert(fixed.includes('80.000,00'), 'FIXED preserva o valor da venda');
+  assert(fixed.includes('2.916,67'), 'FIXED preserva o valor da parcela');
+
+  const igpm = contractFor('IGPM');
+  assert(
+    igpm.includes('Índice Geral de Preços de Mercado – IGP-M'),
+    'IGPM mantém o item 1 homologado',
+  );
+  assert(igpm.includes('reajustadas anualmente'), 'IGPM mantém o item 2 homologado');
+  assert(igpm.includes('12 meses antecedentes'), 'IGPM mantém a periodicidade de 12 meses');
+  assert(!igpm.includes(ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE), 'IGPM sem frase de parcelas fixas');
+  assert(igpm.includes('80.000,00') && igpm.includes('2.916,67'), 'IGPM preserva os mesmos valores');
+  assert(
+    splitInstallmentAmounts(70000, 24)[0] === 2916.67,
+    'cálculo das parcelas permanece a divisão nominal do saldo',
+  );
+
+  const editedToFixed = contractFor('FIXED');
+  const editedToIgpm = contractFor('IGPM');
+  assert(
+    editedToFixed.includes(ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE) &&
+      editedToIgpm.includes('reajustadas anualmente'),
+    'regeneração segue a modalidade atual da venda',
+  );
+
+  const projectSuggestsIgpm = contractFor('FIXED', {
+    lf_contract_config_json: {
+      sale_finance_config: { installment_correction_type: 'IGPM' },
+    },
+  });
+  assert(
+    projectSuggestsIgpm.includes(ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE),
+    'modalidade da venda prevalece sobre a sugestão do empreendimento',
+  );
+  assert(
+    resolvePersistInstallmentCorrectionType({
+      contractModel: 'ARAGUAIA',
+      selected: 'FIXED',
+      projectLfConfig: {
+        sale_finance_config: { installment_correction_type: 'IGPM' },
+      },
+    }) === 'FIXED',
+    'persistência da venda fixa não é sobrescrita pelo empreendimento',
+  );
+
+  const absent = contractFor(null);
+  assert(absent.includes('reajustadas anualmente'), 'modalidade ausente preserva o texto legado');
+  assert(
+    !absent.includes(ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE),
+    'modalidade ausente não é convertida para parcelas fixas',
+  );
+
+  for (const modality of ['IPCA', 'INCC'] as const) {
+    let blocked = false;
+    try {
+      contractFor(modality);
+    } catch (error) {
+      blocked =
+        error instanceof Error &&
+        error.message.includes(ARAGUAIA_UNSUPPORTED_INSTALLMENT_CORRECTION_MESSAGE) &&
+        error.message.includes(modality);
+    }
+    assert(blocked, `${modality} não é impresso como IGP-M nem como parcelas fixas`);
+  }
+
+  for (const rel of [
+    'lib/recantoPrimaveraContractClauses.ts',
+    'lib/menesesContractClauses.ts',
+    'lib/mundoNovoContractClauses.ts',
+    'lib/estrelaDoSulContractClauses.ts',
+    'lib/banking/c6/c6InstallmentCharge.ts',
+    'lib/banking/inter/interSaleChargeService.ts',
+    'lib/finance/asaasCompanyChargeService.ts',
+  ]) {
+    const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    assert(
+      !src.includes(ARAGUAIA_FIXED_INSTALLMENTS_SENTENCE),
+      `${rel} permanece sem a redação nova do Araguaia`,
+    );
+  }
+}
+
 function main() {
   testModelRegistration();
   testSellersResolution();
@@ -1234,6 +1344,7 @@ function main() {
   testAraguaiaClauseNumbering();
   testAraguaiaPackNoContinuousForceBreak();
   testPartyInflection();
+  testInstallmentCorrectionModalities();
   console.log('mandatory-araguaia-contract-tests: all passed');
 }
 

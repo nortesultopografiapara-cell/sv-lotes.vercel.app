@@ -21,7 +21,8 @@ import {
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import {
   formatInstallmentCorrectionLabel,
-  resolveSaleInstallmentCorrectionType,
+  parseInstallmentCorrectionType,
+  type InstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import {
   formatSellerCpfDisplay,
@@ -123,6 +124,11 @@ export type AraguaiaContractContext = {
   parcelaExtenso: string;
   primeiroVencimentoFmt: string;
   primeiroVencimentoLong: string;
+  /**
+   * Modalidade gravada na venda. Null preserva o texto legado do IGP-M
+   * e não converte contrato antigo sem modalidade para parcelas fixas.
+   */
+  installmentCorrectionType: InstallmentCorrectionType | null;
   correctionLabel: string;
   lotSwapFinance: LotSwapContractFinanceSnapshot | null;
   lotSwapSchedulePhrase: string;
@@ -434,8 +440,12 @@ export function buildAraguaiaContractContext(
   const primeiroVencimentoLong =
     formatContractDueDateLongBr(primeiroVencimentoRaw) || primeiroVencimentoFmt;
 
-  const correctionType = resolveSaleInstallmentCorrectionType(sale);
-  const correctionLabel = formatInstallmentCorrectionLabel(correctionType);
+  const installmentCorrectionType = parseInstallmentCorrectionType(
+    sale.installment_correction_type,
+  );
+  const correctionLabel = installmentCorrectionType
+    ? formatInstallmentCorrectionLabel(installmentCorrectionType)
+    : '';
 
   const broker = resolveBroker(sale);
   if (!broker.name) pendingFields.push('corretor');
@@ -510,6 +520,7 @@ export function buildAraguaiaContractContext(
     parcelaExtenso: currencyExtenso(valorParcela),
     primeiroVencimentoFmt,
     primeiroVencimentoLong,
+    installmentCorrectionType,
     correctionLabel,
     lotSwapFinance: swapFinance,
     lotSwapSchedulePhrase: swapFinance
