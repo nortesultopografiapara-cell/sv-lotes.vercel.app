@@ -25,6 +25,7 @@ export type C6BankConfigPublic = {
   financialAccountId?: string | null;
   active: boolean;
   emissionEnabled: boolean;
+  bolepixActivationRequested: boolean;
   boletoIntent: boolean;
   bolepixIntent: boolean;
   webhook?: C6WebhookPublicStatus;
@@ -72,6 +73,7 @@ export const EMPTY_C6_BANK_CONFIG = (companyId: string): C6BankConfigPublic => (
   financialAccountId: null,
   active: false,
   emissionEnabled: false,
+  bolepixActivationRequested: false,
   boletoIntent: false,
   bolepixIntent: false,
 });

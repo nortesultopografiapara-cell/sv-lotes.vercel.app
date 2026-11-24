@@ -5,7 +5,9 @@
 import { isC6CompanyOperationEnabled } from '../lib/banking/c6/c6CompanyAccess';
 import {
   isC6EmissionActivated,
+  readC6BolepixActivationRequested,
   readC6EmissionEnabled,
+  requestC6BolepixCompanyActivation,
   setC6CompanyEmissionEnabled,
 } from '../lib/banking/c6/c6EmissionAuthorization';
 import { throwIfC6EmissionAttempt } from '../lib/banking/c6/c6EmitGuard';
@@ -45,12 +47,14 @@ function memory() {
     company_financial_accounts: [
       { id: 'fa-a', company_id: COMPANY_A, bank_integration_id: 'int-a', active: true },
     ],
+    c6_bolepix_pix_keys: [],
     audit_logs: [],
   };
 
   function from(table: string) {
     const filters: Array<[string, unknown]> = [];
     let patch: Row | null = null;
+    let single = false;
     const query = {
       select() {
         return query;
@@ -67,12 +71,19 @@ function memory() {
         tables[table].push(row);
         return Promise.resolve({ data: row, error: null });
       },
-      then(resolve: (value: { data: Row[]; error: null }) => void) {
+      maybeSingle() {
+        single = true;
+        return query;
+      },
+      then(resolve: (value: { data: Row | Row[] | null; error: null }) => void) {
         const matched = tables[table].filter((row) => filters.every(([key, value]) => row[key] === value));
         if (patch) {
           for (const row of matched) Object.assign(row, patch);
         }
-        resolve({ data: matched.map((row) => ({ ...row })), error: null });
+        resolve({
+          data: single ? matched[0] || null : matched.map((row) => ({ ...row })),
+          error: null,
+        });
       },
     };
     return query;
@@ -113,6 +124,37 @@ async function main() {
   const meta = db.tables.bank_integrations[0].metadata as { c6: Record<string, unknown> };
   assert(meta.c6.webhook_enabled === false && meta.c6.settlement_enabled === false, 'webhook e liquidação não são ligados');
   assert(db.tables.audit_logs.length === 1, 'a ativação gera auditoria');
+
+  const requested = memory();
+  let missingPix = false;
+  try {
+    await requestC6BolepixCompanyActivation(requested as never, COMPANY_A);
+  } catch {
+    missingPix = true;
+  }
+  assert(missingPix, 'sem EVP a solicitação não é gravada');
+  assert(readC6EmissionEnabled(requested.tables.bank_integrations[0].metadata) === false, 'a solicitação recusada não liga emissão');
+  requested.tables.c6_bolepix_pix_keys.push({
+    company_id: COMPANY_A,
+    integration_id: 'int-a',
+    key_fingerprint: 'abc123def456',
+  });
+  await requestC6BolepixCompanyActivation(requested as never, COMPANY_A);
+  const requestedMeta = requested.tables.bank_integrations[0].metadata as { c6: Record<string, unknown> };
+  assert(readC6BolepixActivationRequested(requestedMeta) === true, 'a solicitação fica na empresa autenticada');
+  assert(requestedMeta.c6.emission_enabled === false, 'solicitar não liga a emissão real');
+  assert((await isC6EmissionActivated(requested as never, COMPANY_A)) === false, 'a solicitação não autoriza chamada bancária');
+  let foreignRequest = false;
+  try {
+    await requestC6BolepixCompanyActivation(requested as never, COMPANY_B);
+  } catch {
+    foreignRequest = true;
+  }
+  assert(foreignRequest, 'outra empresa não recebe a solicitação');
+  assert(
+    readC6BolepixActivationRequested(requested.tables.bank_integrations[1].metadata) === false,
+    'a solicitação não atravessa empresa',
+  );
 
   console.log('C6_COMPANY_EMISSION_AUTH_OK');
 }

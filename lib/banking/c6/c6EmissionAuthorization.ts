@@ -10,6 +10,7 @@ type IntegrationRow = {
   company_id: string;
   provider: string;
   client_id: string | null;
+  status?: string | null;
   metadata: unknown;
 };
 
@@ -21,6 +22,20 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 export function readC6EmissionEnabled(metadata: unknown): boolean {
   const box = asRecord(asRecord(metadata)?.c6);
   return box?.emission_enabled === true;
+}
+
+export function readC6BolepixActivationRequested(metadata: unknown): boolean {
+  const box = asRecord(asRecord(metadata)?.c6);
+  return box?.bolepix_activation_requested === true;
+}
+
+function metadataWithActivationRequest(metadata: unknown, requested: boolean): Record<string, unknown> {
+  const base = { ...(asRecord(metadata) || {}) };
+  const c6 = { ...(asRecord(base.c6) || {}) };
+  c6.bolepix_activation_requested = requested === true;
+  if (requested) c6.bolepix_activation_requested_at = new Date().toISOString();
+  base.c6 = c6;
+  return base;
 }
 
 function metadataWithEmission(metadata: unknown, enabled: boolean): Record<string, unknown> {
@@ -41,7 +56,7 @@ async function loadOwnC6Integration(
   if (!id) return null;
   const { data, error } = await admin
     .from('bank_integrations')
-    .select('id, company_id, provider, client_id, metadata')
+    .select('id, company_id, provider, client_id, status, metadata')
     .eq('company_id', id)
     .eq('provider', 'C6');
   if (error) throw new Error(error.message);
@@ -137,4 +152,94 @@ export async function setC6CompanyEmissionEnabled(
   } catch (auditError) {
     console.warn('[c6 emission] audit', auditError);
   }
+}
+
+export async function readOwnC6PixConfigured(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<boolean> {
+  const row = await loadOwnC6Integration(admin, companyId);
+  if (!row) return false;
+  return hasOwnPixKey(admin, companyId, row.id);
+}
+
+async function hasOwnPixKey(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from('c6_bolepix_pix_keys')
+    .select('key_fingerprint')
+    .eq('company_id', companyId)
+    .eq('integration_id', integrationId)
+    .maybeSingle();
+  if (error) throw new Error('Não foi possível verificar a chave Pix.');
+  return /^[a-f0-9]{12}$/.test(String(data?.key_fingerprint || ''));
+}
+
+/**
+ * Registra o pedido da empresa autenticada. Não liga emission_enabled e não abre o POST.
+ */
+export async function requestC6BolepixCompanyActivation(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<void> {
+  const row = await loadOwnC6Integration(admin, companyId);
+  if (!row) throw new Error('A empresa precisa de uma integração C6 própria.');
+  if (String(row.status || '').toUpperCase() === 'DISABLED') {
+    throw new Error('A integração C6 está desativada.');
+  }
+  if (!String(row.client_id || '').trim()) throw new Error('Informe o Client ID.');
+  if (!(await hasOwnCredentials(admin, row.id))) {
+    throw new Error('Salve o Client Secret e o certificado.');
+  }
+  if (!(await hasOwnLinkedAccount(admin, companyId, row.id))) {
+    throw new Error('Vincule uma conta financeira desta empresa antes de solicitar a ativação.');
+  }
+  if (!(await hasOwnPixKey(admin, companyId, row.id))) {
+    throw new Error('Cadastre a chave Pix EVP antes de solicitar a ativação.');
+  }
+  const { data, error } = await admin
+    .from('bank_integrations')
+    .update({
+      metadata: metadataWithActivationRequest(row.metadata, true),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', row.id)
+    .eq('company_id', companyId)
+    .eq('provider', 'C6')
+    .select('id');
+  if (error || !data?.length) throw new Error('Não foi possível registrar a solicitação desta empresa.');
+  try {
+    await admin.from('audit_logs').insert({
+      tenant_id: companyId,
+      company_id: companyId,
+      module: 'FINANCE',
+      action: 'C6_BOLEPIX_ACTIVATION_REQUESTED',
+      reference_id: row.id,
+      description: 'Administrador solicitou a ativação Bolepix desta empresa. O POST real permanece desligado.',
+    });
+  } catch (auditError) {
+    console.warn('[c6 emission] audit', auditError);
+  }
+}
+
+export async function clearC6BolepixActivationRequest(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<void> {
+  const row = await loadOwnC6Integration(admin, companyId);
+  if (!row) throw new Error('A empresa precisa de uma integração C6 própria.');
+  const { data, error } = await admin
+    .from('bank_integrations')
+    .update({
+      metadata: metadataWithActivationRequest(row.metadata, false),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', row.id)
+    .eq('company_id', companyId)
+    .eq('provider', 'C6')
+    .select('id');
+  if (error || !data?.length) throw new Error('Não foi possível atualizar a solicitação desta empresa.');
 }

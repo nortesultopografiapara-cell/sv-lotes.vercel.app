@@ -987,6 +987,78 @@ async function main() {
   assert(panel.includes('financialAccountId'), 'o cadastro da chave continua exigindo a conta');
   assert(panel.includes('A emissão real permanece desligada'), 'o painel não promete emissão ligada');
   assert(!panel.includes('emissionEnabled || !pixKey'), 'a chave não fica bloqueada pela emissão desligada');
+  assert(panel.includes('listC6BolepixActivationPending'), 'o painel lista cada requisito pendente');
+  assert(panel.includes('emissionPending.map'), 'cada requisito pendente aparece na tela');
+  assert(!panel.includes('Emissão ATIVADA'), 'o painel não anuncia emissão ativada');
+  assert(!panel.includes('Emissão ativada somente para esta empresa.'), 'o sucesso não afirma que o POST abriu');
+  const openApiState = await import('../lib/banking/c6/c6BolepixV2OpenApi');
+  const waitingPassword = openApiState.listC6BolepixActivationPending({
+    loading: false,
+    persistBlocked: false,
+    integrationPresent: true,
+    integrationDisabled: false,
+    clientIdConfigured: true,
+    hasClientSecret: true,
+    hasCertificate: true,
+    beneficiaryLinked: true,
+    pixConfigured: true,
+    passwordProvided: false,
+  });
+  assert(
+    waitingPassword.length === 1 && waitingPassword[0].includes('senha do administrador'),
+    'com a EVP pronta o botão espera somente a senha',
+  );
+  const missingAccount = openApiState.listC6BolepixActivationPending({
+    loading: false,
+    persistBlocked: false,
+    integrationPresent: true,
+    integrationDisabled: false,
+    clientIdConfigured: true,
+    hasClientSecret: true,
+    hasCertificate: true,
+    beneficiaryLinked: false,
+    pixConfigured: true,
+    passwordProvided: true,
+  });
+  assert(missingAccount.some((item) => item.includes('conta financeira')), 'sem conta o botão continua bloqueado');
+  const ready = openApiState.listC6BolepixActivationPending({
+    loading: false,
+    persistBlocked: false,
+    integrationPresent: true,
+    integrationDisabled: false,
+    clientIdConfigured: true,
+    hasClientSecret: true,
+    hasCertificate: true,
+    beneficiaryLinked: true,
+    pixConfigured: true,
+    passwordProvided: true,
+  });
+  assert(ready.length === 0, 'com todos os requisitos o botão pode ser usado');
+  const described = openApiState.describeC6BolepixPanel({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationPresent: true,
+    credentialsPresent: true,
+    beneficiaryLinked: true,
+    pixConfigured: true,
+    activationRequested: true,
+    testParcelNamed: true,
+  });
+  assert(
+    described.postAllowed === false && described.phase === 'aguardando_autorizacao',
+    'parcela indicada sem liberação individual não abre o POST',
+  );
+  const configured = openApiState.describeC6BolepixPanel({
+    companyId: 'company-a',
+    integrationId: 'integration-a',
+    integrationPresent: true,
+    credentialsPresent: true,
+    beneficiaryLinked: true,
+    pixConfigured: true,
+    activationRequested: false,
+    testParcelNamed: false,
+  });
+  assert(configured.phase === 'evp_configurada' && configured.postAllowed === false, 'EVP configurada não é emissão operacional');
 
   if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;

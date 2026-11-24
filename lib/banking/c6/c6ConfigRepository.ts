@@ -23,7 +23,11 @@ import {
   isC6CompanyOperationEnabled,
   type C6CompanyOperation,
 } from '@/lib/banking/c6/c6CompanyAccess';
-import { isC6EmissionActivated, readC6EmissionEnabled } from '@/lib/banking/c6/c6EmissionAuthorization';
+import {
+  isC6EmissionActivated,
+  readC6BolepixActivationRequested,
+  readC6EmissionEnabled,
+} from '@/lib/banking/c6/c6EmissionAuthorization';
 import { isC6ConfigPersistBlocked, isC6RemoteOperationBlocked } from '@/lib/banking/c6/c6EmitGuard';
 import {
   parseC6CertificateCredential,
@@ -237,6 +241,7 @@ function buildPublicResponse(
     financialAccountId,
     active: false,
     emissionEnabled: readC6EmissionEnabled(row.metadata),
+    bolepixActivationRequested: readC6BolepixActivationRequested(row.metadata),
     boletoIntent: readIntent(row.metadata, 'boleto'),
     bolepixIntent: readIntent(row.metadata, 'bolepix'),
   };

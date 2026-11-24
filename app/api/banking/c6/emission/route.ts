@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { authorizeTenantBilling } from '@/lib/tenantBillingAuth';
-import { setC6CompanyEmissionEnabled } from '@/lib/banking/c6/c6EmissionAuthorization';
+import {
+  clearC6BolepixActivationRequest,
+  readOwnC6PixConfigured,
+  requestC6BolepixCompanyActivation,
+} from '@/lib/banking/c6/c6EmissionAuthorization';
+import { describeC6BolepixPanel } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import {
   assertC6ConfigResponseSafe,
   getCompanyC6BankConfig,
@@ -18,7 +23,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Liga ou desliga a emissão da empresa da sessão. Não emite boleto. */
+/** Registra ou cancela a solicitação da empresa da sessão. Não emite boleto. */
 export async function POST(request: Request) {
   const auth = await authorizeTenantBilling(request);
   if ('error' in auth) return auth.error;
@@ -46,10 +51,27 @@ export async function POST(request: Request) {
   }
 
   try {
-    await setC6CompanyEmissionEnabled(auth.admin, auth.tenantId, enabled);
+    if (enabled) await requestC6BolepixCompanyActivation(auth.admin, auth.tenantId);
+    else await clearC6BolepixActivationRequest(auth.admin, auth.tenantId);
     const config = await getCompanyC6BankConfig(auth.admin, auth.tenantId);
     assertC6ConfigResponseSafe(config);
-    return NextResponse.json({ config, emissionEnabled: config.emissionEnabled === true });
+    const pixConfigured = await readOwnC6PixConfigured(auth.admin, auth.tenantId);
+    const panel = describeC6BolepixPanel({
+      companyId: auth.tenantId,
+      integrationId: String(config.id || ''),
+      integrationPresent: Boolean(config.id) && String(config.status || '').toUpperCase() !== 'DISABLED',
+      credentialsPresent: Boolean(config.clientIdConfigured && config.hasClientSecret && config.hasCertificate),
+      beneficiaryLinked: Boolean(config.financialAccountId),
+      pixConfigured,
+      activationRequested: config.bolepixActivationRequested === true,
+      testParcelNamed: false,
+    });
+    return NextResponse.json({
+      config,
+      emissionEnabled: false,
+      postAllowed: false,
+      bolepix: panel,
+    });
   } catch (error) {
     const message = redactC6ErrorMessage(error, 'Não foi possível atualizar a emissão C6.');
     return NextResponse.json({ error: message }, { status: 422 });

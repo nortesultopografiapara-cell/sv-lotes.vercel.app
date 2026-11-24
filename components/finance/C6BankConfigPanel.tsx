@@ -9,6 +9,10 @@ import {
 } from '@/lib/banking/c6/c6ConfigTypes';
 import type { BankEnvironment } from '@/lib/banking/types';
 import { inspectC6BolepixPixKey } from '@/lib/banking/c6/c6BolepixV2Validation';
+import {
+  describeC6BolepixPanel,
+  listC6BolepixActivationPending,
+} from '@/lib/banking/c6/c6BolepixV2OpenApi';
 
 type LocalFile = { name: string; content: string };
 
@@ -244,7 +248,11 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
       if (!res.ok) throw new Error(data.error || 'Não foi possível atualizar a emissão');
       setConfig(data.config as C6BankConfigPublic);
       setPassword('');
-      setInfo(enabled ? 'Emissão ativada somente para esta empresa.' : 'Emissão desativada para esta empresa.');
+      setInfo(
+        enabled
+          ? 'Solicitação registrada somente para esta empresa. A emissão real continua bloqueada por segurança.'
+          : 'Solicitação cancelada. A emissão real continua bloqueada por segurança.',
+      );
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a emissão');
     } finally {
@@ -328,6 +336,28 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
     const provider = String(account.provider || '').toUpperCase();
     return !provider || provider === 'C6';
   });
+  const emissionPending = listC6BolepixActivationPending({
+    loading,
+    persistBlocked,
+    integrationPresent: Boolean(config?.id),
+    integrationDisabled: String(config?.status || '').toUpperCase() === 'DISABLED',
+    clientIdConfigured: config?.clientIdConfigured === true,
+    hasClientSecret: config?.hasClientSecret === true,
+    hasCertificate: config?.hasCertificate === true,
+    beneficiaryLinked: Boolean(config?.financialAccountId),
+    pixConfigured,
+    passwordProvided: Boolean(password.trim()),
+  });
+  const bolepixPanel = describeC6BolepixPanel({
+    companyId: String(config?.companyId || ''),
+    integrationId: String(config?.id || ''),
+    integrationPresent: Boolean(config?.id) && String(config?.status || '').toUpperCase() !== 'DISABLED',
+    credentialsPresent: Boolean(config?.clientIdConfigured && config?.hasClientSecret && config?.hasCertificate),
+    beneficiaryLinked: Boolean(config?.financialAccountId),
+    pixConfigured,
+    activationRequested: config?.bolepixActivationRequested === true,
+    testParcelNamed: false,
+  });
 
   return (
     <section
@@ -346,7 +376,7 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
             Status {config?.status || 'DRAFT'}
           </span>
           <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-200">
-            {config?.emissionEnabled ? 'Emissão ATIVADA' : 'Emissão DESATIVADA'}
+            Emissão DESATIVADA
           </span>
         </div>
       </div>
@@ -594,40 +624,41 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
         >
           {testing ? 'Testando' : 'Testar conexão'}
         </button>
-        {config?.emissionEnabled ? (
-          <button
-            type="button"
-            onClick={() => void toggleEmission(false)}
-            disabled={readOnlyDemo || persistBlocked || togglingEmission || loading || !password.trim()}
-            className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-bold text-amber-100 disabled:opacity-50"
-          >
-            {togglingEmission ? 'Atualizando' : 'Desativar emissão'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void toggleEmission(true)}
-            disabled={
-              readOnlyDemo ||
-              persistBlocked ||
-              togglingEmission ||
-              loading ||
-              !password.trim() ||
-              !config?.clientIdConfigured ||
-              !config.hasClientSecret ||
-              !config.hasCertificate ||
-              !config.financialAccountId
-            }
-            className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
-          >
-            {togglingEmission ? 'Atualizando' : 'Ativar emissão desta empresa'}
-          </button>
-        )}
-        {!config?.financialAccountId ? (
-          <p className="w-full text-xs text-[var(--text-muted)]">
-            A emissão continua desabilitada até existir uma conta C6 vinculada. Cadastre a conta, selecione-a e salve com a senha do administrador. A conexão OAuth não substitui esse vínculo.
+        <button
+          type="button"
+          onClick={() => void toggleEmission(!config?.bolepixActivationRequested)}
+          disabled={
+            readOnlyDemo ||
+            persistBlocked ||
+            togglingEmission ||
+            loading ||
+            !password.trim() ||
+            !config?.financialAccountId ||
+            !config?.clientIdConfigured ||
+            !config.hasClientSecret ||
+            !config.hasCertificate ||
+            !pixConfigured ||
+            emissionPending.length > 0
+          }
+          className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] disabled:opacity-50"
+        >
+          {togglingEmission
+            ? 'Atualizando'
+            : config?.bolepixActivationRequested
+              ? 'Cancelar solicitação'
+              : 'Ativar emissão desta empresa'}
+        </button>
+        <div className="w-full space-y-1 text-xs text-[var(--text-muted)]">
+          <p>
+            Situação: {bolepixPanel.label}. {bolepixPanel.detail}
           </p>
-        ) : null}
+          {emissionPending.map((item) => (
+            <p key={item}>{item}</p>
+          ))}
+          {!config?.financialAccountId ? (
+            <p>A conexão OAuth não substitui esse vínculo.</p>
+          ) : null}
+        </div>
       </div>
     </section>
   );

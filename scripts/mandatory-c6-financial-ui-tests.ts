@@ -39,8 +39,11 @@ assert(panel.includes('!password.trim()'), 'a ativação não dispara com a senh
 assert(panel.includes('não vem do Banco C6'), 'a recusa da senha não é apresentada como resposta do banco');
 const emission = fs.readFileSync(path.join(root, 'app/api/banking/c6/emission/route.ts'), 'utf8');
 const verifyAt = emission.indexOf('await verifyPrimaryAdminPassword');
-const writeAt = emission.indexOf('await setC6CompanyEmissionEnabled');
-assert(verifyAt > 0 && writeAt > verifyAt, 'a senha é conferida antes de gravar a emissão');
+const writeAt = emission.indexOf('await requestC6BolepixCompanyActivation');
+assert(verifyAt > 0 && writeAt > verifyAt, 'a senha é conferida antes de gravar a solicitação');
+assert(!emission.includes('setC6CompanyEmissionEnabled'), 'a solicitação não liga a flag de emissão');
+assert(!emission.includes('postC6BolepixV2Charge'), 'a solicitação não emite boleto');
+assert(emission.includes('postAllowed: false'), 'a resposta não libera o POST');
 assert(emission.includes('Autorização não concedida.'), 'senha recusada continua genérica');
 
 console.log('C6_FINANCIAL_UI_OK');

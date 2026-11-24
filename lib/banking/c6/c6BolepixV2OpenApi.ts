@@ -30,6 +30,10 @@ export const C6_BOLEPIX_V2_PIX_KEY_TYPE = 'EVP' as const;
 
 export const C6_BOLEPIX_V2_REFERENCE_PATTERN = /^[A-Z0-9]{26}$/;
 
+/**
+ * Constante compilada no código. Não é variável da Vercel.
+ * Alterá-la exige publicação e continua exigindo a lista individual abaixo.
+ */
 export const C6_BOLEPIX_V2_LIVE_CALLS_ENABLED = false as const;
 export const C6_BOLEPIX_V2_CONFIG_WRITES_ENABLED = false as const;
 
@@ -76,6 +80,114 @@ export function evaluateC6BolepixV2ControlledEmission(input: {
   const released = isC6BolepixV2LiveRelease(input.companyId, input.integrationId);
   if (!released) missing.push('liberação individual da integração');
   return { postAllowed: missing.length === 0 && released, missing };
+}
+
+export type C6BolepixPanelPhase =
+  | 'nao_configurado'
+  | 'evp_configurada'
+  | 'aguardando_autorizacao'
+  | 'integracao_liberada'
+  | 'emissao_operacional'
+  | 'emissao_bloqueada_por_seguranca';
+
+export function listC6BolepixActivationPending(input: {
+  loading: boolean;
+  persistBlocked: boolean;
+  integrationPresent: boolean;
+  integrationDisabled: boolean;
+  clientIdConfigured: boolean;
+  hasClientSecret: boolean;
+  hasCertificate: boolean;
+  beneficiaryLinked: boolean;
+  pixConfigured: boolean;
+  passwordProvided: boolean;
+}): string[] {
+  const pending: string[] = [];
+  if (input.loading) pending.push('A configuração ainda está carregando.');
+  if (input.persistBlocked) pending.push('O cadastro C6 está bloqueado neste ambiente.');
+  if (!input.integrationPresent) pending.push('A integração C6 desta empresa não está disponível.');
+  if (input.integrationDisabled) pending.push('A integração C6 está desativada.');
+  if (!input.clientIdConfigured) pending.push('Informe o Client ID.');
+  if (!input.hasClientSecret) pending.push('Salve o Client Secret.');
+  if (!input.hasCertificate) pending.push('Salve o certificado.');
+  if (!input.beneficiaryLinked) pending.push('Vincule a conta financeira C6 e salve a configuração.');
+  if (!input.pixConfigured) pending.push('Cadastre a chave Pix EVP.');
+  if (!input.passwordProvided) pending.push('Informe a senha do administrador principal.');
+  return pending;
+}
+
+/** Situação do painel. Liberar a integração não libera todas as parcelas. */
+export function describeC6BolepixPanel(input: {
+  companyId: string;
+  integrationId: string;
+  integrationPresent: boolean;
+  credentialsPresent: boolean;
+  beneficiaryLinked: boolean;
+  pixConfigured: boolean;
+  activationRequested: boolean;
+  testParcelNamed: boolean;
+}): { phase: C6BolepixPanelPhase; label: string; postAllowed: boolean; detail: string } {
+  const ready =
+    input.integrationPresent && input.credentialsPresent && input.beneficiaryLinked && input.pixConfigured;
+  const released = isC6BolepixV2LiveRelease(input.companyId, input.integrationId);
+  const decision = evaluateC6BolepixV2ControlledEmission({
+    companyId: input.companyId,
+    integrationId: input.integrationId,
+    pixConfigured: input.pixConfigured,
+    beneficiaryLinked: input.beneficiaryLinked,
+    integrationActive: input.integrationPresent,
+    credentialsPresent: input.credentialsPresent,
+    migrationConfirmed: true,
+    reservationReady: true,
+    adminAuthorized: input.activationRequested,
+    testParcelNamed: input.testParcelNamed,
+  });
+  if (!ready) {
+    return {
+      phase: 'nao_configurado',
+      label: 'Não configurado',
+      postAllowed: false,
+      detail: 'Emissão bloqueada por segurança.',
+    };
+  }
+  if (decision.postAllowed) {
+    return {
+      phase: 'emissao_operacional',
+      label: 'Emissão operacional',
+      postAllowed: true,
+      detail: 'A emissão real está limitada à parcela de teste indicada.',
+    };
+  }
+  if (released && !input.testParcelNamed) {
+    return {
+      phase: 'integracao_liberada',
+      label: 'Integração liberada',
+      postAllowed: false,
+      detail: 'A liberação não emite outras parcelas. Falta a parcela de teste indicada pelo administrador.',
+    };
+  }
+  if (input.activationRequested) {
+    return {
+      phase: 'aguardando_autorizacao',
+      label: 'Aguardando autorização',
+      postAllowed: false,
+      detail: 'Emissão bloqueada por segurança. O POST real continua desligado.',
+    };
+  }
+  if (!C6_BOLEPIX_V2_LIVE_CALLS_ENABLED) {
+    return {
+      phase: 'evp_configurada',
+      label: 'EVP configurada',
+      postAllowed: false,
+      detail: 'Emissão bloqueada por segurança.',
+    };
+  }
+  return {
+    phase: 'emissao_bloqueada_por_seguranca',
+    label: 'Emissão bloqueada por segurança',
+    postAllowed: false,
+    detail: 'O POST real continua desligado.',
+  };
 }
 
 export const C6_BOLEPIX_V2_STATUS_MEANING = {
