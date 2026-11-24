@@ -29,6 +29,8 @@ import {
   c6BolepixV2MayCallBank,
   c6BolepixV2PayloadFromSealedKey,
   completionForC6BolepixV2,
+  describeC6BolepixV2Outcome,
+  readSanitizedC6BankError,
 } from '@/lib/banking/c6/c6BolepixV2Issue';
 import { officialC6BolepixFromResponse } from '@/lib/banking/c6/c6BolepixV2Official';
 import { c6BolepixRequestFingerprint } from '@/lib/banking/c6/c6BolepixV2Reservation';
@@ -59,6 +61,12 @@ export type C6InstallmentEmitResult = {
   installmentId: string;
   companyId: string;
   message: string;
+  outcome?: 'succeeded' | 'rejected' | 'authentication' | 'configuration' | 'timeout' | 'uncertain' | 'waiting';
+  httpStatus?: number | null;
+  bankCode?: string | null;
+  stage?: string | null;
+  externalReference?: string | null;
+  traceId?: string | null;
 };
 
 export type C6InstallmentChargeOptions = {
@@ -546,6 +554,33 @@ export async function emitC6InstallmentBoleto(
       });
     }
   }
+  const bankError = readSanitizedC6BankError(created.responseBody);
+  const described = describeC6BolepixV2Outcome({
+    status: finished.status,
+    httpStatus: created.httpStatus,
+    chargeId: finished.chargeId,
+    transportCode: created.transportCode || null,
+    bankCode: bankError.code,
+    bankMessage: bankError.message,
+  });
+  const stage = created.transportCode
+    ? 'transport'
+    : described.kind === 'authentication'
+      ? 'bank_slip_authorization'
+      : 'bank_slip_post';
+  if (described.kind !== 'succeeded') {
+    console.info(
+      JSON.stringify({
+        source: 'c6_bolepix_v2',
+        stage,
+        httpStatus: created.httpStatus,
+        bankCode: bankError.code,
+        message: described.message,
+        externalReference: bolepixReference,
+        traceId: bankError.traceId,
+      }),
+    );
+  }
   return {
     emitted: finished.status === 'SUCCEEDED',
     reused: false,
@@ -560,12 +595,13 @@ export async function emitC6InstallmentBoleto(
     dueDate,
     installmentId,
     companyId,
-    message:
-      finished.status === 'SUCCEEDED'
-        ? 'O C6 criou a cobrança. CREATED não confirma pagamento.'
-        : finished.status === 'FAILED'
-          ? 'O C6 recusou a cobrança. Nenhuma nova emissão automática foi feita.'
-          : 'O resultado da cobrança ficou incerto. Nenhuma nova emissão foi feita.',
+    message: described.message,
+    outcome: described.kind,
+    httpStatus: created.httpStatus,
+    bankCode: bankError.code,
+    stage,
+    externalReference: bolepixReference,
+    traceId: bankError.traceId,
   };
 }
 

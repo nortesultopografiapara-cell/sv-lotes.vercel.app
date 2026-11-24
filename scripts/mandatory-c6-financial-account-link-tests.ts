@@ -6,9 +6,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   C6_FINANCIAL_ACCOUNT_NOTE,
+  c6FinancialAccountIdForSave,
   createUnlinkedC6FinancialAccount,
   isPendingC6FinancialAccount,
 } from '../lib/banking/c6/c6FinancialAccount';
+import { applySaveCompanyC6BankConfig } from '../lib/banking/c6/c6ConfigAtomic';
+import { redactC6ErrorMessage } from '../lib/banking/c6/c6ConfigRepository';
+import {
+  describeC6BolepixV2Outcome,
+  readSanitizedC6BankError,
+} from '../lib/banking/c6/c6BolepixV2Issue';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -16,10 +23,11 @@ function assert(condition: boolean, message: string) {
 
 type Row = Record<string, unknown>;
 
-function mockAdmin(rows: Row[]) {
+function mockAdmin(rows: Row[], integrations: Row[] = []) {
   return {
     from(table: string) {
-      if (table !== 'company_financial_accounts') throw new Error(`tabela inesperada: ${table}`);
+      const source = table === 'company_financial_accounts' ? rows : table === 'bank_integrations' ? integrations : null;
+      if (!source) throw new Error(`tabela inesperada: ${table}`);
       const filters: Array<{ key: string; value: unknown; op: 'eq' | 'is' }> = [];
       let insertRow: Row | null = null;
       const chain = {
@@ -39,12 +47,13 @@ function mockAdmin(rows: Row[]) {
           return chain;
         },
         single() {
+          if (table !== 'company_financial_accounts') throw new Error('insert inesperado');
           const row = { id: `fa-${rows.length + 1}`, ...insertRow };
           rows.push(row);
           return Promise.resolve({ data: row, error: null });
         },
         then(resolve: (value: { data: Row[]; error: null }) => void) {
-          const data = rows.filter((row) =>
+          const data = source.filter((row) =>
             filters.every((filter) =>
               filter.op === 'is' ? row[filter.key] == null : row[filter.key] === filter.value,
             ),
@@ -102,6 +111,170 @@ async function main() {
   assert(!isPendingC6FinancialAccount({ provider: 'ASAAS_COMPANY', notes: C6_FINANCIAL_ACCOUNT_NOTE }), 'Asaas não é tratado como C6');
   assert(!isPendingC6FinancialAccount({ provider: 'INTER', notes: C6_FINANCIAL_ACCOUNT_NOTE }), 'Inter não é tratado como C6');
   assert(isPendingC6FinancialAccount({ provider: null, notes: C6_FINANCIAL_ACCOUNT_NOTE }), 'conta sem provedor pode ser selecionada');
+
+  const linkedRows: Row[] = [
+    {
+      id: 'c6-owned',
+      company_id: 'company-a',
+      name: 'Conta C6',
+      bank_integration_id: 'int-c6',
+      active: true,
+      notes: C6_FINANCIAL_ACCOUNT_NOTE,
+    },
+    {
+      id: 'c6-orphan',
+      company_id: 'company-a',
+      name: 'Conta C6',
+      bank_integration_id: null,
+      active: true,
+      notes: C6_FINANCIAL_ACCOUNT_NOTE,
+    },
+    {
+      id: 'asaas-keep',
+      company_id: 'company-a',
+      name: 'Conta Asaas',
+      bank_integration_id: 'int-asaas',
+      active: true,
+      notes: 'Asaas',
+    },
+  ];
+  const before = linkedRows.length;
+  const kept = await createUnlinkedC6FinancialAccount(
+    mockAdmin(linkedRows, [
+      { id: 'int-c6', company_id: 'company-a', provider: 'C6' },
+      { id: 'int-asaas', company_id: 'company-a', provider: 'ASAAS' },
+      { id: 'int-other', company_id: 'company-b', provider: 'C6' },
+    ]) as never,
+    'company-a',
+    'PRODUCTION',
+  );
+  assert(!kept.created && kept.id === 'c6-owned', 'reutiliza a conta C6 já vinculada');
+  assert(linkedRows.length === before, 'não cria outra conta financeira');
+  assert(linkedRows.find((row) => row.id === 'c6-orphan')?.bank_integration_id == null, 'não vincula a conta solta');
+  assert(linkedRows.find((row) => row.id === 'asaas-keep')?.bank_integration_id === 'int-asaas', 'não mexe na conta Asaas');
+  assert(
+    c6FinancialAccountIdForSave('c6-orphan', 'c6-owned') === 'c6-owned',
+    'salvar duas vezes mantém a conta já vinculada',
+  );
+
+  const tables = {
+    bank_integrations: [
+      {
+        id: 'int-c6',
+        company_id: 'company-a',
+        provider: 'C6',
+        environment: 'PRODUCTION',
+        status: 'DRAFT',
+        active: false,
+        is_default: false,
+        client_id: 'client',
+        certificate_name: null,
+        metadata: {
+          c6: {
+            boleto: false,
+            bolepix: true,
+            emission_enabled: false,
+            bolepix_activation_requested: true,
+          },
+        },
+      },
+    ],
+    bank_credentials: [
+      {
+        id: 'oauth-1',
+        integration_id: 'int-c6',
+        company_id: 'company-a',
+        credential_type: 'oauth',
+        encrypted_payload: 'v1:old:old:old',
+      },
+    ],
+    company_financial_accounts: [
+      { id: 'c6-owned', company_id: 'company-a', bank_integration_id: 'int-c6' },
+      { id: 'c6-orphan', company_id: 'company-a', bank_integration_id: null },
+      { id: 'asaas-keep', company_id: 'company-a', bank_integration_id: 'int-asaas' },
+    ],
+  };
+  applySaveCompanyC6BankConfig(tables, {
+    p_company_id: 'company-a',
+    p_environment: 'PRODUCTION',
+    p_client_id: 'client',
+    p_certificate_name: null,
+    p_boleto: false,
+    p_bolepix: true,
+    p_oauth_payload: 'v1:new:new:new',
+    p_certificate_payload: null,
+    p_financial_account_id: 'c6-orphan',
+  });
+  assert(
+    tables.company_financial_accounts.find((row) => row.id === 'c6-owned')?.bank_integration_id === 'int-c6',
+    'a conta vinculada permanece',
+  );
+  assert(
+    tables.company_financial_accounts.find((row) => row.id === 'c6-orphan')?.bank_integration_id == null,
+    'a segunda conta não recebe a integração',
+  );
+  assert(
+    tables.company_financial_accounts.find((row) => row.id === 'asaas-keep')?.bank_integration_id === 'int-asaas',
+    'Asaas permanece isolado',
+  );
+  const savedMeta = tables.bank_integrations[0].metadata as { c6?: { bolepix_activation_requested?: boolean } };
+  assert(savedMeta.c6?.bolepix_activation_requested === true, 'a autorização administrativa permanece');
+  assert(
+    tables.bank_credentials.find((row) => row.credential_type === 'oauth')?.encrypted_payload === 'v1:new:new:new',
+    'a credencial existente é atualizada',
+  );
+  applySaveCompanyC6BankConfig(tables, {
+    p_company_id: 'company-a',
+    p_environment: 'PRODUCTION',
+    p_client_id: 'client',
+    p_certificate_name: null,
+    p_boleto: false,
+    p_bolepix: true,
+    p_oauth_payload: null,
+    p_certificate_payload: null,
+    p_financial_account_id: 'c6-owned',
+  });
+  assert(tables.company_financial_accounts.length === 3, 'salvar de novo não cria conta');
+  assert(
+    redactC6ErrorMessage(
+      { message: 'duplicate key value violates unique constraint "uq_company_financial_accounts_bank_integration"' },
+      'Erro ao salvar configuração C6.',
+    ).includes('já possui conta financeira'),
+    'a constraint duplicada não vaza como erro cru',
+  );
+
+  const rejected = describeC6BolepixV2Outcome({ status: 'FAILED', httpStatus: 400, chargeId: null });
+  const denied = describeC6BolepixV2Outcome({ status: 'FAILED', httpStatus: 401, chargeId: null });
+  const forbidden = describeC6BolepixV2Outcome({ status: 'FAILED', httpStatus: 403, chargeId: null });
+  const invalid = describeC6BolepixV2Outcome({
+    status: 'FAILED',
+    httpStatus: 422,
+    chargeId: null,
+    bankCode: 'INVALID_FIELD',
+    bankMessage: 'Campo amount',
+  });
+  const timedOut = describeC6BolepixV2Outcome({ status: 'UNKNOWN', transportCode: 'TIMEOUT' });
+  const uncertain = describeC6BolepixV2Outcome({ status: 'UNKNOWN', chargeId: 'bank-1' });
+  const waiting = describeC6BolepixV2Outcome({ status: 'WAITING_CONFIRMATION' });
+  const secret = readSanitizedC6BankError({
+    code: 'INVALID_PAYER',
+    message: 'CPF 52998224725 chave 123e4567-e89b-12d3-a456-426614174000',
+    trace_id: 'trace-123',
+  });
+  assert(rejected.kind === 'rejected' && rejected.message.includes('HTTP 400'), 'HTTP 400 é recusa');
+  assert(rejected.message.includes('não foi gravada'), 'recusa sem corpo não inventa o motivo');
+  assert(denied.kind === 'authentication' && !denied.message.includes('recusou a cobrança'), 'HTTP 401 não é recusa de boleto');
+  assert(forbidden.kind === 'authentication', 'HTTP 403 é falha de autorização');
+  assert(invalid.kind === 'rejected' && invalid.message.includes('Campo amount'), 'HTTP 422 mostra o motivo sanitizado');
+  assert(timedOut.kind === 'timeout' && timedOut.message.includes('não respondeu a tempo'), 'timeout fica incerto');
+  assert(uncertain.kind === 'uncertain', 'identificador sem conclusão bloqueia nova emissão');
+  assert(
+    describeC6BolepixV2Outcome({ status: 'FAILED', httpStatus: 400, chargeId: 'bank-1' }).kind === 'uncertain',
+    'recusa com identificador bancário não libera outra emissão',
+  );
+  assert(waiting.kind === 'waiting', 'confirmação pendente não é pagamento');
+  assert(secret.code === 'INVALID_PAYER' && secret.traceId === 'trace-123', 'código e rastreio permanecem');
+  assert(!secret.message?.includes('52998224725') && !secret.message?.includes('123e4567'), 'a mensagem não guarda CPF nem EVP');
 
   const root = path.resolve(__dirname, '..');
   const repository = fs.readFileSync(path.join(root, 'lib/finance/companyFinancialAccountRepository.ts'), 'utf8');

@@ -210,7 +210,13 @@ export async function postC6BolepixV2Charge(params: {
   credentials?: C6AuthCredentials | null;
   requestFn?: (plan: C6BolepixV2HttpPlan) => Promise<C6BolepixV2FetchResult>;
   now?: Date;
-}): Promise<C6BolepixV2CallResult & { body?: Record<string, unknown>; responseBody: unknown }> {
+}): Promise<
+  C6BolepixV2CallResult & {
+    body?: Record<string, unknown>;
+    responseBody: unknown;
+    transportCode?: 'TIMEOUT' | 'NETWORK' | 'UNEXPECTED' | null;
+  }
+> {
   if (params.allowSimulatedHttp === true && typeof params.fetchFn === 'function') {
     return executeC6BolepixV2Create({
       input: params.input,
@@ -253,7 +259,8 @@ export async function postC6BolepixV2Charge(params: {
     try {
       const response = await params.requestFn(plan);
       return fromCreateResponse(response.status, response.bodyText, officialBody);
-    } catch {
+    } catch (error) {
+      const transportCode = error instanceof C6BoletoTransportError ? error.code : 'NETWORK';
       return {
         ok: false,
         httpStatus: null,
@@ -264,6 +271,7 @@ export async function postC6BolepixV2Charge(params: {
         responseBody: null,
         specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
         body: officialBody,
+        transportCode,
       };
     }
   }
@@ -271,7 +279,8 @@ export async function postC6BolepixV2Charge(params: {
   try {
     const response = await httpsOnce(plan, agent);
     return fromCreateResponse(response.status, response.bodyText, officialBody);
-  } catch {
+  } catch (error) {
+    const transportCode = error instanceof C6BoletoTransportError ? error.code : 'NETWORK';
     return {
       ok: false,
       httpStatus: null,
@@ -282,6 +291,7 @@ export async function postC6BolepixV2Charge(params: {
       responseBody: null,
       specVersion: C6_BOLEPIX_V2_SPEC_VERSION,
       body: officialBody,
+      transportCode,
     };
   } finally {
     agent.destroy();

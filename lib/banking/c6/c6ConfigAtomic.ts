@@ -247,7 +247,13 @@ export function applySaveCompanyC6BankConfig(
 
   if (fault === 'link') throw new Error('falha simulada de gravacao');
 
-  if (financialAccountId && account && !account.bank_integration_id) {
+  const owned = draft.company_financial_accounts.find(
+    (row) =>
+      row.company_id === companyId &&
+      integration?.id &&
+      String(row.bank_integration_id || '') === String(integration.id),
+  );
+  if (!owned && financialAccountId && account && !account.bank_integration_id) {
     const target = draft.company_financial_accounts.find(
       (row) => row.id === financialAccountId && row.company_id === companyId && !row.bank_integration_id,
     );

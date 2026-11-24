@@ -10,6 +10,17 @@ export const C6_FINANCIAL_ACCOUNT_NAME = 'Conta C6';
 export const C6_FINANCIAL_ACCOUNT_NOTE =
   'Conta financeira C6 aguardando vínculo. Não usar no Asaas nem no Inter.';
 
+/** A integração que já tem conta continua nela. Uma conta nova não recebe o mesmo vínculo. */
+export function c6FinancialAccountIdForSave(
+  requestedAccountId: string | null | undefined,
+  ownedAccountId: string | null | undefined,
+): string | null {
+  const owned = String(ownedAccountId || '').trim();
+  if (owned) return owned;
+  const requested = String(requestedAccountId || '').trim();
+  return requested || null;
+}
+
 export function isPendingC6FinancialAccount(account: {
   bankIntegrationId?: string | null;
   provider?: string | null;
@@ -37,6 +48,34 @@ export async function createUnlinkedC6FinancialAccount(
     .is('bank_integration_id', null)
     .eq('active', true);
   if (existingError) throw new Error(existingError.message);
+  const { data: integrations, error: integrationError } = await admin
+    .from('bank_integrations')
+    .select('id, company_id, provider')
+    .eq('company_id', owner)
+    .eq('provider', 'C6');
+  if (integrationError) throw new Error(integrationError.message);
+  const c6IntegrationIds = new Set(
+    (integrations || [])
+      .filter(
+        (row) => String(row.company_id) === owner && String(row.provider || '').toUpperCase() === 'C6',
+      )
+      .map((row) => String(row.id)),
+  );
+  const { data: companyAccounts, error: companyAccountsError } = await admin
+    .from('company_financial_accounts')
+    .select('id, name, company_id, bank_integration_id, active')
+    .eq('company_id', owner)
+    .eq('active', true);
+  if (companyAccountsError) throw new Error(companyAccountsError.message);
+  const owned = (companyAccounts || []).find(
+    (row) =>
+      String(row.company_id) === owner &&
+      c6IntegrationIds.has(String(row.bank_integration_id || '')),
+  );
+  if (owned?.id) {
+    return { id: String(owned.id), name: String(owned.name || C6_FINANCIAL_ACCOUNT_NAME), created: false };
+  }
+
   const reusable = (existing || []).find(
     (row) =>
       String(row.company_id) === owner &&

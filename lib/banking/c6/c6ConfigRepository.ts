@@ -19,6 +19,7 @@ import {
   type C6BankConfigSaveInput,
 } from '@/lib/banking/c6/c6ConfigTypes';
 import { SAVE_COMPANY_C6_BANK_CONFIG_RPC } from '@/lib/banking/c6/c6ConfigAtomic';
+import { c6FinancialAccountIdForSave } from '@/lib/banking/c6/c6FinancialAccount';
 import {
   isC6CompanyOperationEnabled,
   type C6CompanyOperation,
@@ -343,6 +344,28 @@ export async function getCompanyC6BankConfig(
   return response;
 }
 
+async function accountLinkedToIntegration(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from('company_financial_accounts')
+    .select('id, company_id, bank_integration_id')
+    .eq('company_id', companyId)
+    .eq('bank_integration_id', integrationId)
+    .limit(2);
+  if (error) throw new Error(error.message);
+  const rows = (data || []).filter(
+    (row) =>
+      String(row.company_id) === companyId && String(row.bank_integration_id) === integrationId && row.id,
+  );
+  if (rows.length > 1) {
+    throw new Error('Há mais de uma conta financeira vinculada a esta integração C6.');
+  }
+  return rows[0]?.id ? String(rows[0].id) : null;
+}
+
 export async function saveCompanyC6BankConfig(
   admin: SupabaseClient,
   companyId: string,
@@ -402,7 +425,13 @@ export async function saveCompanyC6BankConfig(
     throw new Error('Certificado e chave privada obrigatórios na primeira configuração C6.');
   }
 
-  const faId = clean(input.financialAccountId) || clean(lookup?.financialAccountId);
+  const ownedAccountId = existing.id
+    ? await accountLinkedToIntegration(admin, companyId, existing.id)
+    : null;
+  const faId = c6FinancialAccountIdForSave(
+    clean(input.financialAccountId) || clean(lookup?.financialAccountId),
+    ownedAccountId,
+  );
   const linkMode = faId
     ? await inspectC6FinancialAccountLink(admin, companyId, faId, existing.id)
     : 'omit';
@@ -492,6 +521,9 @@ export function redactC6ErrorMessage(error: unknown, fallback: string): string {
         ? String((error as { message?: unknown }).message || '')
         : '';
   const message = raw || fallback;
+  if (/uq_company_financial_accounts_bank_integration/i.test(message)) {
+    return 'Esta integração C6 já possui conta financeira. A conta existente foi mantida.';
+  }
   if (
     /BEGIN |PRIVATE KEY|clientSecret|certificatePem|privateKeyPem|encrypted_payload|access_token|webhook_receipt_token|\/api\/banking\/c6\/webhook\/[A-Za-z0-9_-]{43}|\bv1:/i.test(
       message,

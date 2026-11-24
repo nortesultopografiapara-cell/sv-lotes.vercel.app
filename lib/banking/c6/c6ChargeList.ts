@@ -4,6 +4,7 @@ import {
   mergeC6BolepixOfficial,
   type C6BolepixOfficialRecord,
 } from '@/lib/banking/c6/c6BolepixV2Official';
+import { describeC6BolepixV2Outcome } from '@/lib/banking/c6/c6BolepixV2Issue';
 
 const CHARGE_COLUMNS =
   'id, company_id, customer_id, sale_id, finance_receipt_id, financial_account_id, external_id, amount, due_date, status, barcode, digitable_line, our_number, paid_at, created_at, updated_at';
@@ -76,7 +77,68 @@ export async function listC6ChargesForInstallments(
     }
   }
   const charges = Array.from(byInstallment.values());
-  return mergeC6BolepixOfficial(charges, await loadC6BolepixOfficial(admin, companyId, ids), companyId);
+  const merged = await mergeC6BolepixOfficial(charges, await loadC6BolepixOfficial(admin, companyId, ids), companyId);
+  const present = new Set(merged.map((charge) => charge.installmentId));
+  const attempts = await loadC6BolepixAttempts(admin, companyId, ids.filter((id) => !present.has(id)));
+  return [...merged, ...attempts];
+}
+
+async function loadC6BolepixAttempts(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentIds: string[],
+): Promise<CompanyAsaasChargeResponse[]> {
+  if (!installmentIds.length) return [];
+  const { data, error } = await admin
+    .from('c6_bolepix_reservations')
+    .select('finance_receipt_id, status, last_http_status, c6_charge_id, external_reference_id')
+    .eq('company_id', companyId)
+    .in('finance_receipt_id', installmentIds);
+  if (error) {
+    const message = String(error.message || '');
+    if (/c6_bolepix_reservations|does not exist|schema cache|Could not find the table/i.test(message)) return [];
+    throw new Error('Não foi possível ler a tentativa C6.');
+  }
+  return (data || []).flatMap((row) => {
+    const record = row as Record<string, unknown>;
+    const installmentId = String(record.finance_receipt_id || '');
+    const httpStatus = record.last_http_status == null ? null : Number(record.last_http_status);
+    const described = describeC6BolepixV2Outcome({
+      status: record.status == null ? null : String(record.status),
+      httpStatus: Number.isFinite(httpStatus) ? httpStatus : null,
+      chargeId: record.c6_charge_id == null ? null : String(record.c6_charge_id),
+    });
+    if (!installmentId || described.kind === 'succeeded') return [];
+    return [
+      {
+        id: `c6-attempt-${installmentId}`,
+        companyId,
+        customerId: null,
+        saleId: null,
+        installmentId,
+        asaasPaymentId: '',
+        billingType: 'BOLETO',
+        status: described.kind === 'rejected' || described.kind === 'authentication' ? 'FAILED' : 'PENDING',
+        value: 0,
+        dueDate: '',
+        invoiceUrl: null,
+        bankSlipUrl: null,
+        bankSlipIdentification: null,
+        pixQrCode: null,
+        pixCopyPaste: null,
+        financialAccountId: null,
+        paymentLink: null,
+        paidAt: null,
+        createdAt: '',
+        updatedAt: '',
+        c6Attempt: {
+          kind: described.kind,
+          message: described.message,
+          httpStatus: Number.isFinite(httpStatus) ? httpStatus : null,
+        },
+      },
+    ];
+  });
 }
 
 async function loadC6BolepixOfficial(

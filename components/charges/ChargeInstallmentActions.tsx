@@ -221,8 +221,12 @@ export function ChargeInstallmentActions({
       barCode: charge?.barCode,
       installmentPaid,
       ownerReadOnly,
-      uncertain: Boolean(c6Notice?.uncertain),
-      rejectionMessage: c6Notice?.message,
+      uncertain:
+        Boolean(c6Notice?.uncertain) ||
+        charge?.c6Attempt?.kind === 'uncertain' ||
+        charge?.c6Attempt?.kind === 'timeout' ||
+        charge?.c6Attempt?.kind === 'waiting',
+      rejectionMessage: c6Notice?.message || charge?.c6Attempt?.message,
       bolepix,
     });
     const qrMime = bolepix?.pixMimeType === 'image/png' || bolepix?.pixMimeType === 'image/jpeg'
@@ -333,7 +337,17 @@ export function ChargeInstallmentActions({
           </p>
         ) : null}
         {c6.notice ? (
-          <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">{c6.notice}</p>
+          <p
+            className={`max-w-md text-right text-[10px] leading-snug ${
+              c6.noticeTone === 'error'
+                ? 'text-red-700'
+                : c6.noticeTone === 'warning'
+                  ? 'text-amber-700'
+                  : 'text-[var(--text-muted)]'
+            }`}
+          >
+            {c6.notice}
+          </p>
         ) : null}
       </div>
     );

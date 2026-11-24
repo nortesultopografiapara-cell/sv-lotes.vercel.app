@@ -83,6 +83,12 @@ export type CompanyAsaasChargeResponse = {
     settlementMethod: 'BANK_SLIP' | 'PIX' | null;
     statusMessage: string;
   } | null;
+  /** Tentativa C6 sem cobrança gravada. Não é identificador bancário. */
+  c6Attempt?: {
+    kind: 'rejected' | 'authentication' | 'configuration' | 'timeout' | 'uncertain' | 'waiting';
+    message: string;
+    httpStatus: number | null;
+  } | null;
 };
 
 export type CreateCompanyInstallmentChargeInput = {

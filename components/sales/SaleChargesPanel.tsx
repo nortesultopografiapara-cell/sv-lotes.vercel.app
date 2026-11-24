@@ -235,22 +235,26 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       const uncertain =
         Boolean(json.needsReconciliation) ||
         /bloqueada|ambígua|segunda emissão/i.test(String(json.message || ''));
-      if (uncertain) {
-        setC6Notices((prev) => ({
-          ...prev,
-          [installmentId]: {
-            uncertain: true,
-            message: json.message || 'A emissão precisa de conferência antes de uma nova tentativa.',
-          },
-        }));
-      } else {
-        setC6Notices((prev) => {
+      const failed = !json.emitted && !json.reused;
+      setC6Notices((prev) => {
+        if (!failed) {
           const next = { ...prev };
           delete next[installmentId];
           return next;
-        });
+        }
+        return {
+          ...prev,
+          [installmentId]: {
+            uncertain,
+            message: json.message || 'A emissão precisa de conferência antes de uma nova tentativa.',
+          },
+        };
+      });
+      if (failed) {
+        setError(json.message || 'O C6 não confirmou a cobrança. Nenhuma nova emissão automática foi feita.');
+      } else {
+        setInfo(json.message || (json.reused ? 'Boleto C6 já existente reutilizado.' : 'Boleto C6 registrado.'));
       }
-      setInfo(json.message || (json.reused ? 'Boleto C6 já existente reutilizado.' : 'Boleto C6 registrado.'));
       await loadSummary();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Falha ao emitir o boleto C6.');
