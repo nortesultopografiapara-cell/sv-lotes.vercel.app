@@ -61,6 +61,8 @@ export type ChargeInstallmentActionsProps = {
   bankStatusConsulted?: boolean;
   /** Falso até a leitura local das cobranças C6. Enquanto isso, Gerar fica oculto. */
   c6ChargesLoaded?: boolean;
+  /** Verdadeiro somente quando o servidor autorizou o POST desta parcela. */
+  c6EmitAuthorized?: boolean;
   customerPhone?: string | null;
   customerEmail?: string | null;
   whatsappShareUrl?: string | null;
@@ -122,6 +124,7 @@ export function ChargeInstallmentActions({
   installmentsDataReady = true,
   bankStatusConsulted = true,
   c6ChargesLoaded = false,
+  c6EmitAuthorized = false,
   customerPhone,
   customerEmail,
   whatsappShareUrl,
@@ -231,7 +234,7 @@ export function ChargeInstallmentActions({
     return (
       <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
         <div className="flex flex-wrap justify-end gap-1.5">
-          {c6.showGenerate ? (
+          {c6.showGenerate && c6EmitAuthorized ? (
             <button
               type="button"
               disabled={busy}
@@ -322,6 +325,11 @@ export function ChargeInstallmentActions({
         {c6.bankStatusLabel ? (
           <p className="max-w-md text-right text-[10px] text-[var(--text-muted)]">
             Status bancário: {c6.bankStatusLabel}
+          </p>
+        ) : null}
+        {c6.showGenerate && !c6EmitAuthorized ? (
+          <p className="max-w-md text-right text-[10px] leading-snug text-[var(--text-muted)]">
+            Emissão bloqueada nesta homologação.
           </p>
         ) : null}
         {c6.notice ? (

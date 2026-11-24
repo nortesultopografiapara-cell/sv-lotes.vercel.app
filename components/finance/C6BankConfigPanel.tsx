@@ -11,6 +11,7 @@ import type { BankEnvironment } from '@/lib/banking/types';
 import { inspectC6BolepixPixKey } from '@/lib/banking/c6/c6BolepixV2Validation';
 import {
   describeC6BolepixPanel,
+  c6BolepixV2HasNamedReceipt,
   listC6BolepixActivationPending,
 } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 
@@ -356,7 +357,10 @@ export function C6BankConfigPanel({ readOnlyDemo = false }: { readOnlyDemo?: boo
     beneficiaryLinked: Boolean(config?.financialAccountId),
     pixConfigured,
     activationRequested: config?.bolepixActivationRequested === true,
-    testParcelNamed: false,
+    testParcelNamed: c6BolepixV2HasNamedReceipt(
+      String(config?.companyId || ''),
+      String(config?.id || ''),
+    ),
   });
 
   return (

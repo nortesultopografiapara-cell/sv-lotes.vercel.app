@@ -5,7 +5,7 @@ import {
   readOwnC6PixConfigured,
   requestC6BolepixCompanyActivation,
 } from '@/lib/banking/c6/c6EmissionAuthorization';
-import { describeC6BolepixPanel } from '@/lib/banking/c6/c6BolepixV2OpenApi';
+import { describeC6BolepixPanel, c6BolepixV2HasNamedReceipt } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import {
   assertC6ConfigResponseSafe,
   getCompanyC6BankConfig,
@@ -64,12 +64,12 @@ export async function POST(request: Request) {
       beneficiaryLinked: Boolean(config.financialAccountId),
       pixConfigured,
       activationRequested: config.bolepixActivationRequested === true,
-      testParcelNamed: false,
+      testParcelNamed: c6BolepixV2HasNamedReceipt(auth.tenantId, String(config.id || '')),
     });
     return NextResponse.json({
       config,
       emissionEnabled: false,
-      postAllowed: false,
+      postAllowed: panel.postAllowed,
       bolepix: panel,
     });
   } catch (error) {

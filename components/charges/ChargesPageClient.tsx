@@ -138,6 +138,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [totalsReady, setTotalsReady] = useState(false);
   const [chargeStatusReady, setChargeStatusReady] = useState(false);
   const [c6ChargesLoaded, setC6ChargesLoaded] = useState(false);
+  const [c6EmitAuthorizedIds, setC6EmitAuthorizedIds] = useState<Set<string>>(new Set());
   const [payments, setPayments] = useState<FinanceReceiptRow[]>([]);
   const chargeLoadAbortRef = useRef<AbortController | null>(null);
   const [projectsList, setProjectsList] = useState<string[]>([]);
@@ -397,9 +398,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           body: JSON.stringify({ installmentIds: chunk }),
         });
         if (!chargesRes.ok) return null;
-        const chargesJson = await chargesRes.json().catch(() => ({}));
-        const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+        const chargesJson = (await chargesRes.json().catch(() => ({}))) as {
+          charges?: CompanyAsaasChargeResponse[];
+          emitAuthorizedReceiptIds?: string[];
+        };
+        const charges = chargesJson.charges || [];
         map = mergeFetchedChargesIntoMap(map, chunk, charges);
+        setC6EmitAuthorizedIds((current) => {
+          const next = new Set(current);
+          for (const id of chunk) next.delete(id);
+          for (const id of chargesJson.emitAuthorizedReceiptIds || []) next.add(String(id));
+          return next;
+        });
       }
       setC6ChargesByInstallment(map);
       return map;
@@ -2224,6 +2234,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         installmentsDataReady={installmentsDataReady}
                         bankStatusConsulted={chargeStatusReady}
                         c6ChargesLoaded={c6ChargesLoaded}
+                        c6EmitAuthorized={c6EmitAuthorizedIds.has(installmentId)}
                         customerPhone={customerPhone}
                         customerEmail={customerEmail}
                         whatsappShareUrl={whatsappShareUrl}

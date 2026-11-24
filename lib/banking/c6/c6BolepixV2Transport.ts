@@ -26,7 +26,7 @@ import {
 } from '@/lib/banking/c6/c6BolepixV2Client';
 import {
   C6_BOLEPIX_V2_SPEC_VERSION,
-  isC6BolepixV2LiveRelease,
+  isC6BolepixV2LiveReceipt,
 } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { c6BolepixV2Endpoint, redactC6BolepixV2Body } from '@/lib/banking/c6/c6BolepixV2Issue';
 import {
@@ -204,6 +204,8 @@ export async function postC6BolepixV2Charge(params: {
   integrationId: string;
   environment: BankEnvironment;
   input: C6BolepixV2CreateInput;
+  receiptId?: string;
+  activationGranted?: boolean;
   allowSimulatedHttp?: boolean;
   fetchFn?: FetchFn;
   credentials?: C6AuthCredentials | null;
@@ -217,7 +219,10 @@ export async function postC6BolepixV2Charge(params: {
       now: params.now,
     });
   }
-  if (!isC6BolepixV2LiveRelease(params.companyId, params.integrationId)) {
+  if (
+    params.activationGranted !== true ||
+    !isC6BolepixV2LiveReceipt(params.companyId, params.integrationId, params.receiptId || '')
+  ) {
     throw new C6BolepixV2LiveDisabledError();
   }
   const creds = params.credentials;

@@ -4,7 +4,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
-import { emitC6InstallmentBoleto } from '@/lib/banking/c6/c6InstallmentCharge';
 import { listC6ChargesForInstallments } from '@/lib/banking/c6/c6ChargeList';
 import { C6EmissionNotHomologatedError, isC6ProviderCode } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
@@ -433,10 +432,10 @@ export async function generateMissingSaleChargesBatch(
   for (const installmentId of batch) {
     try {
       if (providerInfo.provider === 'C6') {
-        const emitted = await emitC6InstallmentBoleto(admin, params.companyId, installmentId);
-        if (emitted.reused) reused += 1;
-        else if (emitted.emitted) created += 1;
-        else errors.push({ installmentId, message: emitted.message });
+        errors.push({
+          installmentId,
+          message: 'Emissão C6 em lote permanece bloqueada. Use o botão da parcela autorizada.',
+        });
         continue;
       }
       const before = await listCompanyAsaasChargesForInstallments(admin, params.companyId, [

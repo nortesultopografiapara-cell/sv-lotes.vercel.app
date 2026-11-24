@@ -1,14 +1,17 @@
 /**
  * Emissão nova de cobrança C6.
  * O POST /v1/bank_slips/ não é mais usado. O motor é o Bolepix v2,
- * e a chamada real permanece desligada. Consulta e PDF de cobrança
+ * e a chamada real só existe para a parcela nomeada. Consulta e PDF de cobrança
  * histórica continuam na leitura v1.
  */
 
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveChargePayer } from '@/lib/buyerLegalEntity';
-import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
+import {
+  isC6EmissionActivated,
+  readC6BolepixActivationRequested,
+} from '@/lib/banking/c6/c6EmissionAuthorization';
 import {
   executeC6BankSlipGet,
   executeC6BankSlipPdf,
@@ -18,7 +21,10 @@ import {
 import { executeC6BolepixV2Get, executeC6BolepixV2Pdf, C6BolepixV2LiveDisabledError } from '@/lib/banking/c6/c6BolepixV2Client';
 import { readC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
 import { postC6BolepixV2Charge } from '@/lib/banking/c6/c6BolepixV2Transport';
-import { isC6BolepixV2LiveRelease } from '@/lib/banking/c6/c6BolepixV2OpenApi';
+import {
+  isC6BolepixV2LiveReceipt,
+  isC6BolepixV2ReceiptCandidate,
+} from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { C6BolepixPixKeyRequiredError, c6BolepixV2ReferenceForInstallment } from '@/lib/banking/c6/c6BolepixV2Emission';
 import {
   c6BolepixV2MayCallBank,
@@ -128,8 +134,7 @@ export async function emitC6InstallmentBoleto(
   options?: C6InstallmentChargeOptions,
 ): Promise<C6InstallmentEmitResult> {
   const live = !simulated(options);
-  const emissionActivated = live && (await isC6EmissionActivated(admin, companyId));
-  if (live && !emissionActivated) {
+  if (live && !isC6BolepixV2ReceiptCandidate(companyId, installmentId)) {
     throw new C6EmissionNotHomologatedError();
   }
 
@@ -312,8 +317,12 @@ export async function emitC6InstallmentBoleto(
     },
     options?.now,
   );
-  if (!simulated(options) && !isC6BolepixV2LiveRelease(companyId, clean(integration.id))) {
-    throw new C6BolepixV2LiveDisabledError();
+  const activationGranted =
+    !live ||
+    (isC6BolepixV2LiveReceipt(companyId, clean(integration.id), installmentId) &&
+      readC6BolepixActivationRequested(integration.metadata));
+  if (live && !activationGranted) {
+    throw new C6EmissionNotHomologatedError();
   }
   const fingerprint = c6BolepixRequestFingerprint({
     amount: amount.toFixed(2),
@@ -355,6 +364,8 @@ export async function emitC6InstallmentBoleto(
   const created = await postC6BolepixV2Charge({
     companyId,
     integrationId: clean(integration.id),
+    receiptId: installmentId,
+    activationGranted,
     environment,
     input: {
       environment,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
 import { listC6ChargesForInstallments } from '@/lib/banking/c6/c6ChargeList';
+import { filterC6BolepixAuthorizedReceipts } from '@/lib/banking/c6/c6EmissionAuthorization';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,12 @@ export async function POST(request: Request) {
       ? body.installmentIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 200)
       : [];
     const charges = await listC6ChargesForInstallments(auth.admin, auth.tenantId, installmentIds);
-    return NextResponse.json({ ok: true, charges });
+    const emitAuthorizedReceiptIds = await filterC6BolepixAuthorizedReceipts(
+      auth.admin,
+      auth.tenantId,
+      installmentIds,
+    );
+    return NextResponse.json({ ok: true, charges, emitAuthorizedReceiptIds });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro ao listar boletos C6.';
     console.error('[finance/c6/charges POST]', message);

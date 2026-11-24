@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeTenantBilling } from '@/lib/tenantBillingAuth';
 import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
+import { isC6BolepixV2CompanyReleased, isC6BolepixV2ReceiptCandidate } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import {
   emitC6InstallmentBoleto,
@@ -20,13 +21,16 @@ function denied() {
 export async function POST(request: Request) {
   const auth = await authorizeTenantBilling(request);
   if ('error' in auth) return auth.error;
-  if (!(await isC6EmissionActivated(auth.admin, auth.tenantId))) return denied();
-
   const body = (await request.json().catch(() => ({}))) as { installmentId?: string };
   const installmentId = String(body.installmentId || '').trim();
   if (!installmentId) {
     return NextResponse.json({ error: 'installmentId obrigatório.' }, { status: 400 });
   }
+  const homologated =
+    isC6BolepixV2ReceiptCandidate(auth.tenantId, installmentId) ||
+    (await isC6EmissionActivated(auth.admin, auth.tenantId));
+  if (!homologated) return denied();
+
   try {
     const result = await emitC6InstallmentBoleto(auth.admin, auth.tenantId, installmentId);
     return NextResponse.json(result);
@@ -42,7 +46,12 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const auth = await authorizeTenantBilling(request);
   if ('error' in auth) return auth.error;
-  if (!(await isC6EmissionActivated(auth.admin, auth.tenantId))) return denied();
+  if (
+    !isC6BolepixV2CompanyReleased(auth.tenantId) &&
+    !(await isC6EmissionActivated(auth.admin, auth.tenantId))
+  ) {
+    return denied();
+  }
   const installmentId = new URL(request.url).searchParams.get('installmentId')?.trim() || '';
   if (!installmentId) {
     return NextResponse.json({ error: 'installmentId obrigatório.' }, { status: 400 });

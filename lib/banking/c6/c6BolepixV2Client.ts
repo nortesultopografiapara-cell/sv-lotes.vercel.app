@@ -1,10 +1,10 @@
 /**
- * Cliente Bolepix v2. Chamada real bloqueada por C6_BOLEPIX_V2_LIVE_CALLS_ENABLED.
+ * Cliente Bolepix v2 usado nos testes simulados.
+ * O POST real passa pelo transporte mTLS e pela parcela nomeada.
  * Consulta e PDF usam a referência externa de 26 caracteres, não o id interno.
  */
 
 import {
-  C6_BOLEPIX_V2_LIVE_CALLS_ENABLED,
   C6_BOLEPIX_V2_SPEC_VERSION,
   C6_BOLEPIX_V2_URL,
 } from '@/lib/banking/c6/c6BolepixV2OpenApi';
@@ -102,12 +102,8 @@ async function execute(
   init: { method: string; headers: Record<string, string>; body?: string },
   simulated: boolean,
 ): Promise<C6BolepixV2FetchResult> {
-  if (!C6_BOLEPIX_V2_LIVE_CALLS_ENABLED) {
-    if (simulated && typeof fetchFn === 'function') return fetchFn(url, init);
-    throw new C6BolepixV2LiveDisabledError();
-  }
-  if (typeof fetchFn !== 'function') throw new C6BolepixV2LiveDisabledError();
-  return fetchFn(url, init);
+  if (simulated && typeof fetchFn === 'function') return fetchFn(url, init);
+  throw new C6BolepixV2LiveDisabledError();
 }
 
 export async function executeC6BolepixV2Create(params: {

@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isC6BolepixV2LiveReceipt } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 
 type IntegrationRow = {
   id: string;
@@ -27,6 +28,18 @@ export function readC6EmissionEnabled(metadata: unknown): boolean {
 export function readC6BolepixActivationRequested(metadata: unknown): boolean {
   const box = asRecord(asRecord(metadata)?.c6);
   return box?.bolepix_activation_requested === true;
+}
+
+/** Recibos que o servidor aceita emitir agora. A lista compilada não basta sem o pedido do administrador. */
+export async function filterC6BolepixAuthorizedReceipts(
+  admin: SupabaseClient,
+  companyId: string,
+  receiptIds: string[],
+): Promise<string[]> {
+  const row = await loadOwnC6Integration(admin, companyId);
+  if (!row || String(row.status || '').toUpperCase() === 'DISABLED') return [];
+  if (!readC6BolepixActivationRequested(row.metadata)) return [];
+  return receiptIds.filter((receiptId) => isC6BolepixV2LiveReceipt(companyId, row.id, receiptId));
 }
 
 function metadataWithActivationRequest(metadata: unknown, requested: boolean): Record<string, unknown> {

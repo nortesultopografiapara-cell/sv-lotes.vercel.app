@@ -44,7 +44,7 @@ function json(status: number, body: unknown) {
 }
 
 async function main() {
-  assert(C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === false, 'a chamada real do Bolepix permanece desligada');
+  assert(C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === true, 'a chamada real fica compilada e ainda exige a parcela nomeada');
   let liveBlocked = false;
   try {
     await executeC6BolepixV2Create({ input: base, now: NOW });
@@ -675,9 +675,34 @@ async function main() {
 
   const issue = await import('../lib/banking/c6/c6BolepixV2Issue');
   const openApi = await import('../lib/banking/c6/c6BolepixV2OpenApi');
-  assert(openApi.C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === false, 'a chamada real permanece desligada');
-  assert(openApi.C6_BOLEPIX_V2_RELEASED_INTEGRATIONS.length === 0, 'nenhuma empresa está liberada');
+  assert(openApi.C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === true, 'a chamada real fica compilada');
+  assert(openApi.C6_BOLEPIX_V2_RELEASED_INTEGRATIONS.length === 1, 'uma integração está nomeada');
+  assert(openApi.C6_BOLEPIX_V2_RELEASED_RECEIPTS.length === 1, 'uma parcela está nomeada');
+  const released = openApi.C6_BOLEPIX_V2_RELEASED_RECEIPTS[0];
+  assert(
+    openApi.isC6BolepixV2LiveReceipt(released.companyId, released.integrationId, released.receiptId),
+    'a parcela nomeada passa no servidor',
+  );
+  for (const other of [
+    '25c9d7c7-fd95-43b1-97ba-8a1953469e0e',
+    '4f1f6dea-53c1-4a96-91d3-c31d1dd1dca3',
+    '10c81966-7ced-4e09-9f45-df04496dcefe',
+    'fb76a549-399c-4f08-975a-0b0191b096b3',
+  ]) {
+    assert(
+      !openApi.isC6BolepixV2LiveReceipt(released.companyId, released.integrationId, other),
+      'as outras parcelas da mesma venda ficam bloqueadas',
+    );
+  }
+  assert(
+    !openApi.isC6BolepixV2LiveReceipt('company-b', released.integrationId, released.receiptId),
+    'outra empresa não usa a parcela autorizada',
+  );
   assert(!issue.c6BolepixV2MayCallBank('company-a', 'integration-a', false), 'sem simulação a chamada não sai');
+  assert(
+    !issue.c6BolepixV2MayCallBank(released.companyId, released.integrationId, false),
+    'a integração sem o recibo não chama o banco',
+  );
   const previousKey = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = 'teste-fase-4c-chave-bancaria';
   const saved = pix.prepareC6BolepixPixKeyWrite({
@@ -857,6 +882,63 @@ async function main() {
     liveTransportBlocked = error instanceof C6BolepixV2LiveDisabledError;
   }
   assert(liveTransportBlocked && liveFetchCalls === 0, 'sem liberação o mTLS não é chamado');
+  const named = (await import('../lib/banking/c6/c6BolepixV2OpenApi')).C6_BOLEPIX_V2_RELEASED_RECEIPTS[0];
+  let namedWithoutGrant = false;
+  try {
+    await transport.postC6BolepixV2Charge({
+      companyId: named.companyId,
+      integrationId: named.integrationId,
+      receiptId: named.receiptId,
+      environment: 'PRODUCTION',
+      input: { ...base, pixKey: sample },
+      fetchFn: async () => {
+        liveFetchCalls += 1;
+        return { status: 201, bodyText: '{}', contentType: 'application/json' };
+      },
+      now: NOW,
+    });
+  } catch (error) {
+    const { C6BolepixV2LiveDisabledError } = await import('../lib/banking/c6/c6BolepixV2Client');
+    namedWithoutGrant = error instanceof C6BolepixV2LiveDisabledError;
+  }
+  let siblingBlocked = false;
+  try {
+    await transport.postC6BolepixV2Charge({
+      companyId: named.companyId,
+      integrationId: named.integrationId,
+      receiptId: '25c9d7c7-fd95-43b1-97ba-8a1953469e0e',
+      activationGranted: true,
+      environment: 'PRODUCTION',
+      input: { ...base, pixKey: sample },
+      fetchFn: async () => {
+        liveFetchCalls += 1;
+        return { status: 201, bodyText: '{}', contentType: 'application/json' };
+      },
+      now: NOW,
+    });
+  } catch (error) {
+    const { C6BolepixV2LiveDisabledError } = await import('../lib/banking/c6/c6BolepixV2Client');
+    siblingBlocked = error instanceof C6BolepixV2LiveDisabledError;
+  }
+  let namedWithoutCredentials = false;
+  try {
+    await transport.postC6BolepixV2Charge({
+      companyId: named.companyId,
+      integrationId: named.integrationId,
+      receiptId: named.receiptId,
+      activationGranted: true,
+      environment: 'PRODUCTION',
+      input: { ...base, pixKey: sample },
+      now: NOW,
+    });
+  } catch (error) {
+    const { C6BolepixV2LiveDisabledError } = await import('../lib/banking/c6/c6BolepixV2Client');
+    namedWithoutCredentials = error instanceof C6BolepixV2LiveDisabledError;
+  }
+  assert(
+    namedWithoutGrant && siblingBlocked && namedWithoutCredentials && liveFetchCalls === 0,
+    'a parcela nomeada não chama o banco sem autorização nem credencial, e a parcela vizinha permanece bloqueada',
+  );
   const agent = transport.createC6BolepixMtlsAgent({
     certificatePem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
     privateKeyPem: '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----',
@@ -1048,6 +1130,39 @@ async function main() {
     described.postAllowed === false && described.phase === 'aguardando_autorizacao',
     'parcela indicada sem liberação individual não abre o POST',
   );
+  const releasedReceipt = openApiState.C6_BOLEPIX_V2_RELEASED_RECEIPTS[0];
+  const operational = openApiState.describeC6BolepixPanel({
+    companyId: releasedReceipt.companyId,
+    integrationId: releasedReceipt.integrationId,
+    integrationPresent: true,
+    credentialsPresent: true,
+    beneficiaryLinked: true,
+    pixConfigured: true,
+    activationRequested: true,
+    testParcelNamed: true,
+  });
+  assert(
+    operational.postAllowed === true && operational.phase === 'emissao_operacional',
+    'a empresa autorizada com a parcela nomeada reflete o POST',
+  );
+  const waitingAdmin = openApiState.describeC6BolepixPanel({
+    companyId: releasedReceipt.companyId,
+    integrationId: releasedReceipt.integrationId,
+    integrationPresent: true,
+    credentialsPresent: true,
+    beneficiaryLinked: true,
+    pixConfigured: true,
+    activationRequested: false,
+    testParcelNamed: true,
+  });
+  assert(waitingAdmin.postAllowed === false, 'sem o pedido do administrador o POST fica fechado');
+  const reference = (await import('../lib/banking/c6/c6BolepixV2Emission')).c6BolepixV2ReferenceForInstallment(
+    releasedReceipt.receiptId,
+  );
+  assert(/^[A-Z0-9]{26}$/.test(reference), 'a referência externa da parcela autorizada tem 26 caracteres');
+  const batch = fs.readFileSync(path.join(process.cwd(), 'lib/finance/saleChargesService.ts'), 'utf8');
+  assert(batch.includes('Emissão C6 em lote permanece bloqueada'), 'a emissão em lote continua bloqueada');
+  assert(!batch.includes('emitC6InstallmentBoleto'), 'o lote não chama a emissão individual');
   const configured = openApiState.describeC6BolepixPanel({
     companyId: 'company-a',
     integrationId: 'integration-a',

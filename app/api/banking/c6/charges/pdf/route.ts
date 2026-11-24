@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeTenantBilling } from '@/lib/tenantBillingAuth';
 import { isC6EmissionActivated } from '@/lib/banking/c6/c6EmissionAuthorization';
+import { isC6BolepixV2CompanyReleased } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { fetchC6InstallmentPdf } from '@/lib/banking/c6/c6InstallmentCharge';
 
@@ -12,7 +13,10 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   const auth = await authorizeTenantBilling(request);
   if ('error' in auth) return auth.error;
-  if (!(await isC6EmissionActivated(auth.admin, auth.tenantId))) {
+  if (
+    !isC6BolepixV2CompanyReleased(auth.tenantId) &&
+    !(await isC6EmissionActivated(auth.admin, auth.tenantId))
+  ) {
     return NextResponse.json({ error: 'Emissão C6 ainda não autorizada para esta empresa.' }, { status: 403 });
   }
 

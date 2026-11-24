@@ -1,6 +1,7 @@
 /**
  * Constantes lidas de docs/c6/bankslip-v2-api.yaml (Bolepix 1.2.0).
- * A chamada real permanece desligada. CREATED não significa registro na rede.
+ * O POST real existe somente para a parcela nomeada abaixo.
+ * CREATED não significa registro na rede nem pagamento.
  */
 
 export const C6_BOLEPIX_V2_SPEC_VERSION = '1.2.0' as const;
@@ -32,19 +33,37 @@ export const C6_BOLEPIX_V2_REFERENCE_PATTERN = /^[A-Z0-9]{26}$/;
 
 /**
  * Constante compilada no código. Não é variável da Vercel.
- * Alterá-la exige publicação e continua exigindo a lista individual abaixo.
+ * Sozinha não emite: a parcela também precisa estar na lista abaixo.
  */
-export const C6_BOLEPIX_V2_LIVE_CALLS_ENABLED = false as const;
+export const C6_BOLEPIX_V2_LIVE_CALLS_ENABLED = true as const;
 export const C6_BOLEPIX_V2_CONFIG_WRITES_ENABLED = false as const;
 
-/**
- * Liberação por empresa e integração. A lista fica vazia:
- * nenhuma empresa recebe chamada real nesta fase.
- */
+/** Única empresa e integração da homologação. Não libera as parcelas dessa integração. */
 export const C6_BOLEPIX_V2_RELEASED_INTEGRATIONS: readonly {
   companyId: string;
   integrationId: string;
-}[] = [];
+}[] = [
+  {
+    companyId: 'f26f2331-1885-4ac6-8d0e-4131cc8a8014',
+    integrationId: 'b5cc1de3-172b-4926-a528-36cebc14db51',
+  },
+];
+
+/**
+ * Entrada de R$ 10,00, vencimento 26/11/2026, contrato 000000013/2026.
+ * Qualquer outro recibo, inclusive da mesma venda, fica de fora.
+ */
+export const C6_BOLEPIX_V2_RELEASED_RECEIPTS: readonly {
+  companyId: string;
+  integrationId: string;
+  receiptId: string;
+}[] = [
+  {
+    companyId: 'f26f2331-1885-4ac6-8d0e-4131cc8a8014',
+    integrationId: 'b5cc1de3-172b-4926-a528-36cebc14db51',
+    receiptId: '693281b1-4d61-4209-adcc-0b378968aed3',
+  },
+];
 
 export function isC6BolepixV2LiveRelease(companyId: string, integrationId: string): boolean {
   const company = String(companyId || '').trim();
@@ -53,6 +72,46 @@ export function isC6BolepixV2LiveRelease(companyId: string, integrationId: strin
     (item) => item.companyId === company && item.integrationId === integration,
   );
   return C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === true && listed;
+}
+
+export function isC6BolepixV2CompanyReleased(companyId: string): boolean {
+  const company = String(companyId || '').trim();
+  return (
+    C6_BOLEPIX_V2_LIVE_CALLS_ENABLED === true &&
+    C6_BOLEPIX_V2_RELEASED_INTEGRATIONS.some((item) => item.companyId === company)
+  );
+}
+
+export function isC6BolepixV2ReceiptCandidate(companyId: string, receiptId: string): boolean {
+  const company = String(companyId || '').trim();
+  const receipt = String(receiptId || '').trim();
+  return C6_BOLEPIX_V2_RELEASED_RECEIPTS.some(
+    (item) => item.companyId === company && item.receiptId === receipt,
+  );
+}
+
+/** POST real somente para a parcela, a empresa e a integração nomeadas. */
+export function isC6BolepixV2LiveReceipt(
+  companyId: string,
+  integrationId: string,
+  receiptId: string,
+): boolean {
+  if (!isC6BolepixV2LiveRelease(companyId, integrationId)) return false;
+  const receipt = String(receiptId || '').trim();
+  return C6_BOLEPIX_V2_RELEASED_RECEIPTS.some(
+    (item) =>
+      item.companyId === String(companyId || '').trim() &&
+      item.integrationId === String(integrationId || '').trim() &&
+      item.receiptId === receipt,
+  );
+}
+
+export function c6BolepixV2HasNamedReceipt(companyId: string, integrationId: string): boolean {
+  return C6_BOLEPIX_V2_RELEASED_RECEIPTS.some(
+    (item) =>
+      item.companyId === String(companyId || '').trim() &&
+      item.integrationId === String(integrationId || '').trim(),
+  );
 }
 
 /** POST real só depois da parcela de teste e da liberação de uma integração. */
@@ -153,9 +212,9 @@ export function describeC6BolepixPanel(input: {
   if (decision.postAllowed) {
     return {
       phase: 'emissao_operacional',
-      label: 'Emissão operacional',
+      label: 'Parcela autorizada',
       postAllowed: true,
-      detail: 'A emissão real está limitada à parcela de teste indicada.',
+      detail: 'Somente a entrada autorizada pode ser emitida. As demais parcelas continuam bloqueadas.',
     };
   }
   if (released && !input.testParcelNamed) {
@@ -164,6 +223,22 @@ export function describeC6BolepixPanel(input: {
       label: 'Integração liberada',
       postAllowed: false,
       detail: 'A liberação não emite outras parcelas. Falta a parcela de teste indicada pelo administrador.',
+    };
+  }
+  if (!released) {
+    if (input.activationRequested) {
+      return {
+        phase: 'aguardando_autorizacao',
+        label: 'Aguardando autorização',
+        postAllowed: false,
+        detail: 'Emissão bloqueada por segurança. O POST real continua desligado.',
+      };
+    }
+    return {
+      phase: 'evp_configurada',
+      label: 'EVP configurada',
+      postAllowed: false,
+      detail: 'Emissão bloqueada por segurança.',
     };
   }
   if (input.activationRequested) {

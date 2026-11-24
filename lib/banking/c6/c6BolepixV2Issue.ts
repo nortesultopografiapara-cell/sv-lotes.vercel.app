@@ -6,7 +6,7 @@
 
 import {
   C6_BOLEPIX_V2_URL,
-  isC6BolepixV2LiveRelease,
+  isC6BolepixV2LiveReceipt,
 } from '@/lib/banking/c6/c6BolepixV2OpenApi';
 import {
   buildC6BolepixV2EmissionBody,
@@ -73,9 +73,14 @@ export function c6BolepixV2PayloadFromSealedKey(
   return { body, endpoint: c6BolepixV2Endpoint(input.environment), pixKey };
 }
 
-export function c6BolepixV2MayCallBank(companyId: string, integrationId: string, simulated: boolean): boolean {
+export function c6BolepixV2MayCallBank(
+  companyId: string,
+  integrationId: string,
+  simulated: boolean,
+  receiptId?: string,
+): boolean {
   if (simulated) return true;
-  return isC6BolepixV2LiveRelease(companyId, integrationId);
+  return isC6BolepixV2LiveReceipt(companyId, integrationId, receiptId || '');
 }
 
 export function completionForC6BolepixV2(result: {

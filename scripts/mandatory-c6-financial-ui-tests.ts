@@ -43,7 +43,8 @@ const writeAt = emission.indexOf('await requestC6BolepixCompanyActivation');
 assert(verifyAt > 0 && writeAt > verifyAt, 'a senha é conferida antes de gravar a solicitação');
 assert(!emission.includes('setC6CompanyEmissionEnabled'), 'a solicitação não liga a flag de emissão');
 assert(!emission.includes('postC6BolepixV2Charge'), 'a solicitação não emite boleto');
-assert(emission.includes('postAllowed: false'), 'a resposta não libera o POST');
+assert(emission.includes('postAllowed: panel.postAllowed'), 'o POST segue a decisão do servidor');
+assert(emission.includes('emissionEnabled: false'), 'a solicitação não marca a emissão como ligada');
 assert(emission.includes('Autorização não concedida.'), 'senha recusada continua genérica');
 
 console.log('C6_FINANCIAL_UI_OK');
