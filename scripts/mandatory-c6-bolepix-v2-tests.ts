@@ -1217,6 +1217,7 @@ async function main() {
   assert(configured.phase === 'evp_configurada' && configured.postAllowed === false, 'EVP configurada não é emissão operacional');
   await proveAuthorizedReceiptReachesTransport();
   await proveSituationConsult();
+  await proveAttemptPrepare();
 
   if (previousKey == null) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = previousKey;
@@ -1752,6 +1753,85 @@ async function proveSituationConsult() {
   assert(route.includes("purpose') === 'situation'") && route.includes('consultC6BolepixSituation'), 'a rota existente faz a consulta de situação');
   assert(panel.includes('purpose=situation') && page.includes('purpose=situation'), 'mapa e cobranças chamam a consulta no servidor');
   assert(actions.includes('Consultar situação no C6'), 'o botão de consulta aparece na parcela');
+}
+
+async function proveAttemptPrepare() {
+  const emission = await import('../lib/banking/c6/c6BolepixV2Emission');
+  const attempt = await import('../lib/banking/c6/c6BolepixAttempt');
+  const validation = await import('../lib/banking/c6/c6BolepixV2Validation');
+  const receiptId = '693281b1-4d61-4209-adcc-0b378968aed3';
+  const first = emission.c6BolepixV2ReferenceForInstallment(receiptId);
+  const second = emission.c6BolepixV2ReferenceForAttempt(receiptId, 2);
+  assert(first !== second && /^[A-F0-9]{26}$/.test(second), 'a segunda tentativa recebe referência inédita');
+  const blocked = attempt.decideC6BolepixAttemptPrepare({
+    reservationStatus: 'FAILED',
+    reservationHttp: 400,
+    reservationChargeId: null,
+    consultHttp: 404,
+    titleFound: false,
+    openAttempt: false,
+    bankCharge: false,
+    sameReference: true,
+  });
+  const ready = attempt.decideC6BolepixAttemptPrepare({
+    reservationStatus: 'FAILED',
+    reservationHttp: 400,
+    reservationChargeId: null,
+    consultHttp: 404,
+    titleFound: false,
+    openAttempt: false,
+    bankCharge: false,
+    sameReference: false,
+  });
+  const found = attempt.decideC6BolepixAttemptPrepare({
+    reservationStatus: 'FAILED',
+    reservationHttp: 400,
+    reservationChargeId: null,
+    consultHttp: 200,
+    titleFound: true,
+    openAttempt: false,
+    bankCharge: false,
+    sameReference: false,
+  });
+  const uncertain = attempt.decideC6BolepixAttemptPrepare({
+    reservationStatus: 'FAILED',
+    reservationHttp: 400,
+    reservationChargeId: null,
+    consultHttp: 500,
+    titleFound: false,
+    openAttempt: false,
+    bankCharge: false,
+    sameReference: false,
+  });
+  assert(!blocked.accepted && blocked.reason === 'reference_reused', 'referência repetida não prepara outra tentativa');
+  assert(ready.accepted, 'HTTP 400 reconciliado com 404 pode preparar referência nova');
+  assert(!found.accepted && found.reason === 'title_found', 'título localizado bloqueia nova tentativa');
+  assert(!uncertain.accepted && uncertain.reason === 'uncertain', 'HTTP 500 não autoriza nova tentativa');
+  let longCity = false;
+  try {
+    validation.buildC6BolepixV2CreateBody(
+      {
+        ...base,
+        payer: { ...payer, city: 'Cidade com nome maior do que o limite oficial de quarenta' },
+      },
+      NOW,
+    );
+  } catch (error) {
+    longCity = error instanceof validation.C6BolepixV2ValidationError;
+  }
+  assert(longCity, 'cidade acima de 40 caracteres é recusada antes do POST');
+  const sql = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/20261124190000_c6_bolepix_attempt_history.sql'),
+    'utf8',
+  );
+  assert(sql.includes('CREATE TABLE IF NOT EXISTS public.c6_bolepix_attempts'), 'a migration cria o histórico');
+  assert(sql.includes('uq_c6_bolepix_attempts_one_open'), 'a migration impede duas tentativas abertas');
+  assert(!sql.includes('attempt_count = attempt_count + 1'), 'a função antiga não reabre a mesma referência');
+  assert(sql.includes('retry_allowed = false'), 'a conclusão não marca a referência como reutilizável');
+  const panel = fs.readFileSync(path.join(process.cwd(), 'components/sales/SaleChargesPanel.tsx'), 'utf8');
+  const actions = fs.readFileSync(path.join(process.cwd(), 'components/charges/ChargeInstallmentActions.tsx'), 'utf8');
+  assert(actions.includes('Preparar nova tentativa C6'), 'a ação de preparação aparece na parcela');
+  assert(panel.includes('/api/banking/c6/charges/attempt'), 'a preparação passa pelo servidor');
 }
 
 main().catch((error) => {

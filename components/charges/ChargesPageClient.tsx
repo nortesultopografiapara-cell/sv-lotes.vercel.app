@@ -1002,6 +1002,27 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     return charge;
   };
 
+  async function prepareC6Attempt(installmentId: string, password: string) {
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch('/api/banking/c6/charges/attempt', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId, password }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; prepared?: boolean };
+      if (!res.ok || !json.prepared) {
+        throw new Error(json.error || json.message || 'A nova tentativa não foi preparada.');
+      }
+      showToast(json.message || 'Nova tentativa preparada. Nenhum boleto foi emitido.', true);
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Falha ao preparar a nova tentativa.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  }
+
   async function consultC6Situation(installmentId: string) {
     setAsaasActionInstallmentId(installmentId);
     try {
@@ -2327,6 +2348,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         c6Notice={provider === 'C6' ? c6NoticeByInstallment[installmentId] || null : null}
                         onConsultSituation={
                           provider === 'C6' ? () => void consultC6Situation(installmentId) : undefined
+                        }
+                        onPrepareAttempt={
+                          provider === 'C6' ? (password) => void prepareC6Attempt(installmentId, password) : undefined
                         }
                         onGenerate={(billingType) =>
                           void handleCreateCharge(installmentId, billingType)

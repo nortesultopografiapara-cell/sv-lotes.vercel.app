@@ -149,6 +149,61 @@ async function releaseUnsentBolepixReservation(
     .is('last_http_status', null);
 }
 
+async function loadOpenBolepixAttempt(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentId: string,
+): Promise<Record<string, unknown> | null> {
+  const result = await admin
+    .from('c6_bolepix_attempts')
+    .select('id, status, c6_charge_id, last_http_status, external_reference_id')
+    .eq('company_id', companyId)
+    .eq('finance_receipt_id', installmentId);
+  if (result.error) {
+    const message = String(result.error.message || '');
+    if (/c6_bolepix_attempts|does not exist|schema cache|Could not find the table/i.test(message)) return null;
+    throw new Error('Não foi possível verificar a tentativa Bolepix.');
+  }
+  const rows = Array.isArray(result.data) ? result.data : [];
+  return (
+    rows.find((row) =>
+      ['RESERVED', 'PROCESSING', 'SUCCEEDED', 'UNKNOWN'].includes(clean((row as { status?: string }).status).toUpperCase()),
+    ) || null
+  ) as Record<string, unknown> | null;
+}
+
+async function claimPreparedBolepixAttempt(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+  installmentId: string,
+): Promise<boolean> {
+  const claimed = await admin.rpc('claim_c6_bolepix_attempt', {
+    p_company_id: companyId,
+    p_integration_id: integrationId,
+    p_finance_receipt_id: installmentId,
+  });
+  if (claimed.error) throw new Error('Não foi possível reservar a nova tentativa.');
+  return claimed.data?.accepted === true;
+}
+
+async function releasePreparedBolepixAttempt(
+  admin: SupabaseClient,
+  companyId: string,
+  integrationId: string,
+  installmentId: string,
+): Promise<void> {
+  await admin
+    .from('c6_bolepix_attempts')
+    .update({ status: 'RESERVED', updated_at: new Date().toISOString() })
+    .eq('company_id', companyId)
+    .eq('integration_id', integrationId)
+    .eq('finance_receipt_id', installmentId)
+    .eq('status', 'PROCESSING')
+    .is('c6_charge_id', null)
+    .is('last_http_status', null);
+}
+
 async function loadReceipt(admin: SupabaseClient, companyId: string, installmentId: string) {
   const { data, error } = await admin
     .from('finance_receipts')
@@ -232,6 +287,7 @@ export async function emitC6InstallmentBoleto(
 
   const current = await existingCharge(admin, companyId, installmentId);
   let resumeUnsent = false;
+  let preparedAttempt: { id: string; external_reference_id: string } | null = null;
   const bolepixReservation = await admin
     .from('c6_bolepix_reservations')
     .select('id, status, c6_charge_id, retry_allowed, external_reference_id, last_http_status')
@@ -252,7 +308,38 @@ export async function emitC6InstallmentBoleto(
       reservedStatus === 'PROCESSING' ||
       Boolean(chargeId && reservedStatus !== 'SUCCEEDED');
     const unsent = reservedStatus === 'RESERVED' && !chargeId && httpStatus == null;
-    if (!unsent) {
+    if (reservedStatus === 'FAILED' && !chargeId) {
+      const openAttempt = await loadOpenBolepixAttempt(admin, companyId, installmentId);
+      if (
+        openAttempt &&
+        clean(openAttempt.status).toUpperCase() === 'RESERVED' &&
+        !clean(openAttempt.c6_charge_id) &&
+        openAttempt.last_http_status == null
+      ) {
+        preparedAttempt = {
+          id: clean(openAttempt.id),
+          external_reference_id: clean(openAttempt.external_reference_id),
+        };
+      } else if (openAttempt) {
+        return {
+          emitted: false,
+          reused: false,
+          duplicate: true,
+          needsReconciliation: true,
+          bankSlipId: clean(openAttempt.c6_charge_id) || null,
+          digitableLine: null,
+          barCode: null,
+          pixCopyPaste: null,
+          bolepixSpecInRepo: C6_BOLEPIX_OFFICIAL_SPEC_IN_REPO,
+          amount,
+          dueDate,
+          installmentId,
+          companyId,
+          message: 'Há uma tentativa Bolepix em aberto ou com resultado incerto. Nenhuma nova emissão foi feita.',
+        };
+      }
+    }
+    if (!unsent && !preparedAttempt) {
       return {
         emitted: false,
         reused: reservedStatus === 'SUCCEEDED',
@@ -269,7 +356,7 @@ export async function emitC6InstallmentBoleto(
         companyId,
         message:
           reservedStatus === 'FAILED'
-            ? 'A referência desta tentativa não pode ser reutilizada. Consulte a situação no C6. Nenhuma nova emissão foi feita.'
+            ? 'A referência anterior permanece arquivada. Prepare uma nova tentativa com referência inédita. Nenhuma emissão foi feita.'
             : uncertain
               ? 'O resultado desta cobrança está incerto. Nenhuma nova emissão foi feita.'
               : 'Esta parcela já tem reserva Bolepix v2.',
@@ -350,7 +437,9 @@ export async function emitC6InstallmentBoleto(
   const street = clean(customer.address);
   const number = clean(customer.address_number);
   const addressLine = street.includes(number) ? street : `${street}, ${number}`.trim();
-  const bolepixReference = c6BolepixV2ReferenceForInstallment(installmentId);
+  const bolepixReference = preparedAttempt
+    ? preparedAttempt.external_reference_id
+    : c6BolepixV2ReferenceForInstallment(installmentId);
   const prepared = c6BolepixV2PayloadFromSealedKey(
     {
       companyId,
@@ -406,7 +495,7 @@ export async function emitC6InstallmentBoleto(
     reference: bolepixReference,
     receiptId: installmentId,
   });
-  if (!resumeUnsent) {
+  if (!resumeUnsent && !preparedAttempt) {
     const reserved = await admin.rpc('reserve_c6_bolepix', {
       p_company_id: companyId,
       p_integration_id: integration.id,
@@ -438,12 +527,9 @@ export async function emitC6InstallmentBoleto(
       };
     }
   }
-  const claimed = await claimUnsentBolepixReservation(
-    admin,
-    companyId,
-    clean(integration.id),
-    installmentId,
-  );
+  const claimed = preparedAttempt
+    ? await claimPreparedBolepixAttempt(admin, companyId, clean(integration.id), installmentId)
+    : await claimUnsentBolepixReservation(admin, companyId, clean(integration.id), installmentId);
   if (!claimed) {
     return {
       emitted: false,
@@ -495,7 +581,11 @@ export async function emitC6InstallmentBoleto(
       now: options?.now,
     });
   } catch (error) {
-    await releaseUnsentBolepixReservation(admin, companyId, clean(integration.id), installmentId);
+    if (preparedAttempt) {
+      await releasePreparedBolepixAttempt(admin, companyId, clean(integration.id), installmentId);
+    } else {
+      await releaseUnsentBolepixReservation(admin, companyId, clean(integration.id), installmentId);
+    }
     throw error;
   }
   const finished = completionForC6BolepixV2({
@@ -506,16 +596,28 @@ export async function emitC6InstallmentBoleto(
   if (finished.automaticRetry) {
     throw new Error('Uma emissão incerta não pode ser repetida.');
   }
-  await admin.rpc('complete_c6_bolepix', {
-    p_company_id: companyId,
-    p_integration_id: integration.id,
-    p_external_reference_id: bolepixReference,
-    p_status: finished.status,
-    p_http_status: created.httpStatus,
-    p_c6_charge_id: finished.chargeId,
-    p_retry_allowed: finished.retryAllowed,
-  });
-  if (finished.status === 'SUCCEEDED' && created.responseBody) {
+  if (preparedAttempt) {
+    await admin.rpc('complete_c6_bolepix_attempt', {
+      p_company_id: companyId,
+      p_integration_id: integration.id,
+      p_external_reference_id: bolepixReference,
+      p_status: finished.status,
+      p_http_status: created.httpStatus,
+      p_c6_charge_id: finished.chargeId,
+      p_bank_diagnostic: null,
+    });
+  } else {
+    await admin.rpc('complete_c6_bolepix', {
+      p_company_id: companyId,
+      p_integration_id: integration.id,
+      p_external_reference_id: bolepixReference,
+      p_status: finished.status,
+      p_http_status: created.httpStatus,
+      p_c6_charge_id: finished.chargeId,
+      p_retry_allowed: finished.retryAllowed,
+    });
+  }
+  if (!preparedAttempt && finished.status === 'SUCCEEDED' && created.responseBody) {
     const official = officialC6BolepixFromResponse({
       companyId,
       integrationId: clean(integration.id),

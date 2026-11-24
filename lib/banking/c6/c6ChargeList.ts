@@ -99,6 +99,7 @@ async function loadC6BolepixAttempts(
     if (/c6_bolepix_reservations|does not exist|schema cache|Could not find the table/i.test(message)) return [];
     throw new Error('Não foi possível ler a tentativa C6.');
   }
+  const prepared = await loadPreparedAttemptIds(admin, companyId, installmentIds);
   return (data || []).flatMap((row) => {
     const record = row as Record<string, unknown>;
     const installmentId = String(record.finance_receipt_id || '');
@@ -135,10 +136,38 @@ async function loadC6BolepixAttempts(
           kind: described.kind,
           message: described.message,
           httpStatus: Number.isFinite(httpStatus) ? httpStatus : null,
+          prepared: prepared.has(installmentId),
         },
       },
     ];
   });
+}
+
+async function loadPreparedAttemptIds(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentIds: string[],
+): Promise<Set<string>> {
+  const ready = new Set<string>();
+  if (!installmentIds.length) return ready;
+  const { data, error } = await admin
+    .from('c6_bolepix_attempts')
+    .select('finance_receipt_id, status, c6_charge_id, last_http_status')
+    .eq('company_id', companyId)
+    .in('finance_receipt_id', installmentIds);
+  if (error) {
+    const message = String(error.message || '');
+    if (/c6_bolepix_attempts|does not exist|schema cache|Could not find the table/i.test(message)) return ready;
+    throw new Error('Não foi possível ler a tentativa preparada.');
+  }
+  for (const row of data || []) {
+    const record = row as Record<string, unknown>;
+    const status = String(record.status || '').toUpperCase();
+    if (status === 'RESERVED' && !record.c6_charge_id && record.last_http_status == null) {
+      ready.add(String(record.finance_receipt_id || ''));
+    }
+  }
+  return ready;
 }
 
 async function loadC6BolepixOfficial(

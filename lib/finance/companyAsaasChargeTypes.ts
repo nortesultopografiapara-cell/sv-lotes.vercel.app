@@ -88,6 +88,7 @@ export type CompanyAsaasChargeResponse = {
     kind: 'rejected' | 'authentication' | 'configuration' | 'timeout' | 'uncertain' | 'waiting';
     message: string;
     httpStatus: number | null;
+    prepared?: boolean;
   } | null;
 };
 

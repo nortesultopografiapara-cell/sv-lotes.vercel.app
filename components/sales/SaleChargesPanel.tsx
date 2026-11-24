@@ -296,6 +296,29 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     }
   }
 
+  async function prepareSaleC6Attempt(installmentId: string, password: string) {
+    setC6ActionId(installmentId);
+    setError('');
+    try {
+      const res = await fetch('/api/banking/c6/charges/attempt', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId, password }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; prepared?: boolean };
+      if (!res.ok || !json.prepared) {
+        throw new Error(json.error || json.message || 'A nova tentativa não foi preparada.');
+      }
+      setError(json.message || 'Nova tentativa preparada. Nenhum boleto foi emitido.');
+      await loadSummary();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao preparar a nova tentativa.');
+    } finally {
+      setC6ActionId(null);
+    }
+  }
+
   async function consultSaleC6Situation(installmentId: string) {
     setC6ActionId(installmentId);
     setError('');
@@ -1028,6 +1051,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
                             c6EmitAuthorized={c6AuthorizedIds.includes(view.id)}
                             onGenerate={() => void emitSaleC6Boleto(view.id)}
                             onConsultSituation={() => void consultSaleC6Situation(view.id)}
+                            onPrepareAttempt={(password) => void prepareSaleC6Attempt(view.id, password)}
                             onRefreshStatus={() => void refreshSaleC6Charge(view.id)}
                             onCancel={() =>
                               setInfo('O cancelamento C6 permanece fora desta homologação.')

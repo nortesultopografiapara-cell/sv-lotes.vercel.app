@@ -25,6 +25,22 @@ export function c6BolepixV2ReferenceForInstallment(installmentId: string): strin
   return digest.slice(0, 26);
 }
 
+/** Referência inédita da tentativa 2 em diante. Não reutiliza a referência da reserva inicial. */
+export function c6BolepixV2ReferenceForAttempt(installmentId: string, attemptNumber: number): string {
+  if (!Number.isInteger(attemptNumber) || attemptNumber < 2) {
+    throw new Error('A nova tentativa precisa de um número próprio.');
+  }
+  const digest = createHash('sha256')
+    .update(`c6-bolepix-v2:${installmentId}:attempt:${attemptNumber}`)
+    .digest('hex')
+    .toUpperCase();
+  const reference = digest.slice(0, 26);
+  if (reference === c6BolepixV2ReferenceForInstallment(installmentId)) {
+    throw new Error('A nova referência coincidiu com a tentativa anterior.');
+  }
+  return reference;
+}
+
 export function buildC6BolepixV2EmissionBody(
   input: Omit<C6BolepixV2CreateInput, 'pixKey'> & { pixKey?: string | null },
   now = new Date(),

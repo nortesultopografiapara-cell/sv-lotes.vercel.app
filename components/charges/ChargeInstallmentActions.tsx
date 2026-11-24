@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   Copy,
   ExternalLink,
@@ -84,6 +85,7 @@ export type ChargeInstallmentActionsProps = {
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshStatus: () => void;
   onConsultSituation?: () => void;
+  onPrepareAttempt?: (password: string) => void;
   onCancel: () => void;
   onRegenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onCopyPix: () => void;
@@ -147,6 +149,7 @@ export function ChargeInstallmentActions({
   onGenerate,
   onRefreshStatus,
   onConsultSituation,
+  onPrepareAttempt,
   onCancel,
   onRegenerate,
   onCopyPix,
@@ -158,6 +161,7 @@ export function ChargeInstallmentActions({
   outboundBlocked = false,
   c6Notice = null,
 }: ChargeInstallmentActionsProps) {
+  const [attemptPassword, setAttemptPassword] = useState('');
   if (outboundBlocked) {
     return (
       <span className="text-[10px] text-[var(--text-muted)]">
@@ -243,6 +247,7 @@ export function ChargeInstallmentActions({
         charge?.c6Attempt?.kind === 'timeout' ||
         charge?.c6Attempt?.kind === 'waiting',
       attemptLocked: Boolean(charge?.c6Attempt),
+      preparedAttempt: charge?.c6Attempt?.prepared === true,
       rejectionMessage: c6Notice?.message || charge?.c6Attempt?.message,
       bolepix,
     });
@@ -255,6 +260,31 @@ export function ChargeInstallmentActions({
     return (
       <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
         <div className="flex flex-wrap justify-end gap-1.5">
+          {charge?.c6Attempt?.kind === 'rejected' && !charge.c6Attempt.prepared && onPrepareAttempt ? (
+            <form
+              className="flex max-w-md flex-col items-end gap-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onPrepareAttempt(attemptPassword);
+              }}
+            >
+              <p className="text-right text-[10px] leading-snug text-[var(--text-muted)]">
+                Tentativa anterior HTTP {charge.c6Attempt.httpStatus ?? 'sem resposta'}. A preparação consulta de novo
+                o C6 e só continua com HTTP 404. Não emite boleto.
+              </p>
+              <input
+                type="password"
+                value={attemptPassword}
+                onChange={(event) => setAttemptPassword(event.target.value)}
+                autoComplete="current-password"
+                placeholder="Senha do administrador principal"
+                className="w-full max-w-[220px] rounded border border-[var(--border-color)] px-2 py-1 text-[11px]"
+              />
+              <button type="submit" disabled={busy || !attemptPassword} className={btnClass}>
+                Preparar nova tentativa C6
+              </button>
+            </form>
+          ) : null}
           {charge?.c6Attempt && onConsultSituation ? (
             <button
               type="button"

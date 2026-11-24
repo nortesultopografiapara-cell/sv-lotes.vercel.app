@@ -110,6 +110,12 @@ export function buildC6BolepixV2CreateBody(
   if (taxId.length !== 11 && taxId.length !== 14) {
     throw new C6BolepixV2ValidationError('O documento do pagador precisa ter 11 ou 14 dígitos.', ['payer.tax_id']);
   }
+  if (neighborhood.length > 40 || city.length > 40) {
+    throw new C6BolepixV2ValidationError('Bairro e cidade do Bolepix têm no máximo 40 caracteres.', [
+      'payer.address.neighborhood',
+      'payer.address.city',
+    ]);
+  }
   if (!address || address.length > 40 || !neighborhood || !city || !/^[A-Z]{2}$/.test(state) || !/^\d{8}$/.test(zipCode)) {
     throw new C6BolepixV2ValidationError(
       'O Bolepix exige logradouro, bairro, cidade, UF e CEP do pagador.',

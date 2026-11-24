@@ -57,6 +57,7 @@ export type C6ChargeActionInput = {
   ownerReadOnly: boolean;
   uncertain: boolean;
   attemptLocked?: boolean;
+  preparedAttempt?: boolean;
   rejectionMessage?: string | null;
   bolepix?: C6BolepixActionInput | null;
 };
@@ -102,7 +103,7 @@ export function resolveC6ChargeActions(input: C6ChargeActionInput): C6ChargeActi
 
   return {
     showGenerate:
-      v2 || input.attemptLocked
+      v2 || (input.attemptLocked && !input.preparedAttempt)
         ? false
         : !input.ownerReadOnly && !paid && !registered && !input.uncertain,
     showView: pdfReady,
