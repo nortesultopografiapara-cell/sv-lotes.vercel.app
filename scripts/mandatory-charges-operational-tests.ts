@@ -870,6 +870,16 @@ function testChargesPageLoadingDoesNotBlockOnAsaas() {
   );
   assert(pageClient.includes('chargesScopeRef'), 'troca de empresa zera o escopo anterior');
   assert(
+    pageClient.includes('setAsaasChargesByInstallment({})') &&
+      pageClient.includes('setInterChargesByInstallment({})') &&
+      pageClient.includes("setAsaasGate('pending')"),
+    'troca de empresa limpa Asaas, Inter e o gate anterior',
+  );
+  assert(
+    pageClient.includes('overviewGateAllowsPerChargeAsaasSync'),
+    'várias contas Asaas não impedem a atualização por cobrança',
+  );
+  assert(
     pageClient.includes("localChargeMapStatus === 'ready'"),
     'zero do cartão só depois da consulta local',
   );

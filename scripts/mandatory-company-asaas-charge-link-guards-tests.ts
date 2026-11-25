@@ -6,7 +6,9 @@
 import {
   canGenerateAsaasChargeWithHistory,
   classifyAsaasIntegrationResponse,
+  formatChargesAsaasIntegrationGate,
   formatRefreshAllChargesBlockReason,
+  overviewGateAllowsPerChargeAsaasSync,
   isAsaasNotFoundError,
   resolveRefreshAllChargesBlockReason,
   resolveSafeSyncedChargeStatus,
@@ -180,6 +182,23 @@ console.log('\n═══ 7: botão atualização mostra motivo ═══');
   assert(classifyAsaasIntegrationResponse(404, false) === 'module_disabled', '404 é módulo desligado');
   assert(classifyAsaasIntegrationResponse(403, false) === 'denied', '403 é acesso negado');
   assert(classifyAsaasIntegrationResponse(500, false) === 'query_error', 'erro HTTP é falha de consulta');
+  assert(
+    classifyAsaasIntegrationResponse(
+      500,
+      false,
+      'FINANCIAL_ACCOUNT_REQUIRED: há mais de uma conta Asaas ativa. Informe financial_account_id.',
+    ) === 'multiple_accounts',
+    'várias contas Asaas não são falha genérica nem integração inativa',
+  );
+  assert(
+    formatChargesAsaasIntegrationGate('multiple_accounts') ===
+      'Há mais de uma conta Asaas ativa. Cada cobrança é atualizada pela conta já vinculada.',
+    'aviso único para várias contas Asaas',
+  );
+  assert(overviewGateAllowsPerChargeAsaasSync('multiple_accounts'), 'várias contas não bloqueiam o lote');
+  assert(overviewGateAllowsPerChargeAsaasSync('ready'), 'integração pronta segue no lote');
+  assert(!overviewGateAllowsPerChargeAsaasSync('not_ready'), 'integração inativa continua bloqueada');
+  assert(!overviewGateAllowsPerChargeAsaasSync('query_error'), 'falha genérica continua bloqueada');
   assert(classifyAsaasIntegrationResponse(200, false) === 'not_ready', '200 sem ready é integração inativa');
   assert(classifyAsaasIntegrationResponse(200, true) === 'ready', '200 ready libera o botão');
   assert(

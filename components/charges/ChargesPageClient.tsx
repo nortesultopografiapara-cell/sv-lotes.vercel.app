@@ -63,11 +63,13 @@ import {
 import {
   applyBulkChargeStatusToMap,
   formatChargeBulkStatusSummary,
+  listChargesNotUpdatedForAccount,
   requestChargeBulkStatusSync,
 } from '@/lib/charges/chargeBulkStatusSync';
 import {
   classifyAsaasIntegrationResponse,
   formatChargesAsaasIntegrationGate,
+  overviewGateAllowsPerChargeAsaasSync,
   formatRefreshAllChargesBlockReason,
   resolveRefreshAllChargesBlockReason,
   type ChargesAsaasIntegrationGate,
@@ -243,14 +245,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         credentials: 'include',
         cache: 'no-store',
       });
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const gate = classifyAsaasIntegrationResponse(res.status, false);
+        const gate = classifyAsaasIntegrationResponse(
+          res.status,
+          false,
+          typeof json.error === 'string' ? json.error : null,
+        );
         setAsaasGate(gate);
         setAsaasAccessAvailable(gate !== 'denied' && gate !== 'module_disabled');
         setIntegrationConfig(null);
         return false;
       }
-      const json = await res.json().catch(() => ({}));
       const integration = (json.integration ?? null) as AsaasIntegrationConfigResponse | null;
       const ready = resolveChargesIntegrationReady(integration, json.ready ?? json.canOperate);
       setIntegrationConfig(integration);
@@ -663,8 +669,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       options?: { reloadInstallments?: boolean; silent?: boolean },
     ): Promise<boolean> => {
       if (blockOwnerWriteOnClient(user?.role)) return false;
-      if (!integrationReady) {
-        if (!options?.silent) {
+      if (!overviewGateAllowsPerChargeAsaasSync(asaasGate)) {
+        if (!options?.silent && asaasGate === 'not_ready') {
           showToast('Integração Asaas não está ativa.', true);
         }
         return false;
@@ -691,7 +697,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
         if (!options?.silent) {
           const isError = result.failed > 0 && result.updated === 0;
-          showToast(formatChargeBulkStatusSummary(result), isError);
+          const blocked = listChargesNotUpdatedForAccount(result.items);
+          const summary = formatChargeBulkStatusSummary(result);
+          showToast(
+            blocked.length > 0
+              ? `${summary} Sem atualização por conta ausente ou fora da empresa: ${blocked.join(', ')}.`
+              : summary,
+            isError || blocked.length > 0,
+          );
         }
 
         return result.failed === 0 || result.updated > 0;
@@ -707,7 +720,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         setBulkBusy(false);
       }
     },
-    [integrationReady, loadInstallments, showToast, user?.role],
+    [asaasGate, loadInstallments, showToast, user?.role],
   );
 
   useEffect(() => {
@@ -851,7 +864,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         loading: loading || asaasGate === 'pending',
         bulkBusy,
         ownerReadOnly,
-        integrationReady: integrationReady || asaasGate === 'pending' || hasVisibleInterCharges,
+        integrationReady:
+          overviewGateAllowsPerChargeAsaasSync(asaasGate) ||
+          asaasGate === 'pending' ||
+          hasVisibleInterCharges,
         visibleChargeCount: allWithChargeCount,
       }),
     [loading, asaasGate, bulkBusy, ownerReadOnly, integrationReady, hasVisibleInterCharges, allWithChargeCount],
@@ -944,7 +960,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
     const provider = resolveRowProvider(row);
     if (provider === 'ASAAS_COMPANY' && !integrationReady) {
-      showToast('Integração Asaas não está ativa.', true);
+      showToast(
+        asaasGate === 'not_ready'
+          ? 'Integração Asaas não está ativa.'
+          : formatChargesAsaasIntegrationGate(asaasGate) ||
+              'Não foi possível consultar a integração Asaas.',
+        true,
+      );
       return;
     }
 
@@ -1457,7 +1479,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             Atualizar lista
           </button>
           {!ownerReadOnly &&
-          (asaasGate === 'pending' || asaasGate === 'ready' || hasVisibleInterCharges) ? (
+          (asaasGate === 'pending' ||
+            overviewGateAllowsPerChargeAsaasSync(asaasGate) ||
+            hasVisibleInterCharges) ? (
             <div className="flex flex-col items-stretch gap-1 sm:items-end">
               <button
                 type="button"

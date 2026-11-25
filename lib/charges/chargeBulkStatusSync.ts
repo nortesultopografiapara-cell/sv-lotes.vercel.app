@@ -60,3 +60,15 @@ export function formatChargeBulkStatusSummary(result: ChargeBulkStatusSyncRespon
   }
   return `Status atualizado: ${parts.join(', ')}.`;
 }
+
+const ACCOUNT_SYNC_BLOCKED =
+  /sem conta financeira|não encontrada ou inativa|nao encontrada ou inativa|sem integração Asaas|sem integracao Asaas/i;
+
+/** Conta ausente, inativa ou de outra empresa. Não escolhe outra conta. */
+export function listChargesNotUpdatedForAccount(
+  items: Array<{ installmentId: string; status: string; error?: string }>,
+): string[] {
+  return items
+    .filter((item) => item.status === 'failed' && ACCOUNT_SYNC_BLOCKED.test(item.error || ''))
+    .map((item) => item.installmentId);
+}

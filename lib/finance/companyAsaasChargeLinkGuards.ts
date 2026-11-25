@@ -4,6 +4,7 @@
  */
 
 import type { CompanyAsaasChargeResponse, CompanyAsaasChargeStatus } from '@/lib/finance/companyAsaasChargeTypes';
+import { isFinancialAccountRequiredError } from '@/lib/finance/financialAccountRequired';
 
 export class CompanyAsaasEnvironmentMismatchError extends Error {
   readonly code = 'ENVIRONMENT_MISMATCH' as const;
@@ -110,16 +111,26 @@ export type ChargesAsaasIntegrationGate =
   | 'not_ready'
   | 'denied'
   | 'module_disabled'
+  | 'multiple_accounts'
   | 'query_error';
 
 export function classifyAsaasIntegrationResponse(
   status: number,
   ready: boolean,
+  errorMessage?: string | null,
 ): ChargesAsaasIntegrationGate {
+  if (isFinancialAccountRequiredError(errorMessage)) return 'multiple_accounts';
   if (status === 404) return 'module_disabled';
   if (status === 403) return 'denied';
   if (status < 200 || status >= 300) return 'query_error';
   return ready ? 'ready' : 'not_ready';
+}
+
+/** A consulta geral não escolhe conta quando há várias. O lote usa a conta de cada cobrança. */
+export function overviewGateAllowsPerChargeAsaasSync(
+  gate: ChargesAsaasIntegrationGate,
+): boolean {
+  return gate === 'ready' || gate === 'multiple_accounts';
 }
 
 export function formatChargesAsaasIntegrationGate(
@@ -136,6 +147,8 @@ export function formatChargesAsaasIntegrationGate(
       return 'Integração Asaas não disponível para esta empresa.';
     case 'module_disabled':
       return 'Módulo bancário desativado neste ambiente.';
+    case 'multiple_accounts':
+      return 'Há mais de uma conta Asaas ativa. Cada cobrança é atualizada pela conta já vinculada.';
     case 'query_error':
       return 'Não foi possível consultar a integração Asaas.';
     default:
