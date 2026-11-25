@@ -855,6 +855,25 @@ function testChargesPageLoadingDoesNotBlockOnAsaas() {
     pageClient.includes('void loadAsaasChargesContext(installmentIds'),
     'contexto Asaas carregado em background no load inicial',
   );
+  assert(pageClient.includes('hydrate: true'), 'abertura hidrata o mapa local');
+  assert(
+    pageClient.includes('reconcilePaidReceipts: false'),
+    'hidratação não pede baixa das parcelas pagas',
+  );
+  const openBranch = pageClient.slice(
+    pageClient.indexOf('} else {'),
+    pageClient.indexOf('asaas context background failed'),
+  );
+  assert(
+    !openBranch.includes('requestChargeBulkStatusSync'),
+    'abertura não dispara sincronização de status bancário',
+  );
+  assert(pageClient.includes('chargesScopeRef'), 'troca de empresa zera o escopo anterior');
+  assert(
+    pageClient.includes("localChargeMapStatus === 'ready'"),
+    'zero do cartão só depois da consulta local',
+  );
+  assert(pageClient.includes('module_disabled') || pageClient.includes('classifyAsaasIntegrationResponse'), '404 do módulo não usa o aviso genérico');
   assert(pageClient.includes('if (authLoading) return;'), 'useEffect aguarda authLoading');
   assert(pageClient.includes('finally {'), 'loadInstallments usa finally');
   assert(pageClient.includes('setLoading(false);'), 'loading sempre encerra');

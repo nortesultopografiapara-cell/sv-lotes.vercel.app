@@ -6,6 +6,7 @@ import { decryptBankingSecret } from '@/lib/banking/credentialsCrypto';
 import { getCompanyAsaasIntegrationConfig } from '@/lib/finance/asaasIntegrationRepository';
 import { isFinancialAccountRequiredError } from '@/lib/finance/financialAccountRequired';
 import {
+  companyAsaasWebhookSettlementDisposition,
   executeCompanyAsaasPaymentReconciliation,
   isCompanyAsaasPaidWebhookEvent,
   resolveCompanyAsaasReconcileDates,
@@ -268,25 +269,25 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
       paymentPayload: payload.payment ?? null,
     });
 
-    if (!result.ok) {
-      if (registration.id) {
-        await markCompanyAsaasWebhookEventProcessed(
-          admin,
-          registration.id,
-          companyId,
-          'IGNORED',
-          'charge_not_found_on_reconcile',
-        );
-      }
-      return NextResponse.json({ ok: true, ignored: true, reason: 'charge_not_found' });
-    }
-
+    const disposition = companyAsaasWebhookSettlementDisposition(result);
     if (registration.id) {
       await markCompanyAsaasWebhookEventProcessed(
         admin,
         registration.id,
         companyId,
-        result.duplicate ? 'DUPLICATE' : 'PROCESSED',
+        disposition.status,
+        disposition.reason,
+      );
+    }
+
+    if (!result.ok) {
+      return NextResponse.json({ ok: true, ignored: true, reason: disposition.reason });
+    }
+
+    if (disposition.status === 'FAILED') {
+      return NextResponse.json(
+        { ok: false, error: disposition.reason || 'Falha ao lançar o caixa.' },
+        { status: 500 },
       );
     }
 

@@ -89,10 +89,59 @@ export type RefreshAllChargesBlockReason =
   | 'busy'
   | 'owner_readonly'
   | 'integration_unavailable'
+  | 'not_ready'
+  | 'access_denied'
+  | 'module_disabled'
+  | 'query_error'
   | 'no_active_charges'
   | 'environment_mismatch'
   | 'inconsistent_links'
   | null;
+
+/**
+ * Resultado de GET /api/finance/asaas/integration.
+ * 404 vem de assertBankingModuleEnabled: BANKING_MODULE_ENABLED não é "true".
+ * A rota responde "Not found" para não expor o módulo. Não é integração ausente
+ * nem empresa fora da allowlist (isso é 403).
+ */
+export type ChargesAsaasIntegrationGate =
+  | 'pending'
+  | 'ready'
+  | 'not_ready'
+  | 'denied'
+  | 'module_disabled'
+  | 'query_error';
+
+export function classifyAsaasIntegrationResponse(
+  status: number,
+  ready: boolean,
+): ChargesAsaasIntegrationGate {
+  if (status === 404) return 'module_disabled';
+  if (status === 403) return 'denied';
+  if (status < 200 || status >= 300) return 'query_error';
+  return ready ? 'ready' : 'not_ready';
+}
+
+export function formatChargesAsaasIntegrationGate(
+  gate: ChargesAsaasIntegrationGate,
+): string | null {
+  switch (gate) {
+    case 'pending':
+      return 'Carregando cobranças…';
+    case 'ready':
+      return null;
+    case 'not_ready':
+      return 'Integração Asaas não está ativa.';
+    case 'denied':
+      return 'Integração Asaas não disponível para esta empresa.';
+    case 'module_disabled':
+      return 'Módulo bancário desativado neste ambiente.';
+    case 'query_error':
+      return 'Não foi possível consultar a integração Asaas.';
+    default:
+      return null;
+  }
+}
 
 export function resolveRefreshAllChargesBlockReason(params: {
   loading: boolean;
@@ -125,6 +174,14 @@ export function formatRefreshAllChargesBlockReason(
       return 'Perfil somente leitura — atualização indisponível.';
     case 'integration_unavailable':
       return 'Integração Asaas indisponível.';
+    case 'not_ready':
+      return 'Integração Asaas não está ativa.';
+    case 'access_denied':
+      return 'Integração Asaas não disponível para esta empresa.';
+    case 'module_disabled':
+      return 'Módulo bancário desativado neste ambiente.';
+    case 'query_error':
+      return 'Não foi possível consultar a integração Asaas.';
     case 'no_active_charges':
       return 'Nenhuma cobrança ativa para atualizar.';
     case 'environment_mismatch':
