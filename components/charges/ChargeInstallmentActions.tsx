@@ -30,6 +30,11 @@ import {
   resolveInterIssuedChargeActions,
 } from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
+import {
+  resolveAsaasRowActionNotice,
+  type AsaasRowAccountState,
+  type ChargesAsaasIntegrationGate,
+} from '@/lib/finance/companyAsaasChargeLinkGuards';
 
 const btnClass =
   'inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50';
@@ -45,6 +50,10 @@ export type ChargeInstallmentActionsProps = {
   charge: CompanyAsaasChargeResponse | null;
   installmentPaid: boolean;
   integrationActive: boolean;
+  /** Estado da consulta geral. multiple_accounts não é integração inativa na linha. */
+  asaasGate?: ChargesAsaasIntegrationGate;
+  /** Conta financeira desta parcela, já cruzada com a lista da empresa. */
+  accountState?: AsaasRowAccountState;
   companyAsaasEnabled: boolean;
   /** Provider da conta financeira da parcela. */
   chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
@@ -102,6 +111,8 @@ export function ChargeInstallmentActions({
   charge,
   installmentPaid,
   integrationActive,
+  asaasGate,
+  accountState,
   companyAsaasEnabled,
   chargeProvider = 'ASAAS_COMPANY',
   ownerReadOnly,
@@ -179,7 +190,30 @@ export function ChargeInstallmentActions({
     );
   }
 
-  if (!isInter && !integrationActive) {
+  const issued = !isInter && Boolean(charge?.asaasPaymentId);
+  const rowNotice =
+    !isInter && asaasGate && accountState
+      ? resolveAsaasRowActionNotice({
+          gate: asaasGate,
+          issued,
+          installmentPaid,
+          accountState,
+        })
+      : null;
+
+  if (!isInter && rowNotice?.replacesActions) {
+    return (
+      <span
+        className="text-[10px] text-amber-400/90"
+        title={rowNotice.title}
+        data-row-action={rowNotice.code}
+      >
+        {rowNotice.label}
+      </span>
+    );
+  }
+
+  if (!isInter && !asaasGate && !integrationActive) {
     return (
       <span className="text-[10px] text-amber-400/90" title="Integração Asaas não está ativa.">
         Integração inativa
@@ -425,6 +459,16 @@ export function ChargeInstallmentActions({
 
         {actions.showPaidIndicator ? (
           <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
+        ) : null}
+
+        {!isInter && rowNotice && !rowNotice.replacesActions ? (
+          <span
+            className="text-[10px] text-amber-400/90"
+            title={rowNotice.title}
+            data-row-action={rowNotice.code}
+          >
+            {rowNotice.label}
+          </span>
         ) : null}
 
         {!charge && hasPaidChargeHistory && !isInter ? (

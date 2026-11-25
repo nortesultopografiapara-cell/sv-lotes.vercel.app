@@ -67,10 +67,12 @@ import {
   requestChargeBulkStatusSync,
 } from '@/lib/charges/chargeBulkStatusSync';
 import {
+  asaasRowMayUseLinkedAccount,
   classifyAsaasIntegrationResponse,
   formatChargesAsaasIntegrationGate,
   overviewGateAllowsPerChargeAsaasSync,
   formatRefreshAllChargesBlockReason,
+  resolveAsaasRowAccountState,
   resolveRefreshAllChargesBlockReason,
   type ChargesAsaasIntegrationGate,
 } from '@/lib/finance/companyAsaasChargeLinkGuards';
@@ -128,6 +130,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [projectFilter, setProjectFilter] = useState('Todos os projetos');
   const [financialAccountFilter, setFinancialAccountFilter] = useState('Todas as contas');
   const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
+  const [financialAccountsLoaded, setFinancialAccountsLoaded] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
@@ -498,6 +501,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         setAsaasGate('pending');
         setLocalChargeMapStatus('pending');
         setFinancialAccounts([]);
+        setFinancialAccountsLoaded(false);
         setSelectedIds(new Set());
       }
       const generation = ++loadGenerationRef.current;
@@ -725,15 +729,26 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   useEffect(() => {
     if (authLoading) return;
+    let cancelled = false;
+    setFinancialAccountsLoaded(false);
     void fetch('/api/finance/financial-accounts', { credentials: 'include' })
       .then((res) => {
         if (res.status === 403 || res.status === 404) return {};
         return res.json().catch(() => ({}));
       })
       .then((json) => {
+        if (cancelled) return;
         setFinancialAccounts((json.accounts as CompanyFinancialAccountResponse[]) || []);
+        setFinancialAccountsLoaded(true);
       })
-      .catch(() => setFinancialAccounts([]));
+      .catch(() => {
+        if (cancelled) return;
+        setFinancialAccounts([]);
+        setFinancialAccountsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [authLoading, user?.id, user?.tenant_id]);
 
   useEffect(() => {
@@ -959,14 +974,30 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
 
     const provider = resolveRowProvider(row);
-    if (provider === 'ASAAS_COMPANY' && !integrationReady) {
-      showToast(
-        asaasGate === 'not_ready'
-          ? 'Integração Asaas não está ativa.'
-          : formatChargesAsaasIntegrationGate(asaasGate) ||
-              'Não foi possível consultar a integração Asaas.',
-        true,
-      );
+    const saleAccount = row.sales as { financial_account_id?: string | null } | undefined;
+    const accountId = String(
+      row.financial_account_id || saleAccount?.financial_account_id || '',
+    ).trim();
+    const linkedAccount = accountId ? financialAccountsById[accountId] : undefined;
+    const accountState = resolveAsaasRowAccountState({
+      accountId,
+      accountActive: linkedAccount ? linkedAccount.active : null,
+      accountsLoaded: financialAccountsLoaded,
+    });
+    if (
+      provider === 'ASAAS_COMPANY' &&
+      !asaasRowMayUseLinkedAccount({ gate: asaasGate, accountState })
+    ) {
+      const notice =
+        accountState === 'none'
+          ? 'Conta ausente. A parcela não tem conta financeira para emitir a cobrança.'
+          : accountState === 'inactive'
+            ? 'Conta inativa. A conta financeira desta parcela está inativa.'
+            : asaasGate === 'not_ready'
+              ? 'Integração Asaas não está ativa.'
+              : formatChargesAsaasIntegrationGate(asaasGate) ||
+                'Não foi possível consultar a integração Asaas.';
+      showToast(notice, true);
       return;
     }
 
@@ -1821,6 +1852,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                     })
                   : null;
                 const whatsappShareUrl = whatsappShare?.ok ? whatsappShare.url : null;
+                const linkedAccount = view.financialAccountId
+                  ? financialAccountsById[view.financialAccountId]
+                  : undefined;
+                const accountState = resolveAsaasRowAccountState({
+                  accountId: view.financialAccountId,
+                  accountActive: linkedAccount ? linkedAccount.active : null,
+                  accountsLoaded: financialAccountsLoaded,
+                });
+                const rowAsaasOperable = asaasRowMayUseLinkedAccount({
+                  gate: asaasGate,
+                  accountState,
+                });
 
                 return (
                   <tr key={view.id} className="finance-parcel-row">
@@ -1853,7 +1896,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         view={view}
                         charge={charge}
                         installmentPaid={installmentPaid}
-                        integrationActive={integrationActive}
+                        integrationActive={provider === 'INTER' ? true : rowAsaasOperable}
+                        asaasGate={asaasGate}
+                        accountState={accountState}
                         companyAsaasEnabled={asaasAccessAvailable}
                         chargeProvider={provider}
                         ownerReadOnly={ownerReadOnly}

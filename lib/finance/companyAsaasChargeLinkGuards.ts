@@ -133,6 +133,107 @@ export function overviewGateAllowsPerChargeAsaasSync(
   return gate === 'ready' || gate === 'multiple_accounts';
 }
 
+export type AsaasRowAccountState = 'none' | 'unknown' | 'active' | 'inactive';
+
+export type AsaasRowActionNotice = {
+  code: 'missing_account' | 'inactive_account' | 'installment_status' | 'integration_inactive';
+  label: string;
+  title: string;
+  /** Cobrança já emitida mantém links e ações de leitura. O aviso só substitui a célula quando ainda não há cobrança. */
+  replacesActions: boolean;
+};
+
+export function resolveAsaasRowAccountState(params: {
+  accountId: string | null | undefined;
+  accountActive: boolean | null | undefined;
+  accountsLoaded: boolean;
+}): AsaasRowAccountState {
+  const id = String(params.accountId || '').trim();
+  if (!id) return 'none';
+  if (!params.accountsLoaded) return 'unknown';
+  if (params.accountActive === true) return 'active';
+  if (params.accountActive === false) return 'inactive';
+  return 'none';
+}
+
+/**
+ * A mensagem "Integração inativa" vale só quando a integração da empresa está de fato inativa.
+ * Várias contas ativas não são integração inativa: a linha usa a conta vinculada.
+ */
+export function resolveAsaasRowActionNotice(params: {
+  gate: ChargesAsaasIntegrationGate;
+  issued: boolean;
+  installmentPaid: boolean;
+  accountState: AsaasRowAccountState;
+}): AsaasRowActionNotice | null {
+  if (params.issued) {
+    if (params.accountState === 'none') {
+      return {
+        code: 'missing_account',
+        label: 'Conta ausente',
+        title: 'Cobrança sem conta financeira vinculada.',
+        replacesActions: false,
+      };
+    }
+    if (params.accountState === 'inactive') {
+      return {
+        code: 'inactive_account',
+        label: 'Conta inativa',
+        title: 'A conta vinculada a esta cobrança está inativa.',
+        replacesActions: false,
+      };
+    }
+    return null;
+  }
+
+  if (params.installmentPaid) {
+    return {
+      code: 'installment_status',
+      label: 'Parcela paga',
+      title: 'Ação indisponível para parcela paga.',
+      replacesActions: true,
+    };
+  }
+  if (params.accountState === 'none') {
+    return {
+      code: 'missing_account',
+      label: 'Conta ausente',
+      title: 'A parcela não tem conta financeira para emitir a cobrança.',
+      replacesActions: true,
+    };
+  }
+  if (params.accountState === 'inactive') {
+    return {
+      code: 'inactive_account',
+      label: 'Conta inativa',
+      title: 'A conta financeira desta parcela está inativa.',
+      replacesActions: true,
+    };
+  }
+  if (
+    params.accountState === 'unknown' ||
+    params.gate === 'pending' ||
+    params.gate === 'ready' ||
+    params.gate === 'multiple_accounts'
+  ) {
+    return null;
+  }
+  return {
+    code: 'integration_inactive',
+    label: 'Integração inativa',
+    title: 'Integração Asaas não está ativa.',
+    replacesActions: true,
+  };
+}
+
+export function asaasRowMayUseLinkedAccount(params: {
+  gate: ChargesAsaasIntegrationGate;
+  accountState: AsaasRowAccountState;
+}): boolean {
+  if (params.accountState !== 'active') return false;
+  return params.gate === 'ready' || params.gate === 'multiple_accounts';
+}
+
 export function formatChargesAsaasIntegrationGate(
   gate: ChargesAsaasIntegrationGate,
 ): string | null {

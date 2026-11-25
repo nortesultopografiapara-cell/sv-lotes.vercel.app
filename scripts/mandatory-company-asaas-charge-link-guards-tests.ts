@@ -5,10 +5,13 @@
 
 import {
   canGenerateAsaasChargeWithHistory,
+  asaasRowMayUseLinkedAccount,
   classifyAsaasIntegrationResponse,
   formatChargesAsaasIntegrationGate,
   formatRefreshAllChargesBlockReason,
   overviewGateAllowsPerChargeAsaasSync,
+  resolveAsaasRowAccountState,
+  resolveAsaasRowActionNotice,
   isAsaasNotFoundError,
   resolveRefreshAllChargesBlockReason,
   resolveSafeSyncedChargeStatus,
@@ -236,6 +239,92 @@ console.log('\n═══ 9: isolamento multiempresa (código) ═══');
   assert(chargesRoute.includes('auth.tenantId'), 'charges usa tenant da sessão');
   const bulkRoute = fs.readFileSync('app/api/finance/asaas/update-charge-status-bulk/route.ts', 'utf8');
   assert(bulkRoute.includes('auth.tenantId'), 'bulk usa tenant da sessão');
+}
+
+console.log('\n═══ 10b: coluna Ações não trata várias contas como integração inativa ═══');
+{
+  assert(
+    resolveAsaasRowActionNotice({
+      gate: 'multiple_accounts',
+      issued: true,
+      installmentPaid: true,
+      accountState: 'active',
+    }) === null,
+    'cobrança paga em conta ativa não vira integração inativa',
+  );
+  assert(
+    resolveAsaasRowActionNotice({
+      gate: 'multiple_accounts',
+      issued: false,
+      installmentPaid: false,
+      accountState: 'active',
+    }) === null,
+    'não gerada em conta ativa pode seguir a emissão',
+  );
+  assert(
+    asaasRowMayUseLinkedAccount({ gate: 'multiple_accounts', accountState: 'active' }),
+    'várias contas ativas liberam a conta vinculada',
+  );
+  assert(
+    !asaasRowMayUseLinkedAccount({ gate: 'not_ready', accountState: 'active' }),
+    'integração realmente inativa continua bloqueada',
+  );
+  const paid = resolveAsaasRowActionNotice({
+    gate: 'multiple_accounts',
+    issued: false,
+    installmentPaid: true,
+    accountState: 'active',
+  });
+  assert(paid?.label === 'Parcela paga' && paid.replacesActions, 'parcela paga sem cobrança fica indisponível pelo status');
+  const missing = resolveAsaasRowActionNotice({
+    gate: 'multiple_accounts',
+    issued: false,
+    installmentPaid: false,
+    accountState: 'none',
+  });
+  assert(missing?.label === 'Conta ausente' && missing.replacesActions, 'sem conta não emite');
+  const inactive = resolveAsaasRowActionNotice({
+    gate: 'multiple_accounts',
+    issued: true,
+    installmentPaid: false,
+    accountState: 'inactive',
+  });
+  assert(
+    inactive?.label === 'Conta inativa' && inactive.replacesActions === false,
+    'cobrança emitida em conta inativa mantém a leitura',
+  );
+  const dormant = resolveAsaasRowActionNotice({
+    gate: 'not_ready',
+    issued: false,
+    installmentPaid: false,
+    accountState: 'active',
+  });
+  assert(dormant?.label === 'Integração inativa', 'conta ativa com integração inativa mantém a mensagem');
+  assert(
+    resolveAsaasRowAccountState({
+      accountId: 'acc-1',
+      accountActive: true,
+      accountsLoaded: true,
+    }) === 'active',
+    'conta carregada e ativa',
+  );
+  assert(
+    resolveAsaasRowAccountState({
+      accountId: '',
+      accountActive: null,
+      accountsLoaded: true,
+    }) === 'none',
+    'parcela sem conta',
+  );
+  const actionsSrc = fs.readFileSync('components/charges/ChargeInstallmentActions.tsx', 'utf8');
+  assert(
+    !actionsSrc.includes('if (!isInter && !integrationActive)'),
+    'a linha não decide só pelo estado geral',
+  );
+  assert(actionsSrc.includes('resolveAsaasRowActionNotice'), 'a linha usa o aviso por conta e status');
+  const page = fs.readFileSync('components/charges/ChargesPageClient.tsx', 'utf8');
+  assert(page.includes('accountState={accountState}'), 'a página entrega o estado da conta da linha');
+  assert(page.includes('asaasRowMayUseLinkedAccount'), 'emitir usa a conta vinculada');
 }
 
 console.log('\n═══ 10: sem alteração em main nesta entrega ═══');
