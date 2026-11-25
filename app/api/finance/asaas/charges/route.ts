@@ -32,7 +32,11 @@ type CompanyAsaasAuth = Exclude<
   { error: NextResponse }
 >;
 
-async function listChargesForAuth(auth: CompanyAsaasAuth, installmentIds: string[]) {
+async function listChargesForAuth(
+  auth: CompanyAsaasAuth,
+  installmentIds: string[],
+  options?: { reconcilePaidReceipts?: boolean },
+) {
   const charges = await listCompanyAsaasChargesForInstallments(
     auth.admin,
     auth.tenantId,
@@ -51,14 +55,21 @@ async function listChargesForAuth(auth: CompanyAsaasAuth, installmentIds: string
       continue;
     }
 
+    if (options?.reconcilePaidReceipts === false) {
+      assertCompanyAsaasChargeResponseSafe(charge);
+      continue;
+    }
+
     const receipt = await loadFinanceReceiptForReconciliation(
       auth.admin,
       charge.installmentId,
     );
-    const needsSync = needsCompanyAsaasReceiptReconciliation({
-      chargeStatus: charge.status,
-      receiptStatus: receipt?.status,
-    });
+    const needsSync =
+      options?.reconcilePaidReceipts !== false &&
+      needsCompanyAsaasReceiptReconciliation({
+        chargeStatus: charge.status,
+        receiptStatus: receipt?.status,
+      });
 
     if (needsSync) {
       try {
@@ -116,7 +127,8 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const installmentIds = parseInstallmentIds(url.searchParams.get('installmentIds') ?? '');
-    const result = await listChargesForAuth(auth, installmentIds);
+    const reconcilePaidReceipts = url.searchParams.get('reconcilePaidReceipts') !== 'false';
+    const result = await listChargesForAuth(auth, installmentIds, { reconcilePaidReceipts });
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof CompanyAsaasReconciliationError) {
@@ -143,11 +155,13 @@ export async function POST(request: Request) {
   if ('error' in auth) return auth.error;
 
   try {
-    const body = await request.json().catch(() => ({}));
-    const installmentIds = parseInstallmentIds(
-      (body as { installmentIds?: unknown }).installmentIds,
-    );
-    const result = await listChargesForAuth(auth, installmentIds);
+    const body = (await request.json().catch(() => ({}))) as {
+      installmentIds?: unknown;
+      reconcilePaidReceipts?: unknown;
+    };
+    const installmentIds = parseInstallmentIds(body.installmentIds);
+    const reconcilePaidReceipts = body.reconcilePaidReceipts !== false;
+    const result = await listChargesForAuth(auth, installmentIds, { reconcilePaidReceipts });
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof CompanyAsaasReconciliationError) {

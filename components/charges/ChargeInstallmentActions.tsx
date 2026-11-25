@@ -35,6 +35,11 @@ import {
   resolveInterIssuedChargeActions,
 } from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
+import {
+  resolveAsaasRowActionNotice,
+  type AsaasRowAccountState,
+  type ChargesAsaasIntegrationGate,
+} from '@/lib/finance/companyAsaasChargeLinkGuards';
 import { c6BankDiagnosticLines, c6SituationLines, resolveC6ChargeActions } from '@/lib/charges/c6ChargeActions';
 
 const btnClass =
@@ -51,6 +56,8 @@ export type ChargeInstallmentActionsProps = {
   charge: CompanyAsaasChargeResponse | null;
   installmentPaid: boolean;
   integrationActive: boolean;
+  asaasGate?: ChargesAsaasIntegrationGate;
+  accountState?: AsaasRowAccountState;
   companyAsaasEnabled: boolean;
   /** Provider da conta financeira da parcela. */
   chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
@@ -134,6 +141,8 @@ export function ChargeInstallmentActions({
   charge,
   installmentPaid,
   integrationActive,
+  asaasGate,
+  accountState,
   companyAsaasEnabled,
   chargeProvider = 'ASAAS_COMPANY',
   ownerReadOnly,
@@ -445,7 +454,30 @@ export function ChargeInstallmentActions({
     );
   }
 
-  if (!isInter && !integrationActive && !awaitsBankStatus) {
+  const issued = !isInter && !isC6 && Boolean(charge?.asaasPaymentId);
+  const rowNotice =
+    !isInter && !isC6 && asaasGate && accountState
+      ? resolveAsaasRowActionNotice({
+          gate: asaasGate,
+          issued,
+          installmentPaid,
+          accountState,
+        })
+      : null;
+
+  if (!isInter && !isC6 && rowNotice?.replacesActions && !awaitsBankStatus) {
+    return (
+      <span
+        className="text-[10px] text-amber-400/90"
+        title={rowNotice.title}
+        data-row-action={rowNotice.code}
+      >
+        {rowNotice.label}
+      </span>
+    );
+  }
+
+  if (!isInter && !isC6 && !asaasGate && !integrationActive && !awaitsBankStatus) {
     return (
       <span className="text-[10px] text-amber-400/90" title="Integração Asaas não está ativa.">
         Integração inativa
@@ -699,6 +731,16 @@ export function ChargeInstallmentActions({
 
         {actions.showPaidIndicator ? (
           <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
+        ) : null}
+
+        {!isInter && !isC6 && rowNotice && !rowNotice.replacesActions ? (
+          <span
+            className="text-[10px] text-amber-400/90"
+            title={rowNotice.title}
+            data-row-action={rowNotice.code}
+          >
+            {rowNotice.label}
+          </span>
         ) : null}
 
         {!charge && hasPaidChargeHistory && !isInter ? (

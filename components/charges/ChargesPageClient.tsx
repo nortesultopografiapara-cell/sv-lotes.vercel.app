@@ -73,11 +73,18 @@ import {
 import {
   applyBulkChargeStatusToMap,
   formatChargeBulkStatusSummary,
+  listChargesNotUpdatedForAccount,
   requestChargeBulkStatusSync,
 } from '@/lib/charges/chargeBulkStatusSync';
 import {
+  asaasRowMayUseLinkedAccount,
+  classifyAsaasIntegrationResponse,
+  formatChargesAsaasIntegrationGate,
   formatRefreshAllChargesBlockReason,
+  overviewGateAllowsPerChargeAsaasSync,
+  resolveAsaasRowAccountState,
   resolveRefreshAllChargesBlockReason,
+  type ChargesAsaasIntegrationGate,
 } from '@/lib/finance/companyAsaasChargeLinkGuards';
 import {
   fetchOwnerProjectOptionsForModule,
@@ -215,6 +222,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const ownerReadOnly = isOwnerRole(user?.role);
   const [asaasAccessAvailable, setAsaasAccessAvailable] = useState(true);
+  const [asaasGate, setAsaasGate] = useState<ChargesAsaasIntegrationGate>('pending');
+  const [financialAccountsLoaded, setFinancialAccountsLoaded] = useState(false);
   const integrationActive = useMemo(
     () => resolveChargesIntegrationReady(integrationConfig, integrationApiReady),
     [integrationConfig, integrationApiReady],
@@ -302,6 +311,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         credentials: 'include',
         cache: 'no-store',
       });
+      const json = await res.json().catch(() => ({}));
+      const errorMessage = typeof json.error === 'string' ? json.error : null;
+      const apiReady = Boolean(json.ready ?? json.canOperate);
+      const gate = classifyAsaasIntegrationResponse(res.status, res.ok && apiReady, errorMessage);
+      setAsaasGate(gate);
       if (res.status === 403 || res.status === 404) {
         setAsaasAccessAvailable(false);
         setIntegrationConfig(null);
@@ -312,16 +326,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       if (!res.ok) {
         setIntegrationConfig(null);
         setIntegrationApiReady(false);
-        return false;
+        return overviewGateAllowsPerChargeAsaasSync(gate);
       }
-      const json = await res.json().catch(() => ({}));
       const integration = (json.integration ?? null) as AsaasIntegrationConfigResponse | null;
-      const apiReady = Boolean(json.ready ?? json.canOperate);
       setIntegrationConfig(integration);
       setIntegrationApiReady(apiReady);
-      return resolveChargesIntegrationReady(integration, apiReady);
+      return resolveChargesIntegrationReady(integration, apiReady) || overviewGateAllowsPerChargeAsaasSync(gate);
     } catch (err) {
       console.error('CHARGES_INTEGRATION_LOAD', err);
+      setAsaasGate('query_error');
       setIntegrationConfig(null);
       setIntegrationApiReady(false);
       return false;
@@ -352,7 +365,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           credentials: 'include',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ installmentIds: chunk }),
+          body: JSON.stringify({ installmentIds: chunk, reconcilePaidReceipts: false }),
         });
         if (chargesRes.status === 403 || chargesRes.status === 404) {
           console.error('CHARGES_ASAAS_LOAD_FORBIDDEN', chargesRes.status);
@@ -664,7 +677,16 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         !ownerReadOnly &&
         installmentIds.length > 0;
 
-      if (!shouldSyncAsaas) return;
+      if (!shouldSyncAsaas) {
+        if (installmentIds.length > 0) {
+          await loadAsaasChargesContext(installmentIds);
+          await loadInterChargeMap(installmentIds);
+        } else {
+          await loadIntegrationStatus();
+        }
+        if (!owned.signal.aborted) setChargeStatusReady(true);
+        return;
+      }
 
       const { integrationOk, chargeMap } = await loadAsaasChargesContext(installmentIds, {
         refreshReceiptsAfterLoad: true,
@@ -732,6 +754,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     user,
     ownerReadOnly,
     loadAsaasChargesContext,
+    loadIntegrationStatus,
     loadC6ChargeMap,
     loadInterChargeMap,
     refreshInstallmentRows,
@@ -767,7 +790,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
         if (!options?.silent) {
           const isError = result.failed > 0 && result.updated === 0;
-          showToast(formatChargeBulkStatusSummary(result), isError);
+          const blocked = listChargesNotUpdatedForAccount(result.items || []);
+          const summary = formatChargeBulkStatusSummary(result);
+          showToast(
+            blocked.length > 0
+              ? `${summary} Sem atualização por conta: ${blocked.join(', ')}.`
+              : summary,
+            isError,
+          );
         }
 
         return result.failed === 0 || result.updated > 0;
@@ -788,15 +818,26 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   useEffect(() => {
     if (authLoading) return;
+    let cancelled = false;
+    setFinancialAccountsLoaded(false);
     void fetch('/api/finance/financial-accounts', { credentials: 'include' })
       .then((res) => {
         if (res.status === 403 || res.status === 404) return {};
         return res.json().catch(() => ({}));
       })
       .then((json) => {
+        if (cancelled) return;
         setFinancialAccounts((json.accounts as CompanyFinancialAccountResponse[]) || []);
+        setFinancialAccountsLoaded(true);
       })
-      .catch(() => setFinancialAccounts([]));
+      .catch(() => {
+        if (cancelled) return;
+        setFinancialAccounts([]);
+        setFinancialAccountsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [authLoading]);
 
   useEffect(() => {
@@ -957,10 +998,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         loading,
         bulkBusy,
         ownerReadOnly,
-        integrationReady: integrationReady || hasVisibleInterCharges,
+        integrationReady:
+          integrationReady ||
+          overviewGateAllowsPerChargeAsaasSync(asaasGate) ||
+          hasVisibleInterCharges,
         visibleChargeCount: allWithChargeCount,
       }),
-    [loading, bulkBusy, ownerReadOnly, integrationReady, hasVisibleInterCharges, allWithChargeCount],
+    [loading, bulkBusy, ownerReadOnly, integrationReady, asaasGate, hasVisibleInterCharges, allWithChargeCount],
   );
   const refreshAllBlockMessage = formatRefreshAllChargesBlockReason(refreshAllBlockReason);
 
@@ -1130,8 +1174,27 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Consulte o status em Atualizar lista antes de gerar a cobrança.', true);
       return;
     }
-    if (provider === 'ASAAS_COMPANY' && !integrationReady) {
-      showToast('Integração Asaas não está ativa.', true);
+    const saleAccount = row.sales as { financial_account_id?: string | null } | undefined;
+    const accountId = String(row.financial_account_id || saleAccount?.financial_account_id || '').trim();
+    const linkedAccount = accountId ? financialAccountsById[accountId] : undefined;
+    const accountState = resolveAsaasRowAccountState({
+      accountId,
+      accountActive: linkedAccount ? linkedAccount.active : null,
+      accountsLoaded: financialAccountsLoaded,
+    });
+    if (
+      provider === 'ASAAS_COMPANY' &&
+      !integrationReady &&
+      !asaasRowMayUseLinkedAccount({ gate: asaasGate, accountState })
+    ) {
+      showToast(
+        accountState === 'none'
+          ? 'Conta ausente. A parcela não tem conta financeira para emitir a cobrança.'
+          : accountState === 'inactive'
+            ? 'Conta inativa. A conta financeira desta parcela está inativa.'
+            : formatChargesAsaasIntegrationGate(asaasGate) || 'Integração Asaas não está ativa.',
+        true,
+      );
       return;
     }
 
@@ -1920,8 +1983,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
       {chargeStatusReady && asaasAccessAvailable && !integrationActive && hasAsaasRows && !loading && !integrationLoading ? (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          Integração Asaas não está ativa. Abra Configurações → Integração Financeira e conclua a
-          ativação, depois clique em &quot;Atualizar lista&quot;.
+          {formatChargesAsaasIntegrationGate(asaasGate) ||
+            'Integração Asaas não está ativa. Abra Configurações → Integração Financeira e conclua a ativação, depois clique em "Atualizar lista".'}
         </div>
       ) : null}
 
@@ -2036,7 +2099,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Atualizar lista
           </button>
-          {!ownerReadOnly && (integrationReady || hasVisibleInterCharges) ? (
+          {!ownerReadOnly &&
+          (integrationReady || overviewGateAllowsPerChargeAsaasSync(asaasGate) || hasVisibleInterCharges) ? (
             <div className="charges-ops-refresh">
               <button
                 type="button"
@@ -2289,6 +2353,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                     })
                   : null;
                 const whatsappShareUrl = whatsappShare?.ok ? whatsappShare.url : null;
+                const linkedAccount = view.financialAccountId
+                  ? financialAccountsById[view.financialAccountId]
+                  : undefined;
+                const accountState = resolveAsaasRowAccountState({
+                  accountId: view.financialAccountId,
+                  accountActive: linkedAccount ? linkedAccount.active : null,
+                  accountsLoaded: financialAccountsLoaded,
+                });
+                const rowAsaasOperable = asaasRowMayUseLinkedAccount({
+                  gate: asaasGate,
+                  accountState,
+                });
 
                 return (
                   <tr key={view.id} className="finance-parcel-row">
@@ -2327,7 +2403,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         view={view}
                         charge={charge}
                         installmentPaid={installmentPaid}
-                        integrationActive={integrationActive}
+                        integrationActive={
+                          provider === 'INTER' || provider === 'C6'
+                            ? true
+                            : integrationActive || rowAsaasOperable
+                        }
+                        asaasGate={asaasGate}
+                        accountState={accountState}
                         companyAsaasEnabled={asaasAccessAvailable}
                         chargeProvider={provider}
                         ownerReadOnly={ownerReadOnly}

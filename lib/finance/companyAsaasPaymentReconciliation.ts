@@ -37,6 +37,8 @@ export type CompanyAsaasReconcilePaymentInput = {
   creditedDate?: string | null;
   paymentPayload?: CompanyAsaasPaymentWebhookPayment | Record<string, unknown> | null;
   userId?: string | null;
+  /** Conta esperada pelo chamador. Ausente, a conta já conferida no webhook não é revalidada. */
+  financialAccountId?: string | null;
 };
 
 export const FINANCE_RECEIPT_PAID_STATUS = 'pago' as const;
@@ -62,7 +64,83 @@ export type CompanyAsaasReconcilePaymentResult = {
   receiptUpdated?: boolean;
   /** Erro ao criar caixa — parcela permanece paga se já baixada. */
   cashMovementError?: string;
+  /** Presente quando a baixa não ocorreu. `charge_not_found` só sem vínculo. */
+  reason?: CompanyAsaasReconcileReason;
 };
+
+export type CompanyAsaasReconcileReason =
+  | 'charge_not_found'
+  | 'charge_not_payable'
+  | 'charge_not_paid'
+  | 'company_mismatch'
+  | 'account_mismatch'
+  | 'installment_mismatch';
+
+export type CompanyAsaasWebhookSettlementDisposition = {
+  status: 'PROCESSED' | 'DUPLICATE' | 'FAILED' | 'IGNORED';
+  reason: string | null;
+};
+
+/** Empresa, conta e parcela precisam ser o mesmo vínculo já gravado na cobrança. */
+export function assessCompanyAsaasChargeBinding(input: {
+  requestCompanyId: string;
+  chargeCompanyId?: string | null;
+  chargeFinancialAccountId?: string | null;
+  requestFinancialAccountId?: string | null;
+  chargeInstallmentId?: string | null;
+  receiptId?: string | null;
+  receiptCompanyId?: string | null;
+  receiptTenantId?: string | null;
+}): 'ok' | CompanyAsaasReconcileReason {
+  const chargeCompanyId = String(input.chargeCompanyId || '').trim();
+  const requestCompanyId = String(input.requestCompanyId || '').trim();
+  if (!chargeCompanyId) return 'charge_not_found';
+  if (chargeCompanyId !== requestCompanyId) return 'company_mismatch';
+
+  const requestAccountId = String(input.requestFinancialAccountId || '').trim();
+  const chargeAccountId = String(input.chargeFinancialAccountId || '').trim();
+  if (requestAccountId && chargeAccountId && requestAccountId !== chargeAccountId) {
+    return 'account_mismatch';
+  }
+
+  const chargeInstallmentId = String(input.chargeInstallmentId || '').trim();
+  const receiptId = String(input.receiptId || '').trim();
+  if (receiptId && chargeInstallmentId && receiptId !== chargeInstallmentId) {
+    return 'installment_mismatch';
+  }
+
+  const receiptCompanies = [input.receiptCompanyId, input.receiptTenantId]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (receiptCompanies.length > 0 && !receiptCompanies.includes(requestCompanyId)) {
+    return 'company_mismatch';
+  }
+
+  return 'ok';
+}
+
+/**
+ * Cobrança encontrada e evento de pagamento válido segue para a baixa.
+ * “Não encontrada” fica restrito à ausência de vínculo.
+ */
+export function companyAsaasWebhookSettlementDisposition(
+  result: CompanyAsaasReconcilePaymentResult,
+): CompanyAsaasWebhookSettlementDisposition {
+  if (!result.ok) {
+    const missing = !result.chargeId || result.reason === 'charge_not_found';
+    return {
+      status: 'IGNORED',
+      reason: missing ? 'charge_not_found' : result.reason || 'charge_not_settled',
+    };
+  }
+  if (result.cashMovementError && !result.cashMovementId) {
+    return { status: 'FAILED', reason: result.cashMovementError };
+  }
+  return {
+    status: result.duplicate ? 'DUPLICATE' : 'PROCESSED',
+    reason: null,
+  };
+}
 
 type FinanceReceiptRow = {
   id: string;
@@ -326,6 +404,21 @@ async function tryEnsureCompanyAsaasCashMovement(
       .single();
 
     if (movementError) {
+      const duplicateCode = String((movementError as { code?: string }).code || '');
+      if (duplicateCode === '23505') {
+        const racedId = await findExistingCompanyAsaasCashMovement(
+          admin,
+          input.companyId,
+          input.charge.id,
+          installmentId,
+        );
+        if (racedId) {
+          await updateCompanyAsaasCharge(admin, input.charge.id, input.companyId, {
+            cashMovementId: racedId,
+          });
+          return { cashMovementId: racedId, created: false, error: null };
+        }
+      }
       console.error('[company-asaas-reconcile] cash_movements insert failed (parcela mantida paga)', {
         chargeId: input.charge.id,
         installmentId,
@@ -434,6 +527,8 @@ export async function markFinanceReceiptPaidFromCompanyAsaasCharge(
   }
 
   if (!data || data.length === 0) {
+    const raced = await loadFinanceReceiptForReconciliation(admin, installmentId);
+    if (isReceiptPaidStatus(raced?.status)) return false;
     const message = `UPDATE finance_receipts não afetou linhas (charge.id=${chargeId ?? '—'}, installment_id=${installmentId}).`;
     console.error('[company-asaas-reconcile]', message);
     throw new CompanyAsaasReconciliationError(message, { chargeId, installmentId });
@@ -464,12 +559,16 @@ async function reconcilePaidCompanyAsaasChargeRecord(
   input: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId' | 'installmentId'>,
 ): Promise<CompanyAsaasReconcilePaymentResult> {
   if (!isCompanyAsaasChargeStatusPaid(charge.status)) {
-    return {
-      ok: false,
-      duplicate: false,
-      chargeId: charge.id,
-      installmentId: charge.installmentId,
-    };
+    const paidEvent = isCompanyAsaasPaidWebhookEvent(String(input.eventType || ''));
+    if (!paidEvent || charge.status === 'CANCELLED') {
+      return {
+        ok: false,
+        duplicate: false,
+        chargeId: charge.id,
+        installmentId: charge.installmentId,
+        reason: charge.status === 'CANCELLED' ? 'charge_not_payable' : 'charge_not_paid',
+      };
+    }
   }
 
   const installmentId = String(charge.installmentId || '').trim();
@@ -492,6 +591,26 @@ async function reconcilePaidCompanyAsaasChargeRecord(
     );
   }
   assertSettlementTargetsReceipt(installmentId, receipt.id);
+
+  const binding = assessCompanyAsaasChargeBinding({
+    requestCompanyId: companyId,
+    chargeCompanyId: charge.companyId,
+    chargeFinancialAccountId: charge.financialAccountId,
+    requestFinancialAccountId: input.financialAccountId,
+    chargeInstallmentId: installmentId,
+    receiptId: receipt.id,
+    receiptCompanyId: receipt.company_id,
+    receiptTenantId: receipt.tenant_id,
+  });
+  if (binding !== 'ok') {
+    return {
+      ok: false,
+      duplicate: false,
+      chargeId: charge.id,
+      installmentId,
+      reason: binding,
+    };
+  }
 
   const receiptAlreadyPaid = isReceiptPaidStatus(receipt.status);
 
@@ -831,7 +950,29 @@ export async function executeCompanyAsaasPaymentReconciliation(
       asaasPaymentId,
       installmentId,
     });
-    return { ok: false, duplicate: false, installmentId: installmentId || undefined };
+    return {
+      ok: false,
+      duplicate: false,
+      installmentId: installmentId || undefined,
+      reason: 'charge_not_found',
+    };
+  }
+
+  const locatedBinding = assessCompanyAsaasChargeBinding({
+    requestCompanyId: input.companyId,
+    chargeCompanyId: charge.companyId,
+    chargeFinancialAccountId: charge.financialAccountId,
+    requestFinancialAccountId: input.financialAccountId,
+    chargeInstallmentId: charge.installmentId,
+  });
+  if (locatedBinding !== 'ok') {
+    return {
+      ok: false,
+      duplicate: false,
+      chargeId: charge.id,
+      installmentId: charge.installmentId,
+      reason: locatedBinding,
+    };
   }
 
   return reconcilePaidCompanyAsaasChargeRecord(admin, input.companyId, charge, {
@@ -841,6 +982,7 @@ export async function executeCompanyAsaasPaymentReconciliation(
     creditedDate: input.creditedDate,
     paymentPayload: input.paymentPayload,
     userId: input.userId,
+    financialAccountId: input.financialAccountId,
   });
 }
 

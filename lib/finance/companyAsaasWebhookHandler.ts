@@ -10,6 +10,7 @@ import {
   listActiveFinancialAccountsForProvider,
 } from '@/lib/finance/financialAccountRequired';
 import {
+  companyAsaasWebhookSettlementDisposition,
   executeCompanyAsaasPaymentReconciliation,
   isCompanyAsaasPaidWebhookEvent,
   resolveCompanyAsaasReconcileDates,
@@ -333,17 +334,34 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
       paymentPayload: payload.payment ?? null,
     });
 
+    const disposition = companyAsaasWebhookSettlementDisposition(result);
     if (!result.ok) {
       if (registration.id) {
         await markCompanyAsaasWebhookEventProcessed(
           admin,
           registration.id,
           companyId,
-          'IGNORED',
-          'charge_not_found_on_reconcile',
+          disposition.status,
+          disposition.reason,
         );
       }
-      return NextResponse.json({ ok: true, ignored: true, reason: 'charge_not_found' });
+      return NextResponse.json({ ok: true, ignored: true, reason: disposition.reason });
+    }
+
+    if (disposition.status === 'FAILED') {
+      if (registration.id) {
+        await markCompanyAsaasWebhookEventProcessed(
+          admin,
+          registration.id,
+          companyId,
+          'FAILED',
+          disposition.reason,
+        );
+      }
+      return NextResponse.json(
+        { ok: false, error: disposition.reason || 'Falha ao lançar o caixa.' },
+        { status: 500 },
+      );
     }
 
     await syncChargeRevenueSplitLegsFromAsaasPayment({
@@ -359,7 +377,7 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
         admin,
         registration.id,
         companyId,
-        result.duplicate ? 'DUPLICATE' : 'PROCESSED',
+        disposition.status,
       );
     }
 

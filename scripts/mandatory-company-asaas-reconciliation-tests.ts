@@ -3,11 +3,16 @@
  * npx tsx scripts/mandatory-company-asaas-reconciliation-tests.ts
  */
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import {
+  assessCompanyAsaasChargeBinding,
   CompanyAsaasReconciliationError,
+  companyAsaasWebhookSettlementDisposition,
   ensureCompanyAsaasInstallmentReconciled,
+  executeCompanyAsaasPaymentReconciliation,
   FINANCE_RECEIPT_PAID_STATUS,
   forceCompanyAsaasPaidInstallmentReconciliation,
   isCompanyAsaasChargeFullyReconciled,
@@ -15,6 +20,7 @@ import {
   markFinanceReceiptPaidFromCompanyAsaasCharge,
   needsCompanyAsaasReceiptReconciliation,
 } from '../lib/finance/companyAsaasPaymentReconciliation';
+import { verifyCompanyAsaasWebhookToken } from '../lib/finance/companyAsaasWebhookHandler';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -30,6 +36,8 @@ type ReceiptRow = {
   sale_id?: string | null;
   customer_id?: string | null;
   project_id?: string | null;
+  company_id?: string | null;
+  tenant_id?: string | null;
 };
 
 type ChargeRow = {
@@ -42,6 +50,7 @@ type ChargeRow = {
   paid_at?: string | null;
   cash_movement_id?: string | null;
   raw_payload?: Record<string, unknown>;
+  financial_account_id?: string | null;
 };
 
 type CashMovementRow = Record<string, unknown>;
@@ -110,6 +119,9 @@ function createMockAdmin(initial: {
         maybeSingle: async () => execute(ctx, true),
         single: async () => {
           const result = await execute(ctx, false);
+          if (result && typeof result === 'object' && 'error' in result && result.error) {
+            return result;
+          }
           if (!result.data) throw new Error('single() sem linha');
           return result;
         },
@@ -181,12 +193,34 @@ function createMockAdmin(initial: {
             if (failCashInsert) {
               return {
                 data: null,
-                error: { message: 'column cash_movements.finance_receipt_id does not exist' },
-              } as { data: null; error: { message: string } };
+                error: { message: 'column cash_movements.finance_receipt_id does not exist', code: '42703' },
+              } as { data: null; error: { message: string; code: string } };
+            }
+            const payload = state.insertPayload ?? {};
+            const meta = (payload.metadata as Record<string, unknown> | undefined) ?? {};
+            const chargeId = String(meta.charge_id || '');
+            const provider = String(meta.provider || '');
+            if (provider === 'ASAAS_COMPANY' && chargeId) {
+              const duplicate = cashMovements.find((row) => {
+                const rowMeta = (row.metadata as Record<string, unknown> | undefined) ?? {};
+                return (
+                  String(row.company_id || '') === String(payload.company_id || '') &&
+                  String(row.type || '') === 'entrada' &&
+                  String(row.status || 'ativo') === 'ativo' &&
+                  String(rowMeta.provider || '') === 'ASAAS_COMPANY' &&
+                  String(rowMeta.charge_id || '') === chargeId
+                );
+              });
+              if (duplicate) {
+                return {
+                  data: null,
+                  error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+                } as { data: null; error: { message: string; code: string } };
+              }
             }
             const row = {
               id: `cm-${cashMovements.length + 1}`,
-              ...(state.insertPayload ?? {}),
+              ...(payload),
             };
             cashMovements.push(row);
             return { data: row, error: null };
@@ -520,6 +554,197 @@ async function testCashMovementFailureDoesNotBlockReceipt() {
   console.log('OK testCashMovementFailureDoesNotBlockReceipt');
 }
 
+function pendingChargeFixture(status = 'PENDING') {
+  return createMockAdmin({
+    receipts: {
+      'receipt-entrada': {
+        id: 'receipt-entrada',
+        status: 'pendente',
+        amount: 500,
+        installment_number: 1,
+        sale_id: 'sale-1',
+        customer_id: 'cust-1',
+        project_id: 'proj-1',
+        company_id: 'company-1',
+        tenant_id: 'company-1',
+      },
+    },
+    charges: {
+      'charge-1': {
+        id: 'charge-1',
+        company_id: 'company-1',
+        installment_id: 'receipt-entrada',
+        asaas_payment_id: 'pay_asaas_1',
+        status,
+        value: 500,
+        financial_account_id: 'acc-rocha',
+        paid_at: null,
+      },
+    },
+  });
+}
+
+async function settlePending(eventType: string, financialAccountId?: string) {
+  const mock = pendingChargeFixture();
+  const result = await executeCompanyAsaasPaymentReconciliation(mock.admin, {
+    companyId: 'company-1',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType,
+    paidAt: '2026-11-05T17:39:03.000Z',
+    financialAccountId: financialAccountId ?? null,
+  });
+  return { mock, result };
+}
+
+async function testPendingPaymentConfirmedAndReceived() {
+  const confirmed = await settlePending('PAYMENT_CONFIRMED');
+  assert(confirmed.result.ok, 'CONFIRMED baixa cobrança PENDING');
+  assert(confirmed.result.reason === undefined, 'CONFIRMED não é cobrança ausente');
+  assert(confirmed.mock.charges['charge-1'].status === 'PAID', 'cobrança PAID');
+  assert(confirmed.mock.receipts['receipt-entrada'].status === 'pago', 'parcela paga');
+  assert(confirmed.mock.cashMovements.length === 1, 'um caixa no CONFIRMED');
+
+  const received = await executeCompanyAsaasPaymentReconciliation(confirmed.mock.admin, {
+    companyId: 'company-1',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType: 'PAYMENT_RECEIVED',
+    paidAt: '2026-11-05T20:09:22.000Z',
+  });
+  assert(received.ok, 'RECEIVED seguinte ok');
+  assert(received.duplicate, 'RECEIVED é reenvio da mesma baixa');
+  assert(confirmed.mock.cashMovements.length === 1, 'CONFIRMED e RECEIVED não duplicam caixa');
+  assert(
+    companyAsaasWebhookSettlementDisposition(received).status === 'DUPLICATE',
+    'reenvio fica DUPLICATE',
+  );
+  console.log('OK testPendingPaymentConfirmedAndReceived');
+}
+
+async function testSameEventRedispatchAfterPartialCashFailure() {
+  const first = pendingChargeFixture();
+  const failed = await executeCompanyAsaasPaymentReconciliation(first.admin, {
+    companyId: 'company-1',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType: 'PAYMENT_RECEIVED',
+    paidAt: '2026-11-05T17:39:03.000Z',
+  });
+  assert(failed.ok && first.cashMovements.length === 1, 'primeira passagem cria a baixa');
+
+  first.cashMovements.splice(0, 1);
+  first.charges['charge-1'].cash_movement_id = null;
+  const disposition = companyAsaasWebhookSettlementDisposition({
+    ok: true,
+    duplicate: false,
+    chargeId: 'charge-1',
+    cashMovementError: 'caixa indisponível',
+  });
+  assert(disposition.status === 'FAILED', 'falha de caixa pede repetição');
+
+  const retried = await executeCompanyAsaasPaymentReconciliation(first.admin, {
+    companyId: 'company-1',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType: 'PAYMENT_RECEIVED',
+    paidAt: '2026-11-05T17:39:03.000Z',
+  });
+  assert(retried.ok, 'repetição conclui');
+  assert(first.receipts['receipt-entrada'].status === 'pago', 'parcela permanece paga');
+  assert(first.cashMovements.length === 1, 'repetição cria o único caixa');
+  assert(first.charges['charge-1'].cash_movement_id === first.cashMovements[0].id, 'cobrança aponta o caixa');
+  console.log('OK testSameEventRedispatchAfterPartialCashFailure');
+}
+
+async function testConcurrentWebhookAndReconciliationShareOneCashMovement() {
+  const mock = pendingChargeFixture();
+  const [webhook, manual] = await Promise.all([
+    executeCompanyAsaasPaymentReconciliation(mock.admin, {
+      companyId: 'company-1',
+      asaasPaymentId: 'pay_asaas_1',
+      eventType: 'PAYMENT_CONFIRMED',
+      paidAt: '2026-11-05T17:39:03.000Z',
+    }),
+    executeCompanyAsaasPaymentReconciliation(mock.admin, {
+      companyId: 'company-1',
+      asaasPaymentId: 'pay_asaas_1',
+      eventType: 'PAYMENT_RECEIVED',
+      paidAt: '2026-11-05T17:39:03.000Z',
+    }),
+  ]);
+  assert(webhook.ok && manual.ok, 'webhook e conciliação concluem');
+  assert(mock.cashMovements.length === 1, 'índice único deixa um caixa');
+  assert(webhook.cashMovementId === manual.cashMovementId, 'os dois lados usam o mesmo caixa');
+  assert(mock.charges['charge-1'].status === 'PAID', 'cobrança PAID');
+  assert(mock.receipts['receipt-entrada'].status === 'pago', 'parcela paga uma vez');
+  console.log('OK testConcurrentWebhookAndReconciliationShareOneCashMovement');
+}
+
+async function testWrongCompanyOrAccountDoesNotSettle() {
+  const otherCompany = await executeCompanyAsaasPaymentReconciliation(pendingChargeFixture().admin, {
+    companyId: 'company-2',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType: 'PAYMENT_RECEIVED',
+    paidAt: '2026-11-05T17:39:03.000Z',
+  });
+  assert(!otherCompany.ok && otherCompany.reason === 'charge_not_found', 'outra empresa não acha a cobrança');
+  assert(
+    companyAsaasWebhookSettlementDisposition(otherCompany).reason === 'charge_not_found',
+    'motivo reservado para vínculo ausente',
+  );
+
+  const wrongAccount = await executeCompanyAsaasPaymentReconciliation(pendingChargeFixture().admin, {
+    companyId: 'company-1',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType: 'PAYMENT_RECEIVED',
+    paidAt: '2026-11-05T17:39:03.000Z',
+    financialAccountId: 'acc-outra',
+  });
+  assert(!wrongAccount.ok && wrongAccount.reason === 'account_mismatch', 'conta errada não baixa');
+  assert(
+    companyAsaasWebhookSettlementDisposition(wrongAccount).reason === 'account_mismatch',
+    'conta errada não vira cobrança ausente',
+  );
+
+  const wrongReceipt = pendingChargeFixture();
+  wrongReceipt.receipts['receipt-entrada'].company_id = 'company-2';
+  wrongReceipt.receipts['receipt-entrada'].tenant_id = 'company-2';
+  const mismatch = await executeCompanyAsaasPaymentReconciliation(wrongReceipt.admin, {
+    companyId: 'company-1',
+    asaasPaymentId: 'pay_asaas_1',
+    eventType: 'PAYMENT_RECEIVED',
+    paidAt: '2026-11-05T17:39:03.000Z',
+  });
+  assert(!mismatch.ok && mismatch.reason === 'company_mismatch', 'parcela de outra empresa não baixa');
+  assert(wrongReceipt.charges['charge-1'].status === 'PENDING', 'cobrança permanece PENDING');
+  assert(wrongReceipt.cashMovements.length === 0, 'sem caixa');
+
+  const request = new Request('https://example.test/hook', { headers: { 'asaas-access-token': 'outro' } });
+  assert(!verifyCompanyAsaasWebhookToken(request, 'token-da-conta'), 'token de outra conta é recusado');
+  assert(
+    assessCompanyAsaasChargeBinding({
+      requestCompanyId: 'company-1',
+      chargeCompanyId: 'company-1',
+      chargeFinancialAccountId: 'acc-rocha',
+      requestFinancialAccountId: 'acc-rocha',
+      chargeInstallmentId: 'receipt-entrada',
+      receiptId: 'receipt-entrada',
+      receiptCompanyId: 'company-1',
+    }) === 'ok',
+    'vínculo correto passa',
+  );
+  console.log('OK testWrongCompanyOrAccountDoesNotSettle');
+}
+
+function testMigrationRejectsLegacyDuplicatesBeforeUniqueIndex() {
+  const sql = readFileSync(
+    join(process.cwd(), 'supabase/migrations/20261125190000_company_asaas_charge_cash_unique.sql'),
+    'utf8',
+  );
+  assert(sql.includes('RAISE EXCEPTION'), 'migration recusa legado duplicado');
+  assert(sql.includes('idx_cash_movements_company_asaas_charge_unique'), 'índice da cobrança Asaas');
+  assert(sql.includes("metadata->>'charge_id'"), 'unicidade por charge_id');
+  assert(sql.includes("metadata->>'provider' = 'ASAAS_COMPANY'"), 'só o provider da cobrança');
+  console.log('OK testMigrationRejectsLegacyDuplicatesBeforeUniqueIndex');
+}
+
 async function main() {
   testFinanceReceiptPaidStatusMatchesManualFinance();
   testNeedsReceiptReconciliation();
@@ -531,6 +756,11 @@ async function main() {
   await testUpdateFailureWhenReceiptMissing();
   await testUpdateZeroRowsThrows();
   await testForceReconcileBackfillChargesList();
+  await testPendingPaymentConfirmedAndReceived();
+  await testSameEventRedispatchAfterPartialCashFailure();
+  await testConcurrentWebhookAndReconciliationShareOneCashMovement();
+  await testWrongCompanyOrAccountDoesNotSettle();
+  testMigrationRejectsLegacyDuplicatesBeforeUniqueIndex();
   console.log('mandatory-company-asaas-reconciliation-tests: all passed');
 }
 
