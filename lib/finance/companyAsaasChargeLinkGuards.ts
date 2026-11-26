@@ -306,3 +306,60 @@ export function formatRefreshAllChargesBlockReason(
       return null;
   }
 }
+
+/**
+ * A abertura da lista compacta mostra parcelas antes da integração responder.
+ * Enquanto a consulta não termina, o aviso é de espera. "Indisponível" fica
+ * para o resultado real da consulta.
+ */
+export function resolveChargesRefreshAllPresentation(params: {
+  ownerReadOnly: boolean;
+  integrationReady: boolean;
+  gate: ChargesAsaasIntegrationGate;
+  hasVisibleInterCharges: boolean;
+  hasAsaasRows: boolean;
+  integrationLoading: boolean;
+}): { showButton: boolean; notice: string | null } {
+  if (params.ownerReadOnly) return { showButton: false, notice: null };
+  const showButton =
+    params.integrationReady ||
+    overviewGateAllowsPerChargeAsaasSync(params.gate) ||
+    params.hasVisibleInterCharges;
+  if (showButton) return { showButton: true, notice: null };
+  if (!params.hasAsaasRows) return { showButton: false, notice: null };
+  if (params.integrationLoading || params.gate === 'pending') {
+    return { showButton: false, notice: 'Carregando integração Asaas…' };
+  }
+  return {
+    showButton: false,
+    notice:
+      formatChargesAsaasIntegrationGate(params.gate) ||
+      formatRefreshAllChargesBlockReason('integration_unavailable'),
+  };
+}
+
+/** O cartão não pode anunciar zero enquanto a leitura local ainda não terminou. */
+export function resolveIssuedChargesCardSubtitle(params: {
+  chargeStatusReady: boolean;
+  readError: string | null;
+  activeCount: number;
+}): string {
+  const readError = String(params.readError || '').trim();
+  if (readError) return readError;
+  if (!params.chargeStatusReady) return 'Consultando cobranças locais…';
+  const count = Number.isFinite(params.activeCount) ? Math.max(0, Math.trunc(params.activeCount)) : 0;
+  return `${count} cobrança(s) ativa(s)`;
+}
+
+/**
+ * "Dados indisponíveis" é falha da leitura de parcelas.
+ * O prefixo progressivo já mostra linhas e não é essa falha.
+ */
+export function chargesRowActionsReady(params: {
+  totalsReady: boolean;
+  loadError: string | null;
+  rowCount: number;
+}): boolean {
+  if (String(params.loadError || '').trim()) return false;
+  return params.totalsReady || params.rowCount > 0;
+}

@@ -6,12 +6,15 @@
 import {
   canGenerateAsaasChargeWithHistory,
   asaasRowMayUseLinkedAccount,
+  chargesRowActionsReady,
   classifyAsaasIntegrationResponse,
   formatChargesAsaasIntegrationGate,
   formatRefreshAllChargesBlockReason,
   overviewGateAllowsPerChargeAsaasSync,
   resolveAsaasRowAccountState,
   resolveAsaasRowActionNotice,
+  resolveChargesRefreshAllPresentation,
+  resolveIssuedChargesCardSubtitle,
   isAsaasNotFoundError,
   resolveRefreshAllChargesBlockReason,
   resolveSafeSyncedChargeStatus,
@@ -325,6 +328,93 @@ console.log('\n═══ 10b: coluna Ações não trata várias contas como inte
   const page = fs.readFileSync('components/charges/ChargesPageClient.tsx', 'utf8');
   assert(page.includes('accountState={accountState}'), 'a página entrega o estado da conta da linha');
   assert(page.includes('asaasRowMayUseLinkedAccount'), 'emitir usa a conta vinculada');
+}
+
+console.log('\n═══ 11: abertura compacta da Meneses não rotula a espera como falha ═══');
+{
+  const opening = resolveChargesRefreshAllPresentation({
+    ownerReadOnly: false,
+    integrationReady: false,
+    gate: 'pending',
+    hasVisibleInterCharges: false,
+    hasAsaasRows: true,
+    integrationLoading: true,
+  });
+  assert(!opening.showButton, 'botão espera a integração');
+  assert(opening.notice === 'Carregando integração Asaas…', 'espera não diz integração indisponível');
+
+  const ready = resolveChargesRefreshAllPresentation({
+    ownerReadOnly: false,
+    integrationReady: true,
+    gate: classifyAsaasIntegrationResponse(200, true),
+    hasVisibleInterCharges: false,
+    hasAsaasRows: true,
+    integrationLoading: false,
+  });
+  assert(ready.showButton, 'uma conta Asaas pronta mostra Atualizar todas');
+  assert(ready.notice === null, 'integração pronta não exibe aviso de falha');
+
+  const queryError = resolveChargesRefreshAllPresentation({
+    ownerReadOnly: false,
+    integrationReady: false,
+    gate: 'query_error',
+    hasVisibleInterCharges: false,
+    hasAsaasRows: true,
+    integrationLoading: false,
+  });
+  assert(!queryError.showButton, 'falha de consulta não libera o botão');
+  assert(
+    queryError.notice === 'Não foi possível consultar a integração Asaas.',
+    'falha de consulta não vira integração indisponível',
+  );
+
+  assert(
+    chargesRowActionsReady({ totalsReady: false, loadError: null, rowCount: 12 }),
+    'prefixo de parcelas não vira dados indisponíveis',
+  );
+  assert(
+    !chargesRowActionsReady({ totalsReady: false, loadError: 'falha', rowCount: 12 }),
+    'erro de parcelas continua dados indisponíveis',
+  );
+
+  const consulting = resolveIssuedChargesCardSubtitle({
+    chargeStatusReady: false,
+    readError: null,
+    activeCount: 0,
+  });
+  assert(consulting === 'Consultando cobranças locais…', 'cartão em leitura não anuncia zero');
+  assert(
+    resolveIssuedChargesCardSubtitle({
+      chargeStatusReady: true,
+      readError: 'Não foi possível ler as cobranças locais.',
+      activeCount: 0,
+    }) === 'Não foi possível ler as cobranças locais.',
+    'falha de leitura aparece no cartão',
+  );
+  assert(
+    resolveIssuedChargesCardSubtitle({
+      chargeStatusReady: true,
+      readError: null,
+      activeCount: 5,
+    }) === '5 cobrança(s) ativa(s)',
+    'cinco cobranças locais aparecem no cartão',
+  );
+
+  const page = fs.readFileSync('components/charges/ChargesPageClient.tsx', 'utf8');
+  const loadStart = page.indexOf('const loadInstallments = useCallback');
+  const progressive = page.indexOf('fetchFinanceReceiptsProgressive', loadStart);
+  const earlyIntegration = page.indexOf('void loadIntegrationStatus()', loadStart);
+  assert(earlyIntegration > loadStart && earlyIntegration < progressive, 'GET da integração sai antes das parcelas');
+  const openStart = page.indexOf('if (!shouldSyncAsaas)');
+  const openReturn = page.indexOf('return;', openStart);
+  const openBlock = page.slice(openStart, openReturn);
+  assert(openBlock.includes('loadAsaasChargesContext'), 'abertura lê o mapa local');
+  assert(!openBlock.includes('requestChargeBulkStatusSync'), 'abertura não sincroniza o banco');
+  assert(!openBlock.includes('update-charge-status-bulk'), 'abertura não chama a baixa em lote');
+  assert(page.includes('reconcilePaidReceipts: false'), 'leitura local não reconcilia parcelas pagas');
+  assert(page.includes('resolveChargesRefreshAllPresentation'), 'o botão usa o estado real da integração');
+  assert(page.includes('resolveIssuedChargesCardSubtitle'), 'o cartão distingue espera, erro e contagem');
+  assert(page.includes('chargesRowActionsReady'), 'as linhas não tratam o prefixo como falha');
 }
 
 console.log('\n═══ 10: sem alteração em main nesta entrega ═══');

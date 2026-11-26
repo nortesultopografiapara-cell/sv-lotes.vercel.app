@@ -78,11 +78,14 @@ import {
 } from '@/lib/charges/chargeBulkStatusSync';
 import {
   asaasRowMayUseLinkedAccount,
+  chargesRowActionsReady,
   classifyAsaasIntegrationResponse,
   formatChargesAsaasIntegrationGate,
   formatRefreshAllChargesBlockReason,
   overviewGateAllowsPerChargeAsaasSync,
   resolveAsaasRowAccountState,
+  resolveChargesRefreshAllPresentation,
+  resolveIssuedChargesCardSubtitle,
   resolveRefreshAllChargesBlockReason,
   type ChargesAsaasIntegrationGate,
 } from '@/lib/finance/companyAsaasChargeLinkGuards';
@@ -188,6 +191,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     Record<string, CompanyAsaasChargeResponse>
   >({});
   const asaasChargesByInstallmentRef = useRef(asaasChargesByInstallment);
+  const integrationRequestRef = useRef(0);
   asaasChargesByInstallmentRef.current = asaasChargesByInstallment;
   const interChargesByInstallmentRef = useRef(interChargesByInstallment);
   interChargesByInstallmentRef.current = interChargesByInstallment;
@@ -203,6 +207,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [toast, setToast] = useState<string | null>(null);
   const [toastIsError, setToastIsError] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [chargeReadError, setChargeReadError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<FinanceReceiptsUiPageSize>(
     DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
@@ -230,6 +235,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   );
   const integrationReady = asaasAccessAvailable && integrationActive;
   const installmentsDataReady = totalsReady && !loadError;
+  const rowActionsDataReady = chargesRowActionsReady({
+    totalsReady,
+    loadError,
+    rowCount: payments.length,
+  });
 
   const financialAccountLabels = useMemo(() => {
     const map: Record<string, string> = {};
@@ -305,6 +315,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   );
 
   const loadIntegrationStatus = useCallback(async (): Promise<boolean> => {
+    const requestId = ++integrationRequestRef.current;
     setIntegrationLoading(true);
     try {
       const res = await fetch(`/api/finance/asaas/integration?_=${Date.now()}`, {
@@ -312,6 +323,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         cache: 'no-store',
       });
       const json = await res.json().catch(() => ({}));
+      if (requestId !== integrationRequestRef.current) return false;
       const errorMessage = typeof json.error === 'string' ? json.error : null;
       const apiReady = Boolean(json.ready ?? json.canOperate);
       const gate = classifyAsaasIntegrationResponse(res.status, res.ok && apiReady, errorMessage);
@@ -333,18 +345,21 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       setIntegrationApiReady(apiReady);
       return resolveChargesIntegrationReady(integration, apiReady) || overviewGateAllowsPerChargeAsaasSync(gate);
     } catch (err) {
+      if (requestId !== integrationRequestRef.current) return false;
       console.error('CHARGES_INTEGRATION_LOAD', err);
       setAsaasGate('query_error');
       setIntegrationConfig(null);
       setIntegrationApiReady(false);
       return false;
     } finally {
-      setIntegrationLoading(false);
+      if (requestId === integrationRequestRef.current) setIntegrationLoading(false);
     }
   }, []);
 
-  const loadChargeMap = useCallback(async (installmentIds: string[]) => {
+  const loadChargeMap = useCallback(async (installmentIds: string[], signal?: AbortSignal) => {
+    if (signal?.aborted) return asaasChargesByInstallmentRef.current;
     if (installmentIds.length === 0) {
+      setChargeReadError(null);
       setAsaasChargesByInstallment({});
       return {} as Record<string, CompanyAsaasChargeResponse>;
     }
@@ -359,20 +374,21 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       }> = [];
 
       for (const chunk of chunks) {
+        if (signal?.aborted) return asaasChargesByInstallmentRef.current;
         // POST evita truncamento de URL com muitas parcelas; inclui PAID/canceladas.
+        // reconcilePaidReceipts false: a abertura só lê o mapa local, sem baixa.
         const chargesRes = await fetch('/api/finance/asaas/charges', {
           method: 'POST',
           credentials: 'include',
           cache: 'no-store',
+          signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ installmentIds: chunk, reconcilePaidReceipts: false }),
         });
-        if (chargesRes.status === 403 || chargesRes.status === 404) {
-          console.error('CHARGES_ASAAS_LOAD_FORBIDDEN', chargesRes.status);
-          return asaasChargesByInstallmentRef.current;
-        }
+        if (signal?.aborted) return asaasChargesByInstallmentRef.current;
         if (!chargesRes.ok) {
           console.error('CHARGES_ASAAS_LOAD_HTTP', chargesRes.status);
+          setChargeReadError('Não foi possível ler as cobranças locais.');
           return asaasChargesByInstallmentRef.current;
         }
         const chargesJson = await chargesRes.json().catch(() => ({}));
@@ -402,11 +418,16 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         );
       }
 
+      setChargeReadError(null);
       setAsaasChargeHistoryIds(new Set(asaasChargeHistoryIdsRef.current));
       setAsaasChargesByInstallment(map);
       return map;
     } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+        return asaasChargesByInstallmentRef.current;
+      }
       console.error('CHARGES_ASAAS_LOAD', err);
+      setChargeReadError('Não foi possível ler as cobranças locais.');
       return asaasChargesByInstallmentRef.current;
     }
   }, [showToast]);
@@ -525,10 +546,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const loadAsaasChargesContext = useCallback(
     async (
       installmentIds: string[],
-      options?: { refreshReceiptsAfterLoad?: boolean; rlsCtx?: Awaited<ReturnType<typeof resolveRlsContext>>; ownerCtx?: Awaited<ReturnType<typeof loadOwnerAccessContext>> },
+      options?: {
+        refreshReceiptsAfterLoad?: boolean;
+        rlsCtx?: Awaited<ReturnType<typeof resolveRlsContext>>;
+        ownerCtx?: Awaited<ReturnType<typeof loadOwnerAccessContext>>;
+        signal?: AbortSignal;
+      },
     ) => {
       const integrationOk = await loadIntegrationStatus();
-      const chargeMap = await loadChargeMap(installmentIds);
+      if (options?.signal?.aborted) {
+        return { integrationOk, chargeMap: asaasChargesByInstallmentRef.current };
+      }
+      const chargeMap = await loadChargeMap(installmentIds, options?.signal);
 
       if (
         options?.refreshReceiptsAfterLoad &&
@@ -575,6 +604,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       setC6ChargesLoaded(false);
     }
     setLoadError(null);
+    setChargeReadError(null);
+    void loadIntegrationStatus();
     const loadStartedAt = Date.now();
     try {
       const rlsCtx = await resolveRlsContext(user);
@@ -670,28 +701,34 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       });
 
       const installmentIds = scoped.map((row) => String(row.id));
-      const c6Ready = installmentIds.length === 0 ? {} : await loadC6ChargeMap(installmentIds);
-      if (!owned.signal.aborted) setC6ChargesLoaded(Boolean(c6Ready));
       const shouldSyncAsaas =
         Boolean(options?.syncAsaasStatuses) &&
         !ownerReadOnly &&
         installmentIds.length > 0;
 
       if (!shouldSyncAsaas) {
+        const c6Promise =
+          installmentIds.length === 0 ? Promise.resolve({}) : loadC6ChargeMap(installmentIds);
         if (installmentIds.length > 0) {
-          await loadAsaasChargesContext(installmentIds);
-          await loadInterChargeMap(installmentIds);
+          await loadAsaasChargesContext(installmentIds, { signal: owned.signal });
+          if (!owned.signal.aborted) await loadInterChargeMap(installmentIds);
         } else {
           await loadIntegrationStatus();
         }
         if (!owned.signal.aborted) setChargeStatusReady(true);
+        const c6Ready = await c6Promise;
+        if (!owned.signal.aborted) setC6ChargesLoaded(Boolean(c6Ready));
         return;
       }
+
+      const c6Ready = installmentIds.length === 0 ? {} : await loadC6ChargeMap(installmentIds);
+      if (!owned.signal.aborted) setC6ChargesLoaded(Boolean(c6Ready));
 
       const { integrationOk, chargeMap } = await loadAsaasChargesContext(installmentIds, {
         refreshReceiptsAfterLoad: true,
         rlsCtx,
         ownerCtx,
+        signal: owned.signal,
       });
       await loadInterChargeMap(installmentIds);
       if (owned.signal.aborted) return;
@@ -990,6 +1027,26 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const hasAsaasRows = useMemo(
     () => payments.some((row) => resolveRowProvider(row) === 'ASAAS_COMPANY'),
     [payments, resolveRowProvider],
+  );
+
+  const refreshAllPresentation = useMemo(
+    () =>
+      resolveChargesRefreshAllPresentation({
+        ownerReadOnly,
+        integrationReady,
+        gate: asaasGate,
+        hasVisibleInterCharges,
+        hasAsaasRows,
+        integrationLoading,
+      }),
+    [
+      ownerReadOnly,
+      integrationReady,
+      asaasGate,
+      hasVisibleInterCharges,
+      hasAsaasRows,
+      integrationLoading,
+    ],
   );
 
   const refreshAllBlockReason = useMemo(
@@ -2056,10 +2113,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         <FinanceStatCard
           title="Cobranças emitidas"
           value={formatCurrency(asaasKpis.cobrancasEmitidas)}
-          subtitle={`${asaasKpis.qtyCobrancasEmitidas} cobrança(s) ativa(s)`}
+          subtitle={resolveIssuedChargesCardSubtitle({
+            chargeStatusReady,
+            readError: chargeReadError,
+            activeCount: asaasKpis.qtyCobrancasEmitidas,
+          })}
           icon={<QrCode className="h-5 w-5" />}
           iconWrapClass="bg-cyan-500/10 text-cyan-400"
-          loading={!totalsReady || !chargeStatusReady}
+          loading={!totalsReady || !chargeStatusReady || Boolean(chargeReadError)}
         />
         <div className="charges-ops-actions">
           <button
@@ -2099,8 +2160,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Atualizar lista
           </button>
-          {!ownerReadOnly &&
-          (integrationReady || overviewGateAllowsPerChargeAsaasSync(asaasGate) || hasVisibleInterCharges) ? (
+          {refreshAllPresentation.showButton ? (
             <div className="charges-ops-refresh">
               <button
                 type="button"
@@ -2119,10 +2179,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                 <span className="text-[11px] text-amber-200/90">{refreshAllBlockMessage}</span>
               ) : null}
             </div>
-          ) : ownerReadOnly ? null : hasAsaasRows ? (
-            <span className="text-[11px] text-amber-200/90">
-              {formatRefreshAllChargesBlockReason('integration_unavailable')}
-            </span>
+          ) : refreshAllPresentation.notice ? (
+            <span className="text-[11px] text-amber-200/90">{refreshAllPresentation.notice}</span>
           ) : null}
           <button
             type="button"
@@ -2415,7 +2473,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         ownerReadOnly={ownerReadOnly}
                         outboundBlocked={homologOutboundBlocked}
                         busy={rowBusy}
-                        installmentsDataReady={installmentsDataReady}
+                        installmentsDataReady={rowActionsDataReady}
                         bankStatusConsulted={chargeStatusReady}
                         c6ChargesLoaded={c6ChargesLoaded}
                         c6EmitAuthorized={c6EmitAuthorizedIds.has(installmentId)}
