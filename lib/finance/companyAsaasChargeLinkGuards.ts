@@ -363,3 +363,20 @@ export function chargesRowActionsReady(params: {
   if (String(params.loadError || '').trim()) return false;
   return params.totalsReady || params.rowCount > 0;
 }
+
+/**
+ * Abertura direta e Ctrl+F5 usam a mesma condição.
+ * Sem sessão, ou com sessão ainda sem empresa, a leitura não começa.
+ * Quando a empresa passa a existir, a mesma condição libera a abertura.
+ */
+export function shouldStartChargesOpenRead(params: {
+  authLoading: boolean;
+  userId: string | null;
+  companyId: string | null;
+  platformAdmin: boolean;
+}): boolean {
+  if (params.authLoading) return false;
+  if (!String(params.userId || '').trim()) return false;
+  if (params.platformAdmin) return true;
+  return Boolean(String(params.companyId || '').trim());
+}

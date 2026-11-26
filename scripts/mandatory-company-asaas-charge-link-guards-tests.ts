@@ -15,6 +15,7 @@ import {
   resolveAsaasRowActionNotice,
   resolveChargesRefreshAllPresentation,
   resolveIssuedChargesCardSubtitle,
+  shouldStartChargesOpenRead,
   isAsaasNotFoundError,
   resolveRefreshAllChargesBlockReason,
   resolveSafeSyncedChargeStatus,
@@ -400,6 +401,37 @@ console.log('\n═══ 11: abertura compacta da Meneses não rotula a espera c
     'cinco cobranças locais aparecem no cartão',
   );
 
+  const directOpen = {
+    authLoading: false,
+    userId: 'admin-meneses',
+    companyId: 'company-meneses',
+    platformAdmin: false,
+  };
+  assert(!shouldStartChargesOpenRead({ ...directOpen, authLoading: true, userId: null, companyId: null }), 'sem sessão não lê');
+  assert(
+    !shouldStartChargesOpenRead({ ...directOpen, companyId: null }),
+    'sessão sem empresa não lê e fica para reavaliar',
+  );
+  assert(shouldStartChargesOpenRead(directOpen), 'acesso direto com empresa lê');
+  assert(shouldStartChargesOpenRead(directOpen), 'Ctrl+F5 usa a mesma condição do acesso direto');
+  const afterLocalRead = resolveChargesRefreshAllPresentation({
+    ownerReadOnly: false,
+    integrationReady: true,
+    gate: 'ready',
+    hasVisibleInterCharges: false,
+    hasAsaasRows: true,
+    integrationLoading: false,
+  });
+  assert(afterLocalRead.showButton, 'depois da leitura local o botão aparece sem Atualizar lista');
+  assert(
+    resolveIssuedChargesCardSubtitle({
+      chargeStatusReady: true,
+      readError: null,
+      activeCount: 5,
+    }) === '5 cobrança(s) ativa(s)',
+    'cartão da Meneses mostra as cinco cobranças locais',
+  );
+
   const page = fs.readFileSync('components/charges/ChargesPageClient.tsx', 'utf8');
   const loadStart = page.indexOf('const loadInstallments = useCallback');
   const progressive = page.indexOf('fetchFinanceReceiptsProgressive', loadStart);
@@ -415,6 +447,10 @@ console.log('\n═══ 11: abertura compacta da Meneses não rotula a espera c
   assert(page.includes('resolveChargesRefreshAllPresentation'), 'o botão usa o estado real da integração');
   assert(page.includes('resolveIssuedChargesCardSubtitle'), 'o cartão distingue espera, erro e contagem');
   assert(page.includes('chargesRowActionsReady'), 'as linhas não tratam o prefixo como falha');
+  assert(page.includes('shouldStartChargesOpenRead'), 'a abertura espera a empresa');
+  assert(page.includes('chargesCompanyId'), 'a empresa entra na condição de abertura');
+  const effectDeps = page.indexOf('}, [authLoading, user?.id, user?.role, chargesCompanyId]);');
+  assert(effectDeps > 0, 'Ctrl+F5 reavalia quando a empresa fica disponível');
 }
 
 console.log('\n═══ 10: sem alteração em main nesta entrega ═══');

@@ -22,7 +22,7 @@ import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/Financ
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { isDevelopHomologRuntime } from '@/lib/homolog/env';
-import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
 import { ChargeWhatsAppBatchModal } from '@/components/charges/ChargeWhatsAppBatchModal';
 import { BuyerReminderHistoryPanel } from '@/components/charges/BuyerReminderHistoryPanel';
 import type { ChargeWhatsAppBatchSendResult } from '@/components/charges/ChargeWhatsAppBatchModal';
@@ -80,6 +80,7 @@ import {
   asaasRowMayUseLinkedAccount,
   chargesRowActionsReady,
   classifyAsaasIntegrationResponse,
+  shouldStartChargesOpenRead,
   formatChargesAsaasIntegrationGate,
   formatRefreshAllChargesBlockReason,
   overviewGateAllowsPerChargeAsaasSync,
@@ -853,8 +854,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     [loadInstallments, showToast, user?.role],
   );
 
+  const chargesCompanyId = user?.company_id || user?.tenant_id || null;
+
   useEffect(() => {
     if (authLoading) return;
+    if (!shouldStartChargesOpenRead({
+      authLoading,
+      userId: user?.id ?? null,
+      companyId: chargesCompanyId,
+      platformAdmin: isPlatformAdmin(user?.role),
+    })) {
+      return;
+    }
     let cancelled = false;
     setFinancialAccountsLoaded(false);
     void fetch('/api/finance/financial-accounts', { credentials: 'include' })
@@ -875,16 +886,24 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     return () => {
       cancelled = true;
     };
-  }, [authLoading]);
+  }, [authLoading, user?.id, user?.role, chargesCompanyId]);
 
   useEffect(() => {
     if (authLoading || !user?.id) return;
+    if (!shouldStartChargesOpenRead({
+      authLoading,
+      userId: user.id,
+      companyId: chargesCompanyId,
+      platformAdmin: isPlatformAdmin(user.role),
+    })) {
+      return;
+    }
     const controller = new AbortController();
     void loadInstallments({ resetChargeStatus: true, signal: controller.signal });
     return () => controller.abort();
     // A identidade da função não pode disparar uma segunda leitura.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+  }, [authLoading, user?.id, user?.role, chargesCompanyId]);
 
   const filteredRows = useMemo(
     () =>
