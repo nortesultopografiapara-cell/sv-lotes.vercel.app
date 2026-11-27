@@ -68,6 +68,16 @@ BEGIN
     IF fn_def !~ 'USERS_IDENTITY:ID_DENIED' THEN missing := missing || 'ID_DENIED'; END IF;
     IF fn_def !~ 'USERS_IDENTITY:OTHER_USER' THEN missing := missing || 'OTHER_USER'; END IF;
     IF fn_def !~ 'USERS_IDENTITY:SELF_ROLE' THEN missing := missing || 'SELF_ROLE'; END IF;
+    IF strpos(fn_def, 'USERS_IDENTITY:ANON_DENIED') > strpos(fn_def, 'USERS_IDENTITY:INSERT_DENIED')
+       OR strpos(fn_def, 'USERS_IDENTITY:INSERT_DENIED') > strpos(fn_def, 'USERS_IDENTITY:ROLE_DENIED')
+       OR strpos(fn_def, 'USERS_IDENTITY:ROLE_DENIED') > strpos(fn_def, 'USERS_IDENTITY:TENANT_DENIED')
+       OR strpos(fn_def, 'USERS_IDENTITY:ID_DENIED') > strpos(fn_def, 'USERS_IDENTITY:OTHER_USER')
+       OR strpos(fn_def, 'USERS_IDENTITY:OTHER_USER') > strpos(fn_def, 'USERS_IDENTITY:SELF_ROLE') THEN
+      missing := missing || 'exception_order';
+    END IF;
+    IF fn_def !~ 'IF[[:space:]]+public\.is_super_admin\(\)[[:space:]]+THEN' OR fn_def !~ 'RETURN NEW;' THEN
+      missing := missing || 'super_admin_return';
+    END IF;
     IF cardinality(missing) > 0 THEN
       RAISE EXCEPTION 'users_identity_reconcile_function_diverged'
         USING DETAIL = array_to_string(missing, ',');
