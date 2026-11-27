@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
 import {
   countPdfPages,
@@ -60,11 +61,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-    if (!supabaseAdmin) {
-      return jsonError(configError || 'Service role não configurada.', 500);
-    }
-
+    
     const { id: companyId } = await params;
     const url = new URL(request.url);
     const userId = url.searchParams.get('userId');
@@ -74,10 +71,15 @@ export async function GET(
     const metaOnly = url.searchParams.get('meta') === '1';
     const signedOnly = url.searchParams.get('signed') === '1';
 
-    const auth = await assertSuperAdmin(supabaseAdmin, userId);
+    const auth = await authorizePlatformAdminRequest(request, userId);
     if (!auth.ok) {
-      return jsonError(auth.error || 'Permissão negada.', 403);
+      return jsonError(auth.error || 'Permissão negada.', auth.status);
     }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+    if (!supabaseAdmin) {
+      return jsonError(configError || 'Service role não configurada.', 500);
+    }
+
 
     const contractRecord = contractId
       ? await resolveContractRecord(supabaseAdmin, companyId, contractId)

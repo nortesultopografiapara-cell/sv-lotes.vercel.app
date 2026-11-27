@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   createCompanyAdminUser,
   insertCompanyAdminAuditLog,
@@ -26,16 +27,17 @@ function readInput(request: Request, body?: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
-  const { client: admin, error: configError } = createServiceSupabase();
+  
+  const { userId, companyId } = readInput(request);
+  const auth = await authorizePlatformAdminRequest(request, userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: admin, error: configError } = createServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: configError || 'Service role não configurada.' }, { status: 500 });
   }
 
-  const { userId, companyId } = readInput(request);
-  const auth = await assertSuperAdmin(admin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
   if (!companyId) {
     return NextResponse.json({ error: 'companyId é obrigatório.' }, { status: 400 });
   }
@@ -50,17 +52,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { client: admin, error: configError } = createServiceSupabase();
+  
+  const body = await request.json();
+  const { userId, companyId } = readInput(request, body);
+  const auth = await authorizePlatformAdminRequest(request, userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: admin, error: configError } = createServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: configError || 'Service role não configurada.' }, { status: 500 });
   }
 
-  const body = await request.json();
-  const { userId, companyId } = readInput(request, body);
-  const auth = await assertSuperAdmin(admin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
   if (!companyId) {
     return NextResponse.json({ error: 'companyId é obrigatório.' }, { status: 400 });
   }
@@ -150,17 +153,18 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const { client: admin, error: configError } = createServiceSupabase();
+  
+  const body = await request.json();
+  const { userId, companyId } = readInput(request, body);
+  const auth = await authorizePlatformAdminRequest(request, userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: admin, error: configError } = createServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: configError || 'Service role não configurada.' }, { status: 500 });
   }
 
-  const body = await request.json();
-  const { userId, companyId } = readInput(request, body);
-  const auth = await assertSuperAdmin(admin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
   if (!companyId) {
     return NextResponse.json({ error: 'companyId é obrigatório.' }, { status: 400 });
   }

@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { isChecklistTemplateCode } from '@/lib/master/topography/operationChecklistTemplates';
 import { getTopographyOperationById } from '@/lib/master/topography/operationService';
 import { applyChecklistTemplate } from '@/lib/master/topography/operationTaskService';
@@ -7,19 +8,20 @@ import { applyChecklistTemplate } from '@/lib/master/topography/operationTaskSer
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, context: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await context.params;
 
   try {
     const body = await request.json();
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const operation = await getTopographyOperationById(supabaseAdmin, id);
     if (!operation) {

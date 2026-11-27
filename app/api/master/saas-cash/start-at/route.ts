@@ -1,3 +1,4 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
@@ -12,17 +13,18 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  try {
+    const body = await request.json();
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  try {
-    const body = await request.json();
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
-    if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
-    }
 
     const startAtIso = body.startAt
       ? parseSaasCashStartAtInput(String(body.startAt))
@@ -85,21 +87,22 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const perf = createMasterApiPerfTracker('/api/master/saas-cash/start-at', 'GET');
 
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    authorizePlatformAdminRequest(request, userId),
+  );
+  if (!auth.ok) {
+    perf.finish();
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
-  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
-    assertSuperAdmin(supabaseAdmin, userId),
-  );
-  if (!auth.ok) {
-    perf.finish();
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   const cashStartAt = await perf.timeSupabase('lib.getSaasCashStartAt', () =>
     getSaasCashStartAt(supabaseAdmin),

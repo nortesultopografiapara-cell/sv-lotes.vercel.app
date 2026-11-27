@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { logTopographyQuoteAudit } from '@/lib/master/topography/quotesService';
 import { getTopographyQuoteStructure } from '@/lib/master/topography/quoteStructureService';
 import {
@@ -38,21 +39,24 @@ function statusForErrorCode(code: string | undefined): number {
 }
 
 export async function POST(request: Request, context: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await context.params;
   let auditUserId: string | null = null;
   let auditTo: string | null = null;
   let quoteCode = id;
+  let supabaseAdmin: NonNullable<ReturnType<typeof createServiceSupabase>['client']> | null = null;
 
   try {
     const body = await request.json();
     auditUserId = body.userId ? String(body.userId) : null;
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const created = createServiceSupabase();
+    if (!created.client) {
+      return NextResponse.json({ error: created.error }, { status: 500 });
+    }
+    supabaseAdmin = created.client;
+
 
     if (!isResendEmailConfigured()) {
       await logTopographyQuoteAudit(supabaseAdmin, {
@@ -259,17 +263,19 @@ export async function POST(request: Request, context: Ctx) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao enviar orçamento.';
     try {
-      await logTopographyQuoteAudit(supabaseAdmin, {
-        userId: auditUserId,
-        action: 'QUOTE_EMAIL_FAILED',
-        entityId: id,
-        description: `Falha ao enviar orçamento ${quoteCode}`,
-        newData: {
-          to: auditTo,
-          errorCode: 'PROVIDER_ERROR',
-          failedAt: new Date().toISOString(),
-        },
-      });
+      if (supabaseAdmin) {
+        await logTopographyQuoteAudit(supabaseAdmin, {
+          userId: auditUserId,
+          action: 'QUOTE_EMAIL_FAILED',
+          entityId: id,
+          description: `Falha ao enviar orçamento ${quoteCode}`,
+          newData: {
+            to: auditTo,
+            errorCode: 'PROVIDER_ERROR',
+            failedAt: new Date().toISOString(),
+          },
+        });
+      }
     } catch {
       /* auditoria best-effort */
     }

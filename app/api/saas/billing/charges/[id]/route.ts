@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { deleteCancelledSaasCharge } from '@/lib/saasCharges';
 
 export const runtime = 'nodejs';
@@ -11,19 +12,20 @@ type RouteContext = { params: Promise<{ id: string }> };
  * Exclusão definitiva (soft delete) de cobrança cancelada — Master/Super Admin.
  */
 export async function DELETE(request: Request, context: RouteContext) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id: chargeId } = await context.params;
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
 
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await authorizePlatformAdminRequest(request, userId);
   if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
   if (!chargeId?.trim()) {
     return NextResponse.json({ error: 'ID da cobrança obrigatório.' }, { status: 400 });

@@ -13,17 +13,18 @@ import { validateManualCashMovementInput } from '@/lib/master/corporateFinance/c
 import { logCorporateFinanceAudit } from '@/lib/master/corporateFinance/service';
 
 export async function GET(request: Request) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { searchParams } = new URL(request.url);
-  const auth = await authorizeCorporateFinance(supabaseAdmin, {
+  const auth = await authorizeCorporateFinance(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
   try {
     const filters = {
@@ -72,18 +73,19 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   try {
     const body = await request.json();
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId,
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const input = validateManualCashMovementInput(body);
     const movement = await createManualCashMovement(

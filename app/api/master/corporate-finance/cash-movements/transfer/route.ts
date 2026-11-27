@@ -8,18 +8,19 @@ import { createAccountTransfer } from '@/lib/master/corporateFinance/cashMovemen
 import { validateTransferInput } from '@/lib/master/corporateFinance/cashValidation';
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   try {
     const body = await request.json();
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId,
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const input = validateTransferInput(body);
     const result = await createAccountTransfer(

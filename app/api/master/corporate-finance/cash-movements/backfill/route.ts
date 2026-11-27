@@ -7,18 +7,19 @@ import { httpStatusFromMessage } from '@/lib/master/corporateFinance/arApApi';
 import { backfillCashMovements } from '@/lib/master/corporateFinance/cashMovementsService';
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   try {
     const body = await request.json();
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId,
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     if (typeof body.dryRun !== 'boolean') {
       throw new Error('dryRun é obrigatório (true|false).');

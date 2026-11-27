@@ -4,8 +4,9 @@
  * de outros tenants, então a UI recebia sempre 0 nos cards.
  */
 
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { fetchCompanyLotCountsExact } from '@/lib/masterCompanyLotCounts';
 
 export const runtime = 'nodejs';
@@ -40,7 +41,14 @@ async function resolveLotCounts(
 }
 
 export async function GET(request: Request) {
-  const { client: admin, error: configError } = createServiceSupabase();
+  
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+  const auth = await authorizePlatformAdminRequest(request, userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: admin, error: configError } = createServiceSupabase();
   if (!admin) {
     return NextResponse.json(
       { error: configError || 'Service role não configurada.' },
@@ -48,12 +56,6 @@ export async function GET(request: Request) {
     );
   }
 
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(admin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   const companyIdsParam = searchParams.get('companyIds');
   const companyIds = companyIdsParam
@@ -74,7 +76,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { client: admin, error: configError } = createServiceSupabase();
+  
+  const body = (await request.json().catch(() => ({}))) as {
+    userId?: string;
+    companyIds?: string[];
+  };
+  const auth = await authorizePlatformAdminRequest(request, body.userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: admin, error: configError } = createServiceSupabase();
   if (!admin) {
     return NextResponse.json(
       { error: configError || 'Service role não configurada.' },
@@ -82,14 +93,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = (await request.json().catch(() => ({}))) as {
-    userId?: string;
-    companyIds?: string[];
-  };
-  const auth = await assertSuperAdmin(admin, body.userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   try {
     const { lotCounts } = await resolveLotCounts(admin, body.companyIds || null);

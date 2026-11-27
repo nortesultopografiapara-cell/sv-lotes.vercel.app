@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
-  assertMasterCanUpdateCompany,
   buildCompanyUpdatePayload,
   createUpdateStepTimer,
   finalizeCompanyUpdateResponse,
   logCompaniesUpdateStep,
   persistCompanyUpdateInPhases,
 } from '@/lib/companiesUpdateService';
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -15,31 +15,31 @@ export const maxDuration = 60;
 export async function PATCH(request: Request) {
   const timer = createUpdateStepTimer();
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
-  }
-
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
-
   try {
     const body = await request.json();
     timer.mark('parse_body');
     const { companyId, userId } = body;
 
-    if (!companyId || !userId) {
-      return NextResponse.json({ error: 'companyId e userId são obrigatórios.' }, { status: 400 });
+    if (!companyId) {
+      return NextResponse.json({ error: 'companyId é obrigatório.' }, { status: 400 });
     }
 
-    const auth = await assertMasterCanUpdateCompany(supabaseAdmin, userId);
+    const auth = await authorizePlatformAdminRequest(request, userId);
     timer.mark('authorize');
     if (!auth.ok) {
       logCompaniesUpdateStep('denied', { companyId, ms: timer.timings.authorize });
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
+    }
+
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
 
     let built;
     try {

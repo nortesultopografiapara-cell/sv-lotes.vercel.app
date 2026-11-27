@@ -21,15 +21,16 @@ export const maxDuration = 60;
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: Ctx) {
-  const { client: admin, error } = getCompanyExportAdmin();
-  if (!admin) return NextResponse.json({ error }, { status: 500 });
-
+  
   const { searchParams } = new URL(request.url);
-  const auth = await authorizeCompanyExport(admin, {
+  const auth = await authorizeCompanyExport(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: admin, error } = getCompanyExportAdmin();
+  if (!admin) return NextResponse.json({ error }, { status: 500 });
+
 
   const companyId = companyIdFromParams(await context.params);
   if (!companyId) return NextResponse.json({ error: 'company id obrigatório' }, { status: 400 });
@@ -44,9 +45,7 @@ export async function GET(request: Request, context: Ctx) {
 }
 
 export async function POST(request: Request, context: Ctx) {
-  const { client: admin, error } = getCompanyExportAdmin();
-  if (!admin) return NextResponse.json({ error }, { status: 500 });
-
+  
   let body: Record<string, unknown> = {};
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -54,13 +53,16 @@ export async function POST(request: Request, context: Ctx) {
     body = {};
   }
 
-  const auth = await authorizeCompanyExport(admin, {
+  const auth = await authorizeCompanyExport(request, {
     userId: body.userId ? String(body.userId) : null,
     impersonatingTenantId: body.impersonatingTenantId
       ? String(body.impersonatingTenantId)
       : null,
   });
   if (!auth.ok) return auth.response;
+const { client: admin, error } = getCompanyExportAdmin();
+  if (!admin) return NextResponse.json({ error }, { status: 500 });
+
 
   const companyId = companyIdFromParams(await context.params);
   if (!companyId) return NextResponse.json({ error: 'company id obrigatório' }, { status: 400 });

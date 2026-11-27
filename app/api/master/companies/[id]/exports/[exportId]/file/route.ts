@@ -16,9 +16,7 @@ export const maxDuration = 60;
 type Ctx = { params: Promise<{ id: string; exportId: string }> };
 
 export async function DELETE(request: Request, context: Ctx) {
-  const { client: admin, error } = getCompanyExportAdmin();
-  if (!admin) return NextResponse.json({ error }, { status: 500 });
-
+  
   const { searchParams } = new URL(request.url);
   let body: Record<string, unknown> = {};
   try {
@@ -27,13 +25,16 @@ export async function DELETE(request: Request, context: Ctx) {
     body = {};
   }
 
-  const auth = await authorizeCompanyExport(admin, {
+  const auth = await authorizeCompanyExport(request, {
     userId: body.userId ? String(body.userId) : searchParams.get('userId'),
     impersonatingTenantId: body.impersonatingTenantId
       ? String(body.impersonatingTenantId)
       : searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: admin, error } = getCompanyExportAdmin();
+  if (!admin) return NextResponse.json({ error }, { status: 500 });
+
 
   const params = await context.params;
   const companyId = companyIdFromParams(params);

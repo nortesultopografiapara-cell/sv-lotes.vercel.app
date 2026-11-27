@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { getTopographyEquipmentById } from '@/lib/master/topography/equipmentService';
 import {
   listEquipmentDocuments,
@@ -10,16 +11,17 @@ import { validateEquipmentDocumentMeta } from '@/lib/master/topography/equipment
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  const { searchParams } = new URL(request.url);
+  const auth = await authorizePlatformAdminRequest(request, searchParams.get('userId'));
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const auth = await assertSuperAdmin(supabaseAdmin, searchParams.get('userId'));
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   const { id } = await context.params;
   try {
@@ -36,20 +38,21 @@ export async function GET(request: Request, context: Ctx) {
 }
 
 export async function POST(request: Request, context: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await context.params;
 
   try {
     const form = await request.formData();
     const userId = String(form.get('userId') || '');
-    const auth = await assertSuperAdmin(supabaseAdmin, userId || null);
+    const auth = await authorizePlatformAdminRequest(request, userId || null);
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const equipment = await getTopographyEquipmentById(supabaseAdmin, id);
     if (!equipment) {

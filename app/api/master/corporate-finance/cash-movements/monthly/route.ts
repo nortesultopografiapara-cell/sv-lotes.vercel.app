@@ -7,17 +7,18 @@ import { aggregateCorporateCashMonthlyRevenueExpense } from '@/lib/master/corpor
 import { CORPORATE_BUSINESS_UNITS } from '@/lib/master/corporateFinance/businessUnit';
 
 export async function GET(request: Request) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { searchParams } = new URL(request.url);
-  const auth = await authorizeCorporateFinance(supabaseAdmin, {
+  const auth = await authorizeCorporateFinance(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
   try {
     const year = Number(searchParams.get('year') || new Date().getUTCFullYear());

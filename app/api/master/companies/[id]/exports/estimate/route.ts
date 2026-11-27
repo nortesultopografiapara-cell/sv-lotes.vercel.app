@@ -12,15 +12,16 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: Ctx) {
-  const { client: admin, error } = getCompanyExportAdmin();
-  if (!admin) return NextResponse.json({ error }, { status: 500 });
-
+  
   const { searchParams } = new URL(request.url);
-  const auth = await authorizeCompanyExport(admin, {
+  const auth = await authorizeCompanyExport(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: admin, error } = getCompanyExportAdmin();
+  if (!admin) return NextResponse.json({ error }, { status: 500 });
+
 
   const companyId = companyIdFromParams(await context.params);
   if (!companyId) return NextResponse.json({ error: 'company id obrigatório' }, { status: 400 });

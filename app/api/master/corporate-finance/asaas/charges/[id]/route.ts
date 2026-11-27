@@ -8,16 +8,17 @@ import { getCorporateAsaasChargeById } from '@/lib/master/corporateFinance/asaas
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-  const { searchParams } = new URL(request.url);
-  const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const { searchParams } = new URL(request.url);
+  const auth = await authorizeCorporateFinance(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
   try {
     const { id } = await ctx.params;

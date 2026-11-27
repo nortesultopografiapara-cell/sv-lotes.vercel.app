@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   generateAndStoreSaasContract,
   loadFreshSaasContractContext,
@@ -34,11 +35,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return contractErrorResponse(configError || 'Supabase não configurado', 'config', 500);
-  }
-
+  
   const { id: companyId } = await params;
 
   try {
@@ -47,10 +44,15 @@ export async function POST(
 
     console.log('SAAS_CONTRACT_GENERATE_START', { companyId, forceRegenerate });
 
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
     if (!auth.ok) {
       return contractErrorResponse(auth.error || 'Permissão negada', 'auth', 403);
     }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return contractErrorResponse(configError || 'Supabase não configurado', 'config', 500);
+  }
+
 
     if (body.company_id && body.company_id !== companyId) {
       return contractErrorResponse('company_id não confere com a URL.', 'validation', 400);

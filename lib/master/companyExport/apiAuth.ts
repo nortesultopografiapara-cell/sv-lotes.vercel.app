@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 
 export function getCompanyExportAdmin() {
   return createServiceSupabase();
 }
 
 export async function authorizeCompanyExport(
-  supabaseAdmin: SupabaseClient,
+  request: Request,
   params: {
     userId?: string | null;
     impersonatingTenantId?: string | null;
@@ -24,15 +24,14 @@ export async function authorizeCompanyExport(
     };
   }
 
-  const userId = String(params.userId || '').trim();
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await authorizePlatformAdminRequest(request, params.userId);
   if (!auth.ok) {
     return {
       ok: false,
-      response: NextResponse.json({ error: auth.error || 'Permissão negada.' }, { status: 403 }),
+      response: NextResponse.json({ error: auth.error }, { status: auth.status }),
     };
   }
-  return { ok: true, userId };
+  return { ok: true, userId: auth.userId };
 }
 
 export function companyIdFromParams(params: { id?: string }): string {

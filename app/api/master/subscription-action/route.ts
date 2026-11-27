@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { addDaysFromToday } from '@/lib/saasSubscription';
 
 type SubscriptionAction = 'suspend' | 'reactivate' | 'renew';
@@ -18,17 +19,18 @@ function addMonthsFromIso(iso: string, months = 1): string {
 }
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  try {
+    const body = await request.json();
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  try {
-    const body = await request.json();
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
-    if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
-    }
 
     const action = String(body.action || '').toLowerCase() as SubscriptionAction;
     const subscriptionId = body.subscriptionId as string | undefined;

@@ -13,6 +13,11 @@ export function createServiceSupabase(): { client: SupabaseClient | null; error?
   };
 }
 
+/**
+ * Confere o papel de um id que já veio da sessão validada.
+ * Não aceita, sozinho, o userId enviado pelo navegador.
+ * Rotas novas usam authorizePlatformAdminRequest.
+ */
 export async function assertSuperAdmin(
   supabaseAdmin: SupabaseClient,
   userId?: string | null,

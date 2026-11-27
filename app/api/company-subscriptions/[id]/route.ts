@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 
 const ALLOWED_PAYMENT = new Set(['pending', 'paid', 'overdue', 'canceled']);
 const ALLOWED_CONTRACT = new Set(['active', 'suspended', 'canceled']);
@@ -8,19 +9,20 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id: subscriptionId } = await params;
 
   try {
     const body = await request.json();
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),

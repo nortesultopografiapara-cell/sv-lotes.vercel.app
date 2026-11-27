@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   createTopographyOperation,
   listTopographyOperations,
@@ -8,17 +9,18 @@ import {
 import { validateTopographyOperationInput } from '@/lib/master/topography/operationValidation';
 
 export async function GET(request: Request) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+  const auth = await authorizePlatformAdminRequest(request, userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   try {
     const result = await listTopographyOperations(supabaseAdmin, {
@@ -55,17 +57,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  try {
+    const body = await request.json();
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  try {
-    const body = await request.json();
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
-    if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
-    }
 
     const input = validateTopographyOperationInput(body);
     const operation = await createTopographyOperation(

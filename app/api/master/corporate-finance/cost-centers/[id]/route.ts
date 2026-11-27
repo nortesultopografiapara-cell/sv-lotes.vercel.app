@@ -14,18 +14,19 @@ import { validateCorporateCostCenterInput } from '@/lib/master/corporateFinance/
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await ctx.params;
   const { searchParams } = new URL(request.url);
-  const auth = await authorizeCorporateFinance(supabaseAdmin, {
+  const auth = await authorizeCorporateFinance(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
   try {
     const costCenter = await getCorporateCostCenter(supabaseAdmin, id);
@@ -40,20 +41,21 @@ export async function GET(request: Request, ctx: Ctx) {
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await ctx.params;
 
   try {
     const body = await request.json();
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId,
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const existing = await getCorporateCostCenter(supabaseAdmin, id);
     if (!existing) {

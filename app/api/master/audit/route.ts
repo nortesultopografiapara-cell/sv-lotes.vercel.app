@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   diagnoseMasterAuditLogs,
   loadMasterAuditLogs,
@@ -19,6 +20,18 @@ export async function GET(request: Request) {
   console.log('[audit] route start');
 
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    console.time('[audit] auth');
+    const auth = await authorizePlatformAdminRequest(request, userId);
+    console.timeEnd('[audit] auth');
+
+    if (!auth.ok) {
+      console.timeEnd('[audit] total');
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     console.time('[audit] service');
     const { client: supabaseAdmin, error: configError } = createServiceSupabase();
     console.timeEnd('[audit] service');
@@ -29,18 +42,6 @@ export async function GET(request: Request) {
         { error: configError || 'Service role não configurada.' },
         { status: 500 },
       );
-    }
-
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    console.time('[audit] auth');
-    const auth = await assertSuperAdmin(supabaseAdmin, userId);
-    console.timeEnd('[audit] auth');
-
-    if (!auth.ok) {
-      console.timeEnd('[audit] total');
-      return NextResponse.json({ error: auth.error }, { status: 403 });
     }
 
     if (searchParams.get('diagnostics') === '1') {

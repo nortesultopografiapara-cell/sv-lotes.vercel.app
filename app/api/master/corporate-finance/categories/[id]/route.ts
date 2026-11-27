@@ -15,18 +15,19 @@ import { validateCorporateCategoryInput } from '@/lib/master/corporateFinance/va
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await ctx.params;
   const { searchParams } = new URL(request.url);
-  const auth = await authorizeCorporateFinance(supabaseAdmin, {
+  const auth = await authorizeCorporateFinance(request, {
     userId: searchParams.get('userId'),
     impersonatingTenantId: searchParams.get('impersonatingTenantId'),
   });
   if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
   try {
     const category = await getCorporateCategory(supabaseAdmin, id);
@@ -39,20 +40,21 @@ export async function GET(request: Request, ctx: Ctx) {
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await ctx.params;
 
   try {
     const body = await request.json();
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId,
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const existing = await getCorporateCategory(supabaseAdmin, id);
     if (!existing) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 });
@@ -109,22 +111,23 @@ export async function PATCH(request: Request, ctx: Ctx) {
 }
 
 export async function DELETE(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await ctx.params;
   const { searchParams } = new URL(request.url);
 
   try {
     const body = await request.json().catch(() => ({}));
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId || searchParams.get('userId'),
       impersonatingTenantId:
         body.impersonatingTenantId || searchParams.get('impersonatingTenantId'),
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const existing = await getCorporateCategory(supabaseAdmin, id);
     if (!existing) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 });

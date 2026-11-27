@@ -1,24 +1,26 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id: companyId } = await params;
 
   try {
     const body = await request.json().catch(() => ({}));
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const { data: company, error: companyErr } = await supabaseAdmin
       .from('companies')

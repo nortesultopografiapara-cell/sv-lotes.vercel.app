@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { buildCompanyStatusUpdatePatch } from '@/lib/saasBillableStatus';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 
 let supabaseAdmin: SupabaseClient | null = null;
 
@@ -24,34 +25,6 @@ function getSupabaseAdmin(): SupabaseClient {
 
 export async function PATCH(request: Request) {
   try {
-    const supabaseAdmin = getSupabaseAdmin();
-    const authHeader = request.headers.get('Authorization');
-    
-    // Auth verification securely using supabaseAdmin
-    let callerRole = null;
-    let callerId = null;
-
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-      if (!authError && user) {
-         callerId = user.id;
-         const { data: userProfile } = await supabaseAdmin
-           .from('users')
-           .select('role')
-           .eq('id', user.id)
-           .single();
-         callerRole = userProfile?.role;
-      }
-    } else {
-       // alternative auth flow checks...
-       // If no token or if it's cookie-based NextAuth or similar
-    }
-
-    // fallback for the POC architecture that might be using cookie sessions
-    // The request usually passes the token in headers or we check via supabase-js in a Route Handler using cookies
-    // Let's rely on body parameters validating a user token if needed, or simply let the RLS handle if we did it properly inside but since it's an edge API, we can do manual check if we just pass user ID
-    
     const body = await request.json();
     const { companyId, status_operacional, userId } = body;
 
@@ -59,16 +32,12 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Faltam parâmetros obrigatórios.' }, { status: 400 });
     }
 
-    // Since we don't have perfect session middleware here uniformly, we check by the passed userId in body for this POC. In prod, use standard auth tokens
-    const { data: callerData, error: callerError } = await supabaseAdmin
-      .from('users')
-      .select('role')
-      .eq('id', userId || callerId)
-      .single();
-
-    if (callerError || !callerData || callerData.role !== 'SUPER_ADMIN') {
-      return NextResponse.json({ error: 'Permissão negada. Apenas SUPER_ADMIN pode gerenciar o status da empresa.' }, { status: 403 });
+    const auth = await authorizePlatformAdminRequest(request, userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
+
+    const supabaseAdmin = getSupabaseAdmin();
 
     // Prevent blocking the master company if it exists (assuming master logic)
     const { data: company, error: compError } = await supabaseAdmin
@@ -114,7 +83,7 @@ export async function PATCH(request: Request) {
     // Audit Log
     supabaseAdmin.from('audit_logs').insert({
        tenant_id: companyId,
-       user_id: userId || callerId,
+       user_id: auth.userId,
        action: 'COMPANY_STATUS_CHANGED',
        details: JSON.stringify({
          old_status: company.status_operacional,

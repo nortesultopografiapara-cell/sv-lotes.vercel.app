@@ -11,17 +11,18 @@ import { reconcileCorporateAsaasCharges } from '@/lib/master/corporateFinance/as
  * Não importa extratos bancários nem lançamentos externos.
  */
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-  try {
+    try {
     const body = await request.json().catch(() => ({}));
-    const auth = await authorizeCorporateFinance(supabaseAdmin, {
+    const auth = await authorizeCorporateFinance(request, {
       userId: body.userId,
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!auth.ok) return auth.response;
+const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const result = await reconcileCorporateAsaasCharges(supabaseAdmin, {
       chargeId: body.charge_id || body.chargeId || null,

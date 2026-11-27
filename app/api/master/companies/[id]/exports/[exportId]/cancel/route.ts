@@ -15,9 +15,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string; exportId: string }> };
 
 export async function POST(request: Request, context: Ctx) {
-  const { client: admin, error } = getCompanyExportAdmin();
-  if (!admin) return NextResponse.json({ error }, { status: 500 });
-
+  
   let body: Record<string, unknown> = {};
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -25,13 +23,16 @@ export async function POST(request: Request, context: Ctx) {
     body = {};
   }
 
-  const auth = await authorizeCompanyExport(admin, {
+  const auth = await authorizeCompanyExport(request, {
     userId: body.userId ? String(body.userId) : null,
     impersonatingTenantId: body.impersonatingTenantId
       ? String(body.impersonatingTenantId)
       : null,
   });
   if (!auth.ok) return auth.response;
+const { client: admin, error } = getCompanyExportAdmin();
+  if (!admin) return NextResponse.json({ error }, { status: 500 });
+
 
   const params = await context.params;
   const companyId = companyIdFromParams(params);

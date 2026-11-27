@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   countTopographyProjectLinks,
   deleteTopographyProjectSecure,
@@ -8,13 +9,14 @@ import {
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+    const { searchParams } = new URL(request.url);
+  const auth = await authorizePlatformAdminRequest(request, searchParams.get('userId'));
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
-  const { searchParams } = new URL(request.url);
-  const auth = await assertSuperAdmin(supabaseAdmin, searchParams.get('userId'));
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
+
 
   const { id } = await ctx.params;
   try {
@@ -27,17 +29,18 @@ export async function GET(request: Request, ctx: Ctx) {
 }
 
 export async function POST(request: Request, ctx: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
+  
   const { id } = await ctx.params;
 
   try {
     const body = await request.json().catch(() => ({}));
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId ?? null);
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
+    const auth = await authorizePlatformAdminRequest(request, body.userId ?? null);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
 
     const result = await deleteTopographyProjectSecure(supabaseAdmin, {
       id,

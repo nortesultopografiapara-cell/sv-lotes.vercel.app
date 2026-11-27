@@ -1,5 +1,6 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
-import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { getTopographyClientById } from '@/lib/master/topography/clientsService';
 import { listOperationDocuments } from '@/lib/master/topography/operationDocumentsService';
 import { listOperationEquipment } from '@/lib/master/topography/operationEquipmentService';
@@ -19,17 +20,18 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: Ctx) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+  const auth = await authorizePlatformAdminRequest(request, userId);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   const disposition =
     searchParams.get('disposition') === 'inline' ? 'inline' : 'attachment';

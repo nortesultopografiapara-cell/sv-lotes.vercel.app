@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 
 export async function GET(req: Request) {
   try {
@@ -7,6 +8,9 @@ export async function GET(req: Request) {
     const companyId = searchParams.get('companyId');
 
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
+
+    const auth = await authorizePlatformAdminRequest(req, searchParams.get('userId'));
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

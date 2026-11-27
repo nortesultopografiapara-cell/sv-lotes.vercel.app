@@ -1,3 +1,4 @@
+import { authorizePlatformAdminRequest } from '@/lib/security/adminAuthorization';
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
@@ -21,21 +22,22 @@ export const runtime = 'nodejs';
 export async function GET(request: Request) {
   const perf = createMasterApiPerfTracker('/api/master/saas-charges', 'GET');
 
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    authorizePlatformAdminRequest(request, userId),
+  );
+  if (!auth.ok) {
+    perf.finish();
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
-  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
-    assertSuperAdmin(supabaseAdmin, userId),
-  );
-  if (!auth.ok) {
-    perf.finish();
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
 
   try {
     const charges = await perf.timeSupabase(
@@ -63,17 +65,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  
+  try {
+    const body = await request.json();
+    const auth = await authorizePlatformAdminRequest(request, body.userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
-  try {
-    const body = await request.json();
-    const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
-    if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 });
-    }
 
     const action = String(body.action || 'generate').trim();
     const chargeId = String(body.chargeId || '').trim();
