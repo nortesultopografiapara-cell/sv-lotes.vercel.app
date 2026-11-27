@@ -21,6 +21,12 @@ import {
 } from '../lib/openai-ads/attribution';
 import { evaluateLeadCreated, measureLeadCreatedIfEligible } from '../lib/openai-ads/events';
 import {
+  armCommercialDocumentBoundary,
+  hardNavigationDestination,
+  releaseOpenAiAdsDocument,
+  shouldForceFullDocumentLoad,
+} from '../lib/openai-ads/isolation';
+import {
   grantOpenAiAdsConsent,
   installOfficialOpenAiAdsLoader,
   measureOpenAiAdsPageView,
@@ -228,6 +234,7 @@ const allowed = new Set([
   'lib/openai-ads/attribution.ts',
   'lib/openai-ads/pixel.ts',
   'lib/openai-ads/events.ts',
+  'lib/openai-ads/isolation.ts',
   'scripts/mandatory-openai-ads-phase1-tests.ts',
 ]);
 const markers = ['oaiq', 'bzrcdn.openai.com', 'lead_created', 'lib/openai-ads'];
@@ -261,6 +268,104 @@ assert(!adsSource.includes('email_sha256') && !adsSource.includes('phone_number_
 assert(!adsSource.includes('OPENAI_ADS_API_KEY') && !adsSource.includes('Bearer '), 'não há chave secreta');
 assert(read('app/page.tsx').includes('readOpenAiAdsServerGate'), 'a home passa pelo gate do servidor');
 assert(read('components/landing/LandingPage.tsx').includes('openAiAdsEnabled = false'), 'a landing continua desligada quando o gate não autoriza');
+
+console.log('\n6. Isolamento do documento');
+const home = 'https://preview.example.com/';
+assert(shouldForceFullDocumentLoad(home, 'https://preview.example.com/login') === true, 'ir para /login recarrega o documento');
+assert(shouldForceFullDocumentLoad(home, 'https://preview.example.com/portal-cliente') === true, 'ir para o portal recarrega o documento');
+assert(shouldForceFullDocumentLoad(home, 'https://preview.example.com/demo') === true, 'ir para /demo recarrega o documento');
+assert(shouldForceFullDocumentLoad(home, 'https://preview.example.com/#contato') === false, 'âncora da própria home permanece no documento');
+assert(shouldForceFullDocumentLoad(home, 'https://wa.me/5594999999999') === false, 'WhatsApp externo não é reescrito');
+assert(
+  hardNavigationDestination({
+    currentHref: home,
+    anchorHref: 'https://preview.example.com/login',
+    button: 0,
+    modified: false,
+    target: null,
+  }) === 'https://preview.example.com/login',
+  'clique simples em /login pede carregamento completo',
+);
+assert(
+  hardNavigationDestination({
+    currentHref: home,
+    anchorHref: 'https://preview.example.com/login',
+    button: 0,
+    modified: true,
+    target: null,
+  }) === null,
+  'Ctrl+clique não sequestra a navegação',
+);
+assert(
+  hardNavigationDestination({
+    currentHref: home,
+    anchorHref: 'https://preview.example.com/charges',
+    button: 0,
+    modified: false,
+    target: '_blank',
+  }) === null,
+  'nova aba não altera o documento atual',
+);
+
+const removed: string[] = [];
+const cookieWrites: string[] = [];
+const storageRemoved: string[] = [];
+const queued: unknown[][] = [];
+const boundaryWindow: OpenAiAdsWindow = {
+  oaiq: Object.assign((...args: unknown[]) => {
+    queued.push(args);
+  }, { q: queued }),
+  __svlotesOpenAiPageViewed: true,
+};
+const boundaryDoc = {
+  get cookie() {
+    return cookieWrites.join('; ');
+  },
+  set cookie(value: string) {
+    cookieWrites.push(value);
+  },
+  querySelectorAll: () => [{ remove: () => removed.push('script') }],
+};
+releaseOpenAiAdsDocument(boundaryWindow, boundaryDoc, { removeItem: (key) => storageRemoved.push(key) });
+assert(queued[0]?.[0] === 'consent' && queued[0]?.[1] === false, 'revogação envia consentimento falso antes de apagar a fila');
+assert(boundaryWindow.oaiq === undefined, 'a fila oaiq sai da janela');
+assert(boundaryWindow.__svlotesOpenAiPageViewed === undefined, 'o controle de page_viewed é zerado com o documento');
+assert(removed.length === 1, 'o script oficial é removido');
+assert(cookieWrites.some((entry) => entry.startsWith('__oppref=')), 'o cookie __oppref é apagado');
+assert(cookieWrites.some((entry) => entry.startsWith('__obref=')), 'o cookie __obref é apagado');
+assert(cookieWrites.some((entry) => entry.startsWith('__oaiq_consent=')), 'o cookie de consentimento do SDK é apagado');
+assert(storageRemoved.includes('oaiq_consent'), 'o storage do SDK é apagado');
+assert(measureOpenAiAdsPageView(boundaryWindow) === false, 'sem fila, page_viewed não é emitido de novo');
+
+let leftTo = '';
+const historyCalls: string[] = [];
+const history = {
+  pushState: (data: unknown, unused: string, url?: string | URL | null) => {
+    historyCalls.push(`push:${String(url)}`);
+  },
+  replaceState: (data: unknown, unused: string, url?: string | URL | null) => {
+    historyCalls.push(`replace:${String(url)}`);
+  },
+};
+const location = { href: home, assign: (url: string) => { leftTo = url; }, reload: () => undefined };
+const disarm = armCommercialDocumentBoundary(history, location, (url) => {
+  leftTo = url;
+});
+history.pushState({}, '', '/#contato');
+history.pushState({}, '', '/login');
+disarm();
+history.pushState({}, '', '/charges');
+assert(historyCalls.includes('push:/#contato'), 'âncora usa a navegação normal');
+assert(!historyCalls.includes('push:/login'), 'pushState para /login não permanece na mesma página');
+assert(leftTo === 'https://preview.example.com/login', 'a saída para /login troca o documento');
+assert(historyCalls.includes('push:/charges'), 'depois de desarmar, o histórico volta ao normal');
+assert(read('components/landing/OpenAiAdsMeasurement.tsx').includes('Revogar medição'), 'a revogação fica disponível depois do aceite');
+assert(read('components/landing/OpenAiAdsMeasurement.tsx').includes('releaseOpenAiAdsDocument'), 'sair da home libera o SDK');
+const internalRoutes = ['app/login/page.tsx', 'app/charges/page.tsx', 'app/layout.tsx'].filter((rel) => fs.existsSync(path.join(root, rel)));
+for (const rel of internalRoutes) {
+  const source = read(rel);
+  assert(!source.includes('openai-ads') && !source.includes('oaiq'), `${rel} não monta o SDK`);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

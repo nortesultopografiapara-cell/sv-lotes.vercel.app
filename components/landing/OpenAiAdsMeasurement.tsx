@@ -12,12 +12,17 @@ import {
   type OpenAiAdsConsent,
 } from '@/lib/openai-ads/consent';
 import {
+  OPENAI_ADS_SDK_URL,
   PUBLIC_COMMERCIAL_PATH,
   isProductionAdsHost,
   resolveOpenAiAdsRuntime,
 } from '@/lib/openai-ads/config';
 import {
-  denyOpenAiAdsConsent,
+  armCommercialDocumentBoundary,
+  hardNavigationDestination,
+  releaseOpenAiAdsDocument,
+} from '@/lib/openai-ads/isolation';
+import {
   grantOpenAiAdsConsent,
   installOfficialOpenAiAdsLoader,
   measureOpenAiAdsPageView,
@@ -33,6 +38,7 @@ type Props = {
 /**
  * Pixel da página comercial pública.
  * Não entra no layout global. Sem consentimento, o SDK não é pedido.
+ * Sair desta rota recarrega o documento para derrubar o SDK.
  */
 export function OpenAiAdsMeasurement({ enabled }: Props) {
   const pathname = usePathname();
@@ -51,6 +57,41 @@ export function OpenAiAdsMeasurement({ enabled }: Props) {
   }, []);
 
   const active = enabled && hostAllowed && pathname === PUBLIC_COMMERCIAL_PATH;
+
+  useEffect(() => {
+    if (!active) return;
+    const adsWindow = window as Window & OpenAiAdsWindow;
+    const leave = (url: string) => {
+      releaseOpenAiAdsDocument(adsWindow, document, window.localStorage);
+      window.location.assign(url);
+    };
+    const disarm = armCommercialDocumentBoundary(window.history, window.location, leave);
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented) return;
+      const anchor = (event.target as Element | null)?.closest?.('a');
+      if (!anchor) return;
+      const destination = hardNavigationDestination({
+        currentHref: window.location.href,
+        anchorHref: anchor.href,
+        button: event.button,
+        modified: event.metaKey || event.ctrlKey || event.shiftKey || event.altKey,
+        target: anchor.getAttribute('target'),
+      });
+      if (!destination) return;
+      event.preventDefault();
+      event.stopPropagation();
+      leave(destination);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => {
+      disarm();
+      document.removeEventListener('click', onClick, true);
+      if (window.location.pathname !== PUBLIC_COMMERCIAL_PATH) {
+        releaseOpenAiAdsDocument(adsWindow, document, window.localStorage);
+        window.location.replace(window.location.href);
+      }
+    };
+  }, [active]);
 
   useEffect(() => {
     if (!hydrated || !shouldRequestOpenAiAdsSdk({ active, consent, pathname })) return;
@@ -75,8 +116,6 @@ export function OpenAiAdsMeasurement({ enabled }: Props) {
     measureOpenAiAdsPageView(adsWindow);
   }, [active, consent, hydrated, pathname]);
 
-  if (!active || !hydrated || consent !== 'unknown') return null;
-
   const choose = (next: Exclude<OpenAiAdsConsent, 'unknown'>) => {
     try {
       writeOpenAiAdsConsent(window.localStorage, next);
@@ -84,9 +123,28 @@ export function OpenAiAdsMeasurement({ enabled }: Props) {
     } catch {
       /* sem storage o aceite vale só nesta montagem */
     }
-    if (next === 'denied') denyOpenAiAdsConsent(window as Window & OpenAiAdsWindow);
+    if (next === 'denied') {
+      const adsWindow = window as Window & OpenAiAdsWindow;
+      const hadSdk = Boolean(adsWindow.oaiq) || Boolean(document.querySelector(`script[src="${OPENAI_ADS_SDK_URL}"]`));
+      releaseOpenAiAdsDocument(adsWindow, document, window.localStorage);
+      if (hadSdk) window.location.reload();
+    }
     setConsent(next);
   };
+
+  if (!active || !hydrated || consent === 'denied') return null;
+
+  if (consent === 'granted') {
+    return (
+      <button
+        type="button"
+        className="fixed bottom-24 right-4 z-[80] rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-lg md:bottom-6"
+        onClick={() => choose('denied')}
+      >
+        Revogar medição
+      </button>
+    );
+  }
 
   return (
     <section
@@ -94,8 +152,8 @@ export function OpenAiAdsMeasurement({ enabled }: Props) {
       aria-label="Medição de anúncios"
     >
       <p className="text-sm leading-5">
-        Esta página comercial pode medir a visita para anúncios. O script só carrega depois do aceite e não entra
-        nas áreas de clientes, contratos ou financeiro.
+        Esta página comercial pode medir a visita para anúncios. O script só carrega depois do aceite. Ao sair desta
+        página, o documento é recarregado e a medição não continua nas áreas internas.
       </p>
       <div className="mt-3 flex gap-2">
         <button
