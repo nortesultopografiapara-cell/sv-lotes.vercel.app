@@ -23,14 +23,16 @@ import { ContactSection } from './sections/ContactSection';
 import { CtaDemo, CtaWhatsApp } from './components/LandingCta';
 import { buildWhatsAppUrl, handleLandingWhatsAppClick, LANDING_WHATSAPP_MESSAGES } from './constants/landingConfig';
 import { trackClickWhatsApp } from '@/lib/analytics';
+import { OpenAiAdsMeasurement } from './OpenAiAdsMeasurement';
 import './landing.css';
 import './landing-v3.css';
 
 type Props = {
   clientPortalEnabled: boolean;
+  openAiAdsEnabled?: boolean;
 };
 
-export function LandingPage({ clientPortalEnabled }: Props) {
+export function LandingPage({ clientPortalEnabled, openAiAdsEnabled = false }: Props) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -77,6 +79,8 @@ export function LandingPage({ clientPortalEnabled }: Props) {
       >
         <MessageCircle className="w-7 h-7" />
       </a>
+
+      <OpenAiAdsMeasurement enabled={openAiAdsEnabled} />
 
       <div className="landing-mobile-bar" aria-label="Ações rápidas">
         <CtaDemo id="cta_mobile_bar_demo" label="Agendar demonstração" className="landing-mobile-bar-btn" />

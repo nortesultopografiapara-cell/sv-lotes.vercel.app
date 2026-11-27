@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { LandingPage } from '@/components/landing/LandingPage';
 import { resolveClientPortalUiEnabled } from '@/lib/portal-cliente/config';
+import { readOpenAiAdsServerGate } from '@/lib/openai-ads/config';
 
 export const metadata: Metadata = {
   title: 'SV LOTES | Sistema para Gestão de Loteamentos',
@@ -36,5 +37,6 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   const clientPortalEnabled = resolveClientPortalUiEnabled();
-  return <LandingPage clientPortalEnabled={clientPortalEnabled} />;
+  const openAiAdsEnabled = readOpenAiAdsServerGate();
+  return <LandingPage clientPortalEnabled={clientPortalEnabled} openAiAdsEnabled={openAiAdsEnabled} />;
 }

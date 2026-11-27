@@ -30,6 +30,7 @@
     "test:assisted-confrontation": "tsx scripts/mandatory-assisted-confrontation-tests.ts",
     "test:official-side-editor": "tsx scripts/mandatory-official-side-editor-tests.ts",
     "test:google-tag-analytics": "tsx scripts/mandatory-google-tag-analytics-tests.ts",
+    "test:openai-ads-phase1": "tsx scripts/mandatory-openai-ads-phase1-tests.ts",
     "test:zero-distance-segment": "tsx scripts/mandatory-zero-distance-segment-tests.ts",
     "test:broker-avatar": "tsx scripts/mandatory-broker-avatar-tests.ts",
     "test:broker-delete": "tsx scripts/mandatory-broker-delete-tests.ts",
