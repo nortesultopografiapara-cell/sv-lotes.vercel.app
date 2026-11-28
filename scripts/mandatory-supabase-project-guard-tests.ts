@@ -179,13 +179,19 @@ async function main(): Promise<void> {
     logs.push(args.map((item) => String(item)).join(' '));
   };
   resetSupabaseProjectGuardForTests();
-  await warmSupabaseProjectGuard(
-    configured('preview', PRODUCTION_PROJECT_REF, {
-      SUPABASE_SERVICE_ROLE_KEY: jwt('service_role', PRODUCTION_PROJECT_REF, SENTINEL),
-    }),
-  );
+  let deploymentBlocked = false;
+  try {
+    await warmSupabaseProjectGuard(
+      configured('preview', PRODUCTION_PROJECT_REF, {
+        SUPABASE_SERVICE_ROLE_KEY: jwt('service_role', PRODUCTION_PROJECT_REF, SENTINEL),
+      }),
+    );
+  } catch (error) {
+    deploymentBlocked = error instanceof Error && error.message.includes('aceita somente o projeto');
+  }
   console.error = original;
   const logged = logs.join('\n');
+  assert('preview incorreto não sobe', deploymentBlocked);
   assert('log sem credencial', logged.length > 0 && !logged.includes(SENTINEL) && !logged.includes('eyJ'));
 
   const child = spawnSync(

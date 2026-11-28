@@ -291,12 +291,24 @@ export function publicClientGate(env: NodeJS.ProcessEnv = process.env): { ok: tr
   return { ok: true };
 }
 
+function isDeployedVercelEnvironment(env: NodeJS.ProcessEnv): boolean {
+  const vercel = String(env.VERCEL_ENV || '').trim().toLowerCase();
+  return vercel === 'preview' || vercel === 'production';
+}
+
 export async function warmSupabaseProjectGuard(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const deployed = isDeployedVercelEnvironment(env);
   const url = String(env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
   const serviceKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-  if (!url || !serviceKey) return;
+  if (!url || !serviceKey) {
+    if (deployed) {
+      throw new Error('[supabase-project] Credenciais do Supabase ausentes no deployment.');
+    }
+    return;
+  }
   const result = await validateSupabaseProject(env);
   if (!result.ok) {
     console.error(`[supabase-project] ${result.message}`);
+    if (deployed) throw new Error(`[supabase-project] ${result.message}`);
   }
 }

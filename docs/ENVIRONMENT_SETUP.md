@@ -109,7 +109,7 @@ Regras:
 - A prova complementar é `GET /rest/v1/` com a chave, no host do projeto esperado. A resposta não é gravada. Não há consulta a tabela de clientes, vendas ou financeiro.
 - Chave `sb_publishable_` ou `sb_secret_` entra pelo prefixo. Sem o `ref` no valor, o cliente servidor só abre depois dessa leitura.
 - O resultado fica em memória do processo. A leitura não se repete a cada requisição.
-- O servidor aquece a validação em `instrumentation.ts`. Não existe rota pública de diagnóstico.
+- O build na Vercel, com `VERCEL_ENV` igual a `preview` ou `production`, executa a mesma validação antes de concluir. Se o projeto não corresponder, o build falha e o deployment não fica disponível. No runtime, `instrumentation.ts` interrompe a subida do servidor nesses dois ambientes quando a validação falha. Build local, sem `VERCEL_ENV`, não exige as chaves.
 - A service role não vai para o navegador.
 
 `createServiceSupabase` e `createAdminSupabase` recusam cliente quando o projeto não corresponde ao ambiente. `createRouteHandlerSupabase` faz o mesmo para a URL pública e a anon key.

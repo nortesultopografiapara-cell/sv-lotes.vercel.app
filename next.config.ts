@@ -1,6 +1,16 @@
 import type { NextConfig } from 'next';
 import path from 'path';
 
+async function assertDeployedSupabaseProject(): Promise<void> {
+  const vercel = String(process.env.VERCEL_ENV || '').trim().toLowerCase();
+  if (vercel !== 'preview' && vercel !== 'production') return;
+  const { validateSupabaseProject } = await import('./lib/security/supabaseProjectGuard');
+  const result = await validateSupabaseProject(process.env);
+  if (!result.ok) {
+    throw new Error(`[supabase-project] ${result.message}`);
+  }
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: {
@@ -55,4 +65,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default async function createNextConfig(): Promise<NextConfig> {
+  await assertDeployedSupabaseProject();
+  return nextConfig;
+}

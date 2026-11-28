@@ -560,17 +560,22 @@ async function testSaasPixChargeSkipAsyncRules() {
 }
 
 function testSaasChargeDueDateFromModal() {
+  const referenceToday = '2026-06-01';
   assert(
-    resolveSaasChargeDueDate('2026-07-27', '2026-06-27') === '2026-07-27',
+    resolveSaasChargeDueDate('2026-07-27', '2026-06-27', referenceToday) === '2026-07-27',
     'Jul/2026 vencimento 27/07 prevalece sobre fatura 27/06',
   );
   assert(
-    resolveSaasChargeDueDate(undefined, '2026-06-27') === '2026-06-27',
+    resolveSaasChargeDueDate(undefined, '2026-06-27', referenceToday) === '2026-06-27',
     'sem vencimento solicitado mantém due_date da fatura',
   );
   assert(
-    resolveSaasChargeDueDate('2026-08-15', '2026-07-27') === '2026-08-15',
+    resolveSaasChargeDueDate('2026-08-15', '2026-07-27', referenceToday) === '2026-08-15',
     'competência e vencimento em meses diferentes são preservados',
+  );
+  assert(
+    resolveSaasChargeDueDate('2026-05-10', '2026-06-27', referenceToday) === referenceToday,
+    'vencimento anterior à data de referência acompanha a regra já existente do Asaas',
   );
 
   const billing = read('lib/saasBilling.ts');
@@ -1723,7 +1728,7 @@ async function testSaasWhatsAppTestButton() {
   );
 
   const apiRoute = read('app/api/master/saas-whatsapp-test/route.ts');
-  assert(apiRoute.includes('assertSuperAdmin'), 'api teste whatsapp super admin');
+  assert(apiRoute.includes('authorizePlatformAdminRequest'), 'api teste whatsapp super admin');
   assert(apiRoute.includes('sendSaasWhatsAppTest'), 'api usa serviço teste');
   assert(apiRoute.includes('getZapiConfigStatus'), 'api diagnostico z-api');
 
