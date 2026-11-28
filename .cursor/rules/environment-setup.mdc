@@ -20,3 +20,5 @@ Worktree nova: `scripts/env/Store-DevelopCredentials.ps1` e `scripts/env/Initial
 Não imprimir chaves. Não gravar chave em Git, documentação ou chat. Não tratar `[SENSITIVE]` como credencial. Não rebaixar variável Sensitive para o CLI conseguir lê-la.
 
 Validar com `scripts/env/validate-supabase-project.ts` antes de usar um ambiente. Preview e Development que apontem para Production, ou qualquer uso do projeto aposentado, devem falhar.
+
+Os Previews do projeto `sv-lotes-vercel-app` ficam sob Vercel Authentication no escopo Pre-Production Deployments. Não ampliar para All Deployments nem para Standard Protection. Não criar bypass público. Os domínios oficiais permanecem públicos. Não pedir de novo essa autorização.

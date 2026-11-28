@@ -37,7 +37,19 @@ Production e Preview geral já estão preenchidos. Não alterar e não apagar.
 
 O Preview geral já aponta para `hoynysmynxncdlptuzub`.
 
-Development ainda não tem as três variáveis. Quem preenche é o administrador principal, no painel, uma única vez.
+Development já tem as três variáveis do Develop. Não cadastrá-las de novo.
+
+## Proteção permanente dos Previews
+
+Desde 28/11/2026, o projeto `sv-lotes-vercel-app` usa Vercel Authentication no escopo Pre-Production Deployments (`ssoProtection.deploymentType` = `preview`).
+
+Todos os Previews atuais e futuros exigem login da Vercel. Essa autorização não se repete a cada branch.
+
+Não usar All Deployments. Não usar Standard Protection. Os domínios oficiais `https://www.svlotes.com.br` e `https://svlotes.com.br` permanecem públicos.
+
+Não criar link compartilhável nem bypass público de autenticação.
+
+O valor anterior, para rollback, era `ssoProtection` nulo.
 
 ## Painel da Vercel — Development
 
