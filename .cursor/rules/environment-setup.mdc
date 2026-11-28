@@ -22,3 +22,5 @@ Não imprimir chaves. Não gravar chave em Git, documentação ou chat. Não tra
 Validar com `scripts/env/validate-supabase-project.ts` antes de usar um ambiente. Preview e Development que apontem para Production, ou qualquer uso do projeto aposentado, devem falhar.
 
 Os Previews do projeto `sv-lotes-vercel-app` ficam sob Vercel Authentication no escopo Pre-Production Deployments. Não ampliar para All Deployments nem para Standard Protection. Não criar bypass público. Os domínios oficiais permanecem públicos. Não pedir de novo essa autorização.
+
+Módulo usado na configuração do Next.js precisa ser carregável pelo `next.config` compilado na Vercel. Não importar TypeScript sem extensão a partir de `next.config`. A validação do Supabase continua em `lib/security/supabaseProjectGuard.ts`.

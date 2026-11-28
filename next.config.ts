@@ -1,13 +1,19 @@
 import type { NextConfig } from 'next';
+import { spawnSync } from 'node:child_process';
 import path from 'path';
 
-async function assertDeployedSupabaseProject(): Promise<void> {
+function assertDeployedSupabaseProject(): void {
   const vercel = String(process.env.VERCEL_ENV || '').trim().toLowerCase();
   if (vercel !== 'preview' && vercel !== 'production') return;
-  const { validateSupabaseProject } = await import('./lib/security/supabaseProjectGuard');
-  const result = await validateSupabaseProject(process.env);
-  if (!result.ok) {
-    throw new Error(`[supabase-project] ${result.message}`);
+  const tsx = path.join(__dirname, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const script = path.join(__dirname, 'scripts', 'env', 'assert-deployed-supabase-project.ts');
+  const result = spawnSync(process.execPath, [tsx, script], {
+    cwd: __dirname,
+    env: process.env,
+    stdio: 'inherit',
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error('[supabase-project] A validação do projeto Supabase interrompeu o build.');
   }
 }
 

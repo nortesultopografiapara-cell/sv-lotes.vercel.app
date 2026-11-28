@@ -2,6 +2,8 @@
  * node .\node_modules\tsx\dist\cli.mjs .\scripts\mandatory-supabase-project-guard-tests.ts
  */
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import {
   DEVELOP_PROJECT_REF,
   HOMOLOG_OUTBOUND_BLOCKED_MESSAGE,
@@ -57,7 +59,82 @@ function configured(
   };
 }
 
+async function assertNextConfigLoadsCentralGuard(): Promise<void> {
+  const require = createRequire(path.join(process.cwd(), 'package.json'));
+  const { transpileConfig } = require('next/dist/build/next-config-ts/transpile-config') as {
+    transpileConfig: (input: { nextConfigPath: string; configFileName: string; cwd: string }) => Promise<{
+      default?: () => Promise<unknown>;
+    }>;
+  };
+  const saved = {
+    vercel: process.env.VERCEL_ENV,
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    anon: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    service: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  };
+  const restore = () => {
+    if (saved.vercel === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = saved.vercel;
+    if (saved.url === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = saved.url;
+    if (saved.anon === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = saved.anon;
+    if (saved.service === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = saved.service;
+  };
+  try {
+    delete process.env.VERCEL_ENV;
+    const loaded = await transpileConfig({
+      nextConfigPath: path.join(process.cwd(), 'next.config.ts'),
+      configFileName: 'next.config.ts',
+      cwd: process.cwd(),
+    });
+    const readConfig = loaded.default;
+    if (!readConfig) throw new Error('next.config sem export padrão');
+    const config = await readConfig();
+    assert('next.config local carrega sem o validador', Boolean((config as { reactStrictMode?: boolean }).reactStrictMode));
+
+    const direct = spawnSync(
+      process.execPath,
+      [path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(process.cwd(), 'scripts', 'env', 'assert-deployed-supabase-project.ts')],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          VERCEL_ENV: 'preview',
+          NEXT_PUBLIC_SUPABASE_URL: host(RETIRED_DEVELOP_PROJECT_REF),
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: `invalid-${SENTINEL}`,
+          SUPABASE_SERVICE_ROLE_KEY: `invalid-${SENTINEL}`,
+        },
+        encoding: 'utf8',
+      },
+    );
+    const output = `${direct.stdout || ''}\n${direct.stderr || ''}`;
+    assert(
+      'script central recusa o projeto aposentado',
+      direct.status === 1 && output.includes('aposentado') && !output.includes(SENTINEL),
+    );
+
+    process.env.VERCEL_ENV = 'preview';
+    process.env.NEXT_PUBLIC_SUPABASE_URL = host(RETIRED_DEVELOP_PROJECT_REF);
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = `invalid-${SENTINEL}`;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = `invalid-${SENTINEL}`;
+    let blocked = false;
+    let failure = '';
+    try {
+      await readConfig();
+    } catch (error) {
+      failure = error instanceof Error ? error.message : '';
+      blocked = failure.includes('[supabase-project]') && !failure.includes('Cannot find module');
+    }
+    assert('next.config de preview executa o validador central', blocked && !failure.includes(SENTINEL));
+  } finally {
+    restore();
+  }
+}
+
 async function main(): Promise<void> {
+  await assertNextConfigLoadsCentralGuard();
   assert('leitura anon', supabaseReadProbePath(jwt('anon', DEVELOP_PROJECT_REF)) === '/auth/v1/health');
   assert('leitura service role', supabaseReadProbePath(jwt('service_role', DEVELOP_PROJECT_REF)) === '/rest/v1/');
   assert('ref develop', DEVELOP_PROJECT_REF === 'hoynysmynxncdlptuzub');
