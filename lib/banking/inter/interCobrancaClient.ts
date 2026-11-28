@@ -17,6 +17,7 @@ import {
   isDevelopHomologRuntime,
   isProductionSupabaseRuntime,
 } from '@/lib/homolog/env';
+import { assertLiveExternalCallAllowed } from '@/lib/homolog/executionEnvironment';
 
 export type InterCobrancaDetail = {
   codigoSolicitacao: string;
@@ -431,6 +432,9 @@ async function authorizedRequest(
   headers: Record<string, string>;
 }> {
   assertHomologOutboundAllowed();
+  if (String(creds.environment || '').trim().toUpperCase() === 'PRODUCTION') {
+    assertLiveExternalCallAllowed();
+  }
   const token = await requestInterAccessToken(creds, { fetchFn: options?.fetchFn });
   if (!token.ok) {
     throw new Error(token.message);

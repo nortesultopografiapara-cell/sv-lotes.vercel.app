@@ -8,6 +8,7 @@ import {
   extractCompanyAsaasBankSlipIdentification,
 } from '@/lib/finance/asaasCompanyLateFees';
 import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
+import { assertLiveExternalCallAllowed } from '@/lib/homolog/executionEnvironment';
 import {
   ASAAS_OWN_WALLETS_PATH,
   ASAAS_WALLET_EMPTY_RESPONSE_MESSAGE,
@@ -103,6 +104,9 @@ export async function asaasCompanyFetch<T>(
   init?: RequestInit,
 ): Promise<T> {
   assertHomologOutboundAllowed();
+  if (String(environment || '').trim().toUpperCase() === 'PRODUCTION') {
+    assertLiveExternalCallAllowed();
+  }
   const res = await fetch(buildAsaasCompanyRequestUrl(environment, path), {
     ...init,
     headers: { ...asaasCompanyHeaders(apiKey), ...(init?.headers || {}) },

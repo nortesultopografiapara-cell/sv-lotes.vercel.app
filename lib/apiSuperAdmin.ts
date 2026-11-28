@@ -1,13 +1,13 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceClientGate } from '@/lib/security/supabaseProjectGuard';
 
 export function createServiceSupabase(): { client: SupabaseClient | null; error?: string } {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    return { client: null, error: 'Service role não configurada.' };
-  }
+  const gate = serviceClientGate(process.env);
+  if (!gate.ok) return { client: null, error: gate.error };
   return {
     client: createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+      process.env.SUPABASE_SERVICE_ROLE_KEY as string,
       { auth: { autoRefreshToken: false, persistSession: false } },
     ),
   };

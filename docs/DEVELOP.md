@@ -30,10 +30,15 @@ npx tsx scripts/develop/assert-target.ts
 npx tsx scripts/develop/audit-migrations.ts
 ```
 
-Credenciais locais (gitignored):
+## Credenciais locais
 
-- `.env.develop.apply` — `NEXT_PUBLIC_SUPABASE_URL`, anon e **service role** do DEVELOP
-- Nunca copiar Auth users, PII ou Storage objects de Production
+O procedimento permanente está em [ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md).
+
+Novas worktrees não recebem outra cópia da service role na Vercel. O `.env.local` sai do Gerenciador de Credenciais do Windows, somente com o projeto `hoynysmynxncdlptuzub`.
+
+Arquivos antigos `.env.develop.apply` e `.env.develop.apply.env` não são fonte. O segundo ainda pode apontar para o projeto aposentado `zumwvcxgrpxggyxomzic`.
+
+Não copiar Auth users, PII ou Storage de Production.
 
 ## Schema
 

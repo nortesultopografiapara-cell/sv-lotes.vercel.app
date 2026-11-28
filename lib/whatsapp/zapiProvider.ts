@@ -4,6 +4,7 @@
  */
 
 import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
+import { isExecutionEnvironmentBlockingRealOutbound } from '@/lib/homolog/executionEnvironment';
 
 export const ZAPI_SEND_TEXT_BASE_URL = 'https://api.z-api.io';
 
@@ -289,7 +290,7 @@ function logZapiSendTextTemporaryPost(input: {
 }
 
 export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextResult> {
-  if (isDevelopHomologRuntime()) {
+  if (isDevelopHomologRuntime() || isExecutionEnvironmentBlockingRealOutbound()) {
     return { ok: false, error: HOMOLOG_OUTBOUND_BLOCKED_MESSAGE };
   }
   const config = getZapiConfigStatus();

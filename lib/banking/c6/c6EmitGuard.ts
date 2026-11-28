@@ -6,6 +6,7 @@
 import type { BankEnvironment } from '@/lib/banking/types';
 import { isC6CompanyOperationEnabled } from '@/lib/banking/c6/c6CompanyAccess';
 import { isProductionSupabaseRuntime } from '@/lib/homolog/env';
+import { isExecutionEnvironmentBlockingRealOutbound } from '@/lib/homolog/executionEnvironment';
 
 export const C6_EMIT_NOT_HOMOLOGATED_MESSAGE =
   'Integração C6 Bank ainda não homologada para emissão.';
@@ -79,5 +80,6 @@ export function isC6RemoteOperationBlocked(
     String(environment || '').trim().toUpperCase() === 'PRODUCTION' ||
     isProductionSupabaseRuntime(supabaseUrl);
   if (!production) return false;
+  if (isExecutionEnvironmentBlockingRealOutbound()) return true;
   return !isC6CompanyOperationEnabled(companyId, operation);
 }

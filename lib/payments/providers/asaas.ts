@@ -12,6 +12,7 @@ import {
   resolveSaasLateFeePercents,
 } from '@/lib/saasLateFeeConfig';
 import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
+import { assertLiveExternalCallAllowed } from '@/lib/homolog/executionEnvironment';
 
 type AsaasPayment = {
   id?: string;
@@ -50,6 +51,9 @@ function asaasHeaders(): HeadersInit {
 
 async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
   assertHomologOutboundAllowed();
+  if (String(process.env.ASAAS_ENV || 'sandbox').trim().toLowerCase() === 'production') {
+    assertLiveExternalCallAllowed();
+  }
   const res = await fetch(`${asaasBaseUrl()}${path}`, {
     ...init,
     headers: { ...asaasHeaders(), ...(init?.headers || {}) },

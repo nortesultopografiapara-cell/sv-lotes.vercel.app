@@ -6,6 +6,7 @@
 import https from 'node:https';
 import type { BankEnvironment } from '@/lib/banking/types';
 import { assertHomologOutboundAllowed } from '@/lib/homolog/env';
+import { assertLiveExternalCallAllowed } from '@/lib/homolog/executionEnvironment';
 import {
   INTER_OAUTH_SCOPES,
   getInterOAuthTokenUrl,
@@ -187,6 +188,9 @@ export async function requestInterAccessToken(
   },
 ): Promise<InterOAuthResult> {
   assertHomologOutboundAllowed();
+  if (String(creds.environment || '').trim().toUpperCase() === 'PRODUCTION') {
+    assertLiveExternalCallAllowed();
+  }
   const environment = creds.environment;
   const clientId = String(creds.clientId || '').trim();
   const clientSecret = String(creds.clientSecret || '').trim();

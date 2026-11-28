@@ -1,0 +1,22 @@
+---
+description: Configuração permanente dos ambientes Supabase do SV LOTES. Não cadastrar service role por branch e não usar o projeto aposentado.
+alwaysApply: true
+---
+
+# Ambientes Supabase
+
+Documento: `docs/ENVIRONMENT_SETUP.md`.
+
+| Ambiente | Project ref |
+|---|---|
+| Production | `aezktedncttwpqeunjej` |
+| Develop, Preview geral e Development | `hoynysmynxncdlptuzub` |
+| Aposentado, proibido | `zumwvcxgrpxggyxomzic` |
+
+Não cadastrar `SUPABASE_SERVICE_ROLE_KEY` de novo para cada branch. O Preview geral já existe. Development recebe as três variáveis uma vez, só do Develop, sem branch Git.
+
+Worktree nova: `scripts/env/Store-DevelopCredentials.ps1` e `scripts/env/Initialize-SvLotesWorktree.ps1`. Não usar `.env.develop.apply` como fonte.
+
+Não imprimir chaves. Não gravar chave em Git, documentação ou chat. Não tratar `[SENSITIVE]` como credencial. Não rebaixar variável Sensitive para o CLI conseguir lê-la.
+
+Validar com `scripts/env/validate-supabase-project.ts` antes de usar um ambiente. Preview e Development que apontem para Production, ou qualquer uso do projeto aposentado, devem falhar.

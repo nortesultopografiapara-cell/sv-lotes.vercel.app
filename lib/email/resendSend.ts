@@ -6,6 +6,7 @@
 
 import { Resend } from 'resend';
 import { HOMOLOG_OUTBOUND_BLOCKED_MESSAGE, isDevelopHomologRuntime } from '@/lib/homolog/env';
+import { isExecutionEnvironmentBlockingRealOutbound } from '@/lib/homolog/executionEnvironment';
 
 export type ResendAttachment = {
   filename: string;
@@ -201,7 +202,7 @@ function sanitizeProviderMessage(raw: string): string {
 }
 
 export async function sendResendEmail(input: ResendSendInput): Promise<ResendSendResult> {
-  if (isDevelopHomologRuntime()) {
+  if (isDevelopHomologRuntime() || isExecutionEnvironmentBlockingRealOutbound()) {
     return {
       ok: false,
       errorCode: 'HOMOLOG_BLOCKED',

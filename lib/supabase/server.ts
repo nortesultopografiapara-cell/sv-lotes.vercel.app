@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { getServerConfigErrorMessage, getServerSupabaseConfigStatus } from '@/lib/supabase-config.server';
+import { publicClientGate, serviceClientGate } from '@/lib/security/supabaseProjectGuard';
 
 export async function createRouteHandlerSupabase(): Promise<{
   client: SupabaseClient | null;
@@ -17,6 +18,11 @@ export async function createRouteHandlerSupabase(): Promise<{
         getServerConfigErrorMessage() ||
         'Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.',
     };
+  }
+
+  const projectGate = publicClientGate(process.env);
+  if (!projectGate.ok) {
+    return { client: null, configError: projectGate.error };
   }
 
   const cookieStore = await cookies();
@@ -51,6 +57,8 @@ export function createAdminSupabase(): {
   if (configError || !url || !serviceKey) {
     return { client: null, configError: configError || 'Supabase admin não configurado.' };
   }
+  const gate = serviceClientGate(process.env);
+  if (!gate.ok) return { client: null, configError: gate.error };
 
   const client = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
