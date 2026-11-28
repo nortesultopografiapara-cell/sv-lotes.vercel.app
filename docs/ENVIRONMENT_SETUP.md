@@ -106,7 +106,7 @@ Regras:
 - URL pública, URL privada `SUPABASE_URL` quando existir, anon key e service role precisam ser o mesmo projeto.
 - `zumwvcxgrpxggyxomzic` falha sempre.
 - JWT legado: lê os claims `ref` e `role`. Isso não prova a assinatura.
-- A prova complementar é `GET /rest/v1/` com a chave, no host do projeto esperado. A resposta não é gravada. Não há consulta a tabela de clientes, vendas ou financeiro.
+- A prova complementar é uma leitura sem tabela. A anon key usa `GET /auth/v1/health`. A service role usa `GET /rest/v1/`, porque o catálogo do projeto recusa a anon key nesse endereço. A resposta não é gravada. Não há consulta a clientes, vendas ou financeiro.
 - Chave `sb_publishable_` ou `sb_secret_` entra pelo prefixo. Sem o `ref` no valor, o cliente servidor só abre depois dessa leitura.
 - O resultado fica em memória do processo. A leitura não se repete a cada requisição.
 - O build na Vercel, com `VERCEL_ENV` igual a `preview` ou `production`, executa a mesma validação antes de concluir. Se o projeto não corresponder, o build falha e o deployment não fica disponível. No runtime, `instrumentation.ts` interrompe a subida do servidor nesses dois ambientes quando a validação falha. Build local, sem `VERCEL_ENV`, não exige as chaves.

@@ -15,6 +15,7 @@ import {
   resetSupabaseProjectGuardForTests,
   serviceClientGate,
   validateSupabaseProject,
+  supabaseReadProbePath,
   warmSupabaseProjectGuard,
 } from '../lib/security/supabaseProjectGuard';
 
@@ -57,6 +58,8 @@ function configured(
 }
 
 async function main(): Promise<void> {
+  assert('leitura anon', supabaseReadProbePath(jwt('anon', DEVELOP_PROJECT_REF)) === '/auth/v1/health');
+  assert('leitura service role', supabaseReadProbePath(jwt('service_role', DEVELOP_PROJECT_REF)) === '/rest/v1/');
   assert('ref develop', DEVELOP_PROJECT_REF === 'hoynysmynxncdlptuzub');
   assert('ref production', PRODUCTION_PROJECT_REF === 'aezktedncttwpqeunjej');
   assert('ref aposentado', RETIRED_DEVELOP_PROJECT_REF === 'zumwvcxgrpxggyxomzic');

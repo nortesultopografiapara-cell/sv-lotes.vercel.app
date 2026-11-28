@@ -85,17 +85,18 @@ if ($occupied.Count -gt 0 -and -not $AllowOverwrite) {
   exit 2
 }
 
-$kept = foreach ($line in $lines) {
+$kept = New-Object System.Collections.Generic.List[string]
+foreach ($line in $lines) {
   if ($line -match '^\s*([A-Z0-9_]+)=') {
     if ($managed -contains $Matches[1]) { continue }
   }
-  $line
+  $kept.Add($line)
 }
-$kept += "NEXT_PUBLIC_SUPABASE_URL=$url"
-$kept += "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon"
-$kept += "SUPABASE_SERVICE_ROLE_KEY=$service"
+$kept.Add("NEXT_PUBLIC_SUPABASE_URL=$url")
+$kept.Add("NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon")
+$kept.Add("SUPABASE_SERVICE_ROLE_KEY=$service")
 $utf8 = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllLines($envFile, $kept, $utf8)
+[System.IO.File]::WriteAllLines($envFile, $kept.ToArray(), $utf8)
 icacls $envFile /inheritance:r /grant:r "${env:USERNAME}:(R,W)" | Out-Null
 $url = $null
 $anon = $null

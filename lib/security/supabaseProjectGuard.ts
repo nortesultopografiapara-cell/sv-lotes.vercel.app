@@ -165,12 +165,18 @@ export function assessSupabaseProject(
   };
 }
 
+export function supabaseReadProbePath(key: string): '/rest/v1/' | '/auth/v1/health' {
+  if (String(key || '').startsWith('sb_secret_')) return '/rest/v1/';
+  const inspection = inspectSupabaseKey(key, 'service_role');
+  return inspection.role === 'service_role' ? '/rest/v1/' : '/auth/v1/health';
+}
+
 export async function probeSupabaseKeyAcceptance(url: string, key: string): Promise<ProbeStatus> {
   const ref = resolveSupabaseProjectRef(url);
   if (!ref || ref === RETIRED_DEVELOP_PROJECT_REF) return 'rejected';
   let endpoint: URL;
   try {
-    endpoint = new URL('/rest/v1/', url);
+    endpoint = new URL(supabaseReadProbePath(key), url);
   } catch {
     return 'rejected';
   }
@@ -182,7 +188,6 @@ export async function probeSupabaseKeyAcceptance(url: string, key: string): Prom
       headers: {
         apikey: key,
         Authorization: `Bearer ${key}`,
-        Accept: 'application/openapi+json',
       },
     });
     await response.body?.cancel().catch(() => undefined);
